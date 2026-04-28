@@ -1,0 +1,116 @@
+🏗️ Overall Architecture
+
+                    ┌─────────────────┐
+                    │   Nginx Proxy   │  (reverse proxy)
+                    └────────┬────────┘
+                             │
+              ┌──────────────┼──────────────┐
+              │                             │
+     ┌────────▼────────┐         ┌──────────▼──────────┐
+     │  React Frontend │         │   Node.js Backend   │
+     │   (port 3000)   │         │   Express (5000)    │
+     └─────────────────┘         └──────────┬──────────┘
+                                            │
+                              ┌─────────────┼─────────────┐
+                              │                           │
+                    ┌─────────▼──────┐        ┌──────────▼──────┐
+                    │  PostgreSQL DB │        │  Redis Cache    │
+                    │   (port 5432)  │        │   (port 6379)   │
+                    └────────────────┘        └─────────────────┘
+
+
+📁 Project Structure
+
+medical-billing/
+│
+├── docker-compose.yml
+├── .env
+│
+├── frontend/                        # React App
+│   ├── Dockerfile
+│   ├── nginx.conf
+│   ├── package.json
+│   └── src/
+│       ├── api/                     # Axios API calls
+│       ├── components/              # Reusable UI components
+│       ├── pages/
+│       │   ├── Dashboard/
+│       │   ├── Billing/             # POS screen
+│       │   ├── Inventory/
+│       │   ├── Customers/
+│       │   ├── Suppliers/
+│       │   └── Reports/
+│       ├── context/                 # Auth, Cart context
+│       ├── hooks/
+│       └── utils/
+│
+└── backend/                         # Node.js + Express
+    ├── Dockerfile
+    ├── package.json
+    └── src/
+        ├── config/                  # DB, Redis config
+        ├── routes/
+        │   ├── auth.routes.js
+        │   ├── medicine.routes.js
+        │   ├── billing.routes.js
+        │   ├── customer.routes.js
+        │   ├── supplier.routes.js
+        │   └── report.routes.js
+        ├── controllers/
+        ├── models/                  # Sequelize / Prisma models
+        ├── middlewares/             # Auth, error handler
+        ├── services/                # Business logic
+        └── utils/
+
+🔌 Backend API Structure
+
+Auth
+  POST   /api/auth/login
+  POST   /api/auth/logout
+
+Medicines
+  GET    /api/medicines          → list with stock
+  POST   /api/medicines          → add medicine
+  PUT    /api/medicines/:id
+  GET    /api/medicines/search?q → for billing search
+
+Batches
+  POST   /api/batches            → add stock batch
+  GET    /api/batches/expiring   → expiry alerts
+
+Billing
+  POST   /api/invoices           → create invoice
+  GET    /api/invoices/:id       → get invoice (for print)
+  GET    /api/invoices           → list
+
+Customers
+  GET/POST/PUT  /api/customers
+
+Reports
+  GET    /api/reports/daily-sales
+  GET    /api/reports/low-stock
+  GET    /api/reports/gst-summary
+
+Suppliers
+  GET/POST/PUT  /api/suppliers
+
+
+🗄️ Key Database Tables
+
+medicines        → id, name, category, manufacturer, HSN_code, unit
+batches          → id, medicine_id, batch_no, expiry_date, purchase_price, selling_price, stock_qty
+customers        → id, name, phone, address
+suppliers        → id, name, contact, GST_no
+invoices         → id, customer_id, date, total, discount, GST, net_amount, payment_mode
+invoice_items    → id, invoice_id, batch_id, qty, price, discount
+purchases        → id, supplier_id, date, total
+purchase_items   → id, purchase_id, batch_id, qty, cost_price
+
+
+🧭 Development Roadmap
+Week 1  →  Project setup, Docker, DB schema, Auth
+Week 2  →  Inventory (medicines + batches)
+Week 3  →  Billing / POS screen
+Week 4  →  Customers, Suppliers
+Week 5  →  Reports + GST logic
+Week 6  →  Invoice printing, polish, testing

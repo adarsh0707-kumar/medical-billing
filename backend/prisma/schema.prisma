@@ -1,0 +1,198 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Users & Auth ─────────────────────────────────────
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  password  String
+  role      Role     @default(CASHIER)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  invoices  Invoice[]
+}
+
+enum Role {
+  ADMIN
+  PHARMACIST
+  CASHIER
+}
+
+// ─── Medicine & Inventory ──────────────────────────────
+
+model Category {
+  id        String     @id @default(cuid())
+  name      String     @unique
+  medicines Medicine[]
+}
+
+model Manufacturer {
+  id        String     @id @default(cuid())
+  name      String     @unique
+  medicines Medicine[]
+}
+
+model Medicine {
+  id             String       @id @default(cuid())
+  name           String
+  genericName    String?
+  categoryId     String
+  manufacturerId String
+  hsnCode        String?
+  unit           String       // tablet, syrup, injection, etc.
+  gstPercent     Float        @default(12) // 0, 5, 12, 18
+  isScheduledH   Boolean      @default(false) // prescription required
+  isActive       Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  category       Category     @relation(fields: [categoryId], references: [id])
+  manufacturer   Manufacturer @relation(fields: [manufacturerId], references: [id])
+  batches        Batch[]
+}
+
+model Batch {
+  id             String   @id @default(cuid())
+  medicineId     String
+  batchNumber    String
+  expiryDate     DateTime
+  mfgDate        DateTime?
+  purchasePrice  Float
+  sellingPrice   Float
+  quantity       Int      // current stock
+  initialQty     Int      // when added
+  supplierId     String
+  createdAt      DateTime @default(now())
+
+  medicine       Medicine      @relation(fields: [medicineId], references: [id])
+  supplier       Supplier      @relation(fields: [supplierId], references: [id])
+  invoiceItems   InvoiceItem[]
+  purchaseItems  PurchaseItem[]
+
+  @@unique([medicineId, batchNumber])
+}
+
+// ─── Customers ─────────────────────────────────────────
+
+model Customer {
+  id        String    @id @default(cuid())
+  name      String
+  phone     String?   @unique
+  email     String?
+  address   String?
+  age       Int?
+  gender    Gender?
+  createdAt DateTime  @default(now())
+
+  invoices  Invoice[]
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+// ─── Suppliers ─────────────────────────────────────────
+
+model Supplier {
+  id          String     @id @default(cuid())
+  name        String
+  contactName String?
+  phone       String?
+  email       String?
+  gstNumber   String?
+  address     String?
+  createdAt   DateTime   @default(now())
+
+  batches     Batch[]
+  purchases   Purchase[]
+}
+
+// ─── Billing / Invoices ────────────────────────────────
+
+model Invoice {
+  id            String        @id @default(cuid())
+  invoiceNumber String        @unique
+  customerId    String?
+  userId        String
+  date          DateTime      @default(now())
+  subtotal      Float
+  discountAmt   Float         @default(0)
+  cgst          Float         @default(0)
+  sgst          Float         @default(0)
+  totalAmount   Float
+  paymentMode   PaymentMode   @default(CASH)
+  paymentStatus PaymentStatus @default(PAID)
+  notes         String?
+  createdAt     DateTime      @default(now())
+
+  customer      Customer?     @relation(fields: [customerId], references: [id])
+  user          User          @relation(fields: [userId], references: [id])
+  items         InvoiceItem[]
+}
+
+model InvoiceItem {
+  id          String  @id @default(cuid())
+  invoiceId   String
+  batchId     String
+  medicineName String  // snapshot at time of sale
+  quantity    Int
+  unitPrice   Float
+  discount    Float   @default(0)
+  gstPercent  Float
+  totalPrice  Float
+
+  invoice     Invoice  @relation(fields: [invoiceId], references: [id])
+  batch       Batch    @relation(fields: [batchId], references: [id])
+}
+
+enum PaymentMode {
+  CASH
+  UPI
+  CARD
+  CREDIT
+}
+
+enum PaymentStatus {
+  PAID
+  PENDING
+  PARTIAL
+}
+
+// ─── Purchases ─────────────────────────────────────────
+
+model Purchase {
+  id             String         @id @default(cuid())
+  purchaseNumber String         @unique
+  supplierId     String
+  date           DateTime       @default(now())
+  totalAmount    Float
+  notes          String?
+  createdAt      DateTime       @default(now())
+
+  supplier       Supplier       @relation(fields: [supplierId], references: [id])
+  items          PurchaseItem[]
+}
+
+model PurchaseItem {
+  id          String   @id @default(cuid())
+  purchaseId  String
+  batchId     String
+  quantity    Int
+  costPrice   Float
+
+  purchase    Purchase @relation(fields: [purchaseId], references: [id])
+  batch       Batch    @relation(fields: [batchId], references: [id])
+}

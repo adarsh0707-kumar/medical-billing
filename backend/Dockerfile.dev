@@ -1,0 +1,13 @@
+# More compatible, slightly larger image
+FROM node:20-slim
+
+WORKDIR /app
+RUN apt-get update && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
+RUN npm install -g nodemon
+COPY package*.json ./
+COPY prisma ./prisma/
+RUN npm install
+RUN npx prisma generate
+COPY . .
+EXPOSE 5000
+CMD ["npm", "run", "dev"]

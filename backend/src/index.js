@@ -1,0 +1,83 @@
+const express = require("express");
+const cors = require("cors");
+const helmet = require("helmet");
+const morgan = require("morgan");
+const compression = require("compression");
+const rateLimit = require("express-rate-limit");
+
+const authRoutes = require("./routes/auth.routes");
+const { errorHandler, notFound } = require("./middlewares/error.middleware");
+const inventoryRoutes = require("./routes/inventory.routes");
+const billingRoutes = require("./routes/billing.routes");
+const userRoutes = require("./routes/user.routes");
+
+const app = express();
+const PORT = process.env.PORT || 5000;
+
+// ─── Security Middlewares ──────────────────────────────
+app.use(helmet());
+app.use(compression());
+app.use(morgan("dev"));
+
+// ─── CORS ─────────────────────────────────────────────
+const allowedOrigins = [
+  "http://localhost:3000",
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+  "http://172.17.0.1:5173", // Docker network IP
+  process.env.FRONTEND_URL,
+].filter(Boolean);
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
+    credentials: true,
+  }),
+);
+
+// ─── Body Parser ───────────────────────────────────────
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// ─── Rate Limiter ──────────────────────────────────────
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 500,
+  message: {
+    success: false,
+    message: "Too many requests, please try again later.",
+  },
+});
+app.use("/api", limiter);
+
+// ─── Health Check ──────────────────────────────────────
+app.get("/health", (req, res) => {
+  res.json({
+    success: true,
+    message: "Medical Billing API is running!",
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// ─── Routes ────────────────────────────────────────────
+app.use("/api/auth", authRoutes);
+// add after auth route
+app.use("/api/inventory", inventoryRoutes);
+app.use("/api/billing", billingRoutes); // ← add this
+app.use("/api/users", userRoutes);
+
+// ─── Error Handlers ────────────────────────────────────
+app.use(notFound);
+app.use(errorHandler);
+
+// ─── Start Server ──────────────────────────────────────
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`📦 Environment: ${process.env.NODE_ENV}`);
+});
