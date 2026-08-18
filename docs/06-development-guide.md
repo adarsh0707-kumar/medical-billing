@@ -6,13 +6,13 @@ Everything needed to go from a clean checkout to a running, editable system.
 
 ## 1. Prerequisites
 
-| Tool | Version | Needed for |
-|---|---|---|
-| Docker + Compose v2 | current | The recommended path |
-| Node.js | 20.x | Local (non-Docker) runs — both images use `node:20-slim` |
-| npm | 10.x | |
-| PostgreSQL | 15 | Only if running without Docker |
-| Redis | 7 | Optional — the API runs fine without it |
+| Tool                | Version | Needed for                                                 |
+| ------------------- | ------- | ---------------------------------------------------------- |
+| Docker + Compose v2 | current | The recommended path                                       |
+| Node.js             | 20.x    | Local (non-Docker) runs — both images use`node:20-slim` |
+| npm                 | 10.x    |                                                            |
+| PostgreSQL          | 15      | Only if running without Docker                             |
+| Redis               | 7       | Optional — the API runs fine without it                   |
 
 ## 2. First run (Docker)
 
@@ -30,12 +30,12 @@ docker compose logs -f backend        # wait for "🚀 Server running on port 50
 docker compose exec backend npm run seed
 ```
 
-| URL | What |
-|---|---|
-| http://localhost:5173 | The application (Vite dev server) |
-| http://localhost:5000/health | API health check |
-| http://localhost | Nginx entry point — see the caveat below |
-| localhost:5432 | Postgres (`medadmin` / `medpass123` / `medicaldb`) |
+| URL                          | What                                                     |
+| ---------------------------- | -------------------------------------------------------- |
+| http://localhost:5173        | The application (Vite dev server)                        |
+| http://localhost:5000/health | API health check                                         |
+| http://localhost             | Nginx entry point — see the caveat below                |
+| localhost:5432               | Postgres (`medadmin` / `medpass123` / `medicaldb`) |
 
 **Sign in:** `admin@medstore.com` / `admin123` — change it immediately anywhere real.
 
@@ -93,27 +93,27 @@ npm run dev                      # Vite on :5173
 
 ### Backend
 
-| Variable | Required | Default | Purpose |
-|---|:---:|---|---|
-| `DATABASE_URL` | ✅ | — | Postgres connection string. Process exits if unreachable |
-| `JWT_SECRET` | ✅ | — | HMAC key for tokens. **No fallback** — signing throws without it |
-| `REDIS_URL` | | `redis://localhost:6379` | Client connects; nothing reads it yet |
-| `PORT` | | `5000` | |
-| `NODE_ENV` | | — | `development` enables Prisma query logs and error stacks in responses |
-| `FRONTEND_URL` | | — | Appended to the CORS allowlist when set |
+| Variable         | Required | Default                    | Purpose                                                                 |
+| ---------------- | :------: | -------------------------- | ----------------------------------------------------------------------- |
+| `DATABASE_URL` |    ✅    | —                         | Postgres connection string. Process exits if unreachable                |
+| `JWT_SECRET`   |    ✅    | —                         | HMAC key for tokens.**No fallback** — signing throws without it  |
+| `REDIS_URL`    |          | `redis://localhost:6379` | Client connects; nothing reads it yet                                   |
+| `PORT`         |          | `5000`                   |                                                                         |
+| `NODE_ENV`     |          | —                         | `development` enables Prisma query logs and error stacks in responses |
+| `FRONTEND_URL` |          | —                         | Appended to the CORS allowlist when set                                 |
 
 CORS allows, always: `http://localhost:3000`, `http://localhost:5173`, `http://127.0.0.1:5173`, `http://172.17.0.1:5173`, plus `FRONTEND_URL`. Requests with **no** Origin header (curl, Postman, server-to-server) are allowed.
 
 ### Frontend
 
-| Variable | Required | Default | Purpose |
-|---|:---:|---|---|
-| `VITE_API_URL` | | `http://localhost:5000` | API base URL, inlined at build time |
+| Variable         | Required | Default                   | Purpose                             |
+| ---------------- | :------: | ------------------------- | ----------------------------------- |
+| `VITE_API_URL` |          | `http://localhost:5000` | API base URL, inlined at build time |
 
 ### Root
 
-| Variable | Used by | Purpose |
-|---|---|---|
+| Variable       | Used by                | Purpose                                 |
+| -------------- | ---------------------- | --------------------------------------- |
 | `JWT_SECRET` | `docker-compose.yml` | Interpolated into the backend container |
 
 All `.env` files are gitignored. Never commit one.
@@ -122,24 +122,24 @@ All `.env` files are gitignored. Never commit one.
 
 ### Backend (`cd backend`)
 
-| Command | Effect |
-|---|---|
-| `npm run dev` | nodemon on `src/index.js` |
-| `npm start` | plain node |
-| `npm run seed` | Upsert the admin user |
-| `npm run prisma:generate` | Regenerate the Prisma client (after any schema edit) |
-| `npm run prisma:migrate` | `prisma migrate dev` — author and apply a migration |
-| `npm run prisma:studio` | Database browser on :5555 |
-| `npm test` | ⚠️ Exits 1 — **no tests exist** ([Phase 9](./05-roadmap-and-phases.md#phase-9--test--ci-foundation)) |
+| Command                     | Effect                                                                                                      |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `npm run dev`             | nodemon on`src/index.js`                                                                                  |
+| `npm start`               | plain node                                                                                                  |
+| `npm run seed`            | Upsert the admin user                                                                                       |
+| `npm run prisma:generate` | Regenerate the Prisma client (after any schema edit)                                                        |
+| `npm run prisma:migrate`  | `prisma migrate dev` — author and apply a migration                                                      |
+| `npm run prisma:studio`   | Database browser on :5555                                                                                   |
+| `npm test`                | ⚠️ Exits 1 —**no tests exist** ([Phase 9](./05-roadmap-and-phases.md#phase-9--test--ci-foundation)) |
 
 ### Frontend (`cd frontend`)
 
-| Command | Effect |
-|---|---|
-| `npm run dev` | Vite dev server on :5173 |
-| `npm run build` | `tsc -b && vite build` → `dist/` |
-| `npm run preview` | Serve the built bundle |
-| `npm run lint` | ESLint 9 flat config |
+| Command             | Effect                                |
+| ------------------- | ------------------------------------- |
+| `npm run dev`     | Vite dev server on :5173              |
+| `npm run build`   | `tsc -b && vite build` → `dist/` |
+| `npm run preview` | Serve the built bundle                |
+| `npm run lint`    | ESLint 9 flat config                  |
 
 There is no `npm test`, `npm run format` or `npm run test:coverage` in either package, despite the READMEs mentioning them.
 
@@ -153,12 +153,12 @@ npx prisma migrate dev --name add_something_useful
 npx prisma generate
 ```
 
-| Task | Command |
-|---|---|
+| Task                               | Command                       |
+| ---------------------------------- | ----------------------------- |
 | Apply pending migrations (CI/prod) | `npx prisma migrate deploy` |
-| Wipe and rebuild (destroys data) | `npx prisma migrate reset` |
-| Inspect data | `npx prisma studio` |
-| Pull schema from an existing DB | `npx prisma db pull` |
+| Wipe and rebuild (destroys data)   | `npx prisma migrate reset`  |
+| Inspect data                       | `npx prisma studio`         |
+| Pull schema from an existing DB    | `npx prisma db pull`        |
 
 Inside Docker, prefix with `docker compose exec backend`.
 
@@ -250,19 +250,19 @@ setBatches(res.data.data);
 
 ## 10. Debugging
 
-| Symptom | Where to look |
-|---|---|
-| 401 on every request | Token missing/expired in `localStorage`; the axios interceptor redirects to `/login` on 401 |
-| 403 with a role message | `authorize()` on the route — check the [role matrix](./04-api-reference.md#4-role-matrix) |
-| CORS error in the console | Origin not in the allowlist in `index.js` — are you on port 80 instead of 5173? |
-| `Validation failed` with `errors[]` | The Zod schema for that route; field paths are dotted (`items.0.quantity`) |
-| 409 with a `field` key | Unique constraint — email, category name, customer phone, or `(medicineId, batchNumber)` |
-| Silent field loss on save | The field is absent from the Zod schema and was stripped |
-| Prisma engine / openssl error | Re-run `npx prisma generate` in the current environment |
-| Backend exits on start | Postgres unreachable — `config/db.js` calls `process.exit(1)` by design |
-| `⚠️ Redis connection failed` | Non-fatal and expected when Redis is down; nothing depends on it |
-| Port already in use | `lsof -ti:5000 \| xargs kill -9`, or change the mapping in compose |
-| Frontend can't reach the API | `VITE_API_URL` is inlined at build time — restart Vite after changing it |
+| Symptom                                 | Where to look                                                                                  |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| 401 on every request                    | Token missing/expired in`localStorage`; the axios interceptor redirects to `/login` on 401 |
+| 403 with a role message                 | `authorize()` on the route — check the [role matrix](./04-api-reference.md#4-role-matrix)    |
+| CORS error in the console               | Origin not in the allowlist in`index.js` — are you on port 80 instead of 5173?              |
+| `Validation failed` with `errors[]` | The Zod schema for that route; field paths are dotted (`items.0.quantity`)                   |
+| 409 with a`field` key                 | Unique constraint — email, category name, customer phone, or`(medicineId, batchNumber)`     |
+| Silent field loss on save               | The field is absent from the Zod schema and was stripped                                       |
+| Prisma engine / openssl error           | Re-run`npx prisma generate` in the current environment                                       |
+| Backend exits on start                  | Postgres unreachable —`config/db.js` calls `process.exit(1)` by design                    |
+| `⚠️ Redis connection failed`        | Non-fatal and expected when Redis is down; nothing depends on it                               |
+| Port already in use                     | `lsof -ti:5000 \| xargs kill -9`, or change the mapping in compose                            |
+| Frontend can't reach the API            | `VITE_API_URL` is inlined at build time — restart Vite after changing it                    |
 
 ## 11. Git workflow
 
