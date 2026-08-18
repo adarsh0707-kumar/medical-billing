@@ -1,5 +1,24 @@
 const prisma = require("../config/db");
-const { generateInvoiceNumber } = require("../utils/invoice.utils");
+const {
+  generateInvoiceNumber,
+  isDuplicateNumber,
+} = require("../utils/invoice.utils");
+
+// Thrown from inside the invoice transaction when a batch can no longer cover
+// the requested quantity at the moment of deduction. Rolls the transaction back
+// and carries the status code to report to the client.
+class StockConflictError extends Error {
+  constructor(message, statusCode = 400) {
+    super(message);
+    this.name = "StockConflictError";
+    this.statusCode = statusCode;
+  }
+}
+
+// Concurrent checkouts can derive the same serial; every retry re-reads the
+// count, so a handful of attempts covers far more simultaneous counters than a
+// single store will ever run.
+const MAX_INVOICE_NUMBER_ATTEMPTS = 5;
 
 // ─── Create Invoice ────────────────────────────────────
 const createInvoice = async (req, res, next) => {
@@ -13,7 +32,9 @@ const createInvoice = async (req, res, next) => {
       notes,
     } = req.body;
 
-    // Step 1 — Verify stock availability for all items
+    // Step 1 — Verify stock availability for all items.
+    // Advisory only: it fails fast with a friendly message before any work is
+    // done, but the authoritative check is the guarded decrement in Step 3.
     for (const item of items) {
       const batch = await prisma.batch.findUnique({
         where: { id: item.batchId },
@@ -64,43 +85,80 @@ const createInvoice = async (req, res, next) => {
     const totalAmount = parseFloat(
       (subtotal + totalCgst + totalSgst - discountAmt).toFixed(2),
     );
-    const invoiceNumber = await generateInvoiceNumber();
 
-    // Step 3 — Create invoice + deduct stock in a transaction
-    const invoice = await prisma.$transaction(async (tx) => {
-      // Create invoice
-      const newInvoice = await tx.invoice.create({
-        data: {
-          invoiceNumber,
-          customerId: customerId || null,
-          userId: req.user.id,
-          subtotal: parseFloat(subtotal.toFixed(2)),
-          discountAmt,
-          cgst: parseFloat(totalCgst.toFixed(2)),
-          sgst: parseFloat(totalSgst.toFixed(2)),
-          totalAmount,
-          paymentMode,
-          paymentStatus,
-          notes,
-          items: { create: processedItems },
-        },
-        include: {
-          items: true,
-          customer: true,
-          user: { select: { name: true } },
-        },
-      });
+    // Step 3 — Create invoice + deduct stock in a transaction.
+    // The serial is allocated inside the transaction, but two concurrent
+    // transactions can still read the same count and derive the same number.
+    // The unique index lets exactly one of them commit; the loser retries with
+    // a fresh serial instead of failing a sale the customer already paid for.
+    let invoice;
+    for (let attempt = 1; ; attempt++) {
+      try {
+        invoice = await prisma.$transaction(async (tx) => {
+          const invoiceNumber = await generateInvoiceNumber(tx);
 
-      // Deduct stock from each batch
-      for (const item of items) {
-        await tx.batch.update({
-          where: { id: item.batchId },
-          data: { quantity: { decrement: item.quantity } },
+          const newInvoice = await tx.invoice.create({
+            data: {
+              invoiceNumber,
+              customerId: customerId || null,
+              userId: req.user.id,
+              subtotal: parseFloat(subtotal.toFixed(2)),
+              discountAmt,
+              cgst: parseFloat(totalCgst.toFixed(2)),
+              sgst: parseFloat(totalSgst.toFixed(2)),
+              totalAmount,
+              paymentMode,
+              paymentStatus,
+              notes,
+              items: { create: processedItems },
+            },
+            include: {
+              items: true,
+              customer: true,
+              user: { select: { name: true } },
+            },
+          });
+
+          // Deduct stock from each batch. The quantity guard in the where clause
+          // makes check-and-decrement a single atomic statement, so two concurrent
+          // invoices can never both claim the same units — the loser matches zero
+          // rows and rolls the whole invoice back.
+          for (const item of items) {
+            const { count } = await tx.batch.updateMany({
+              where: { id: item.batchId, quantity: { gte: item.quantity } },
+              data: { quantity: { decrement: item.quantity } },
+            });
+
+            if (count === 0) {
+              const batch = await tx.batch.findUnique({
+                where: { id: item.batchId },
+                select: { quantity: true },
+              });
+              if (!batch) {
+                throw new StockConflictError(
+                  `Batch not found for ${item.medicineName}`,
+                  404,
+                );
+              }
+              throw new StockConflictError(
+                `Insufficient stock for ${item.medicineName}. Available: ${batch.quantity}`,
+              );
+            }
+          }
+
+          return newInvoice;
         });
+        break;
+      } catch (err) {
+        if (
+          isDuplicateNumber(err, "invoiceNumber") &&
+          attempt < MAX_INVOICE_NUMBER_ATTEMPTS
+        ) {
+          continue;
+        }
+        throw err;
       }
-
-      return newInvoice;
-    });
+    }
 
     res.status(201).json({
       success: true,
@@ -108,6 +166,11 @@ const createInvoice = async (req, res, next) => {
       data: invoice,
     });
   } catch (err) {
+    if (err instanceof StockConflictError) {
+      return res
+        .status(err.statusCode)
+        .json({ success: false, message: err.message });
+    }
     next(err);
   }
 };

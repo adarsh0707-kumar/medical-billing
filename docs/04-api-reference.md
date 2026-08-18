@@ -524,7 +524,7 @@ invoice:   subtotal    = Σ taxable
 | Body fails schema | 400 | `Validation failed` + `errors[]` |
 | A `batchId` does not exist | 404 | `Batch not found for <medicineName>` |
 | Quantity exceeds stock | 400 | `Insufficient stock for <medicineName>. Available: <n>` |
-| Invoice number collision | 409 | `A record with this value already exists.` (concurrency — [G-01](./08-gap-analysis.md#g-01)) |
+| Invoice number collision | 409 | `A record with this value already exists.` — unreachable in normal operation since the atomic per-day counter landed ([G-01](./08-gap-analysis.md#g-01)); retained as a backstop |
 
 There is **no update or delete** for invoices.
 

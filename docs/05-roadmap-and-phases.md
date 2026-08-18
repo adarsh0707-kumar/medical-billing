@@ -96,7 +96,7 @@ The honest read: v1.0.0 is a complete, coherent product built fast, sitting on a
 - Fast POS search returning the FEFO batch inline.
 - Frontend Billing page: debounced search, cart with per-line discount, live totals, payment selection, print.
 
-**Known debt:** numbering collision and the stock-check race ([G-01](./08-gap-analysis.md#g-01), [G-09](./08-gap-analysis.md#g-09)); no void/edit path (FR-BILL-17).
+**Known debt:** ~~numbering collision and the stock-check race~~ — both fixed 2026-08-18 ([G-01](./08-gap-analysis.md#g-01), [G-09](./08-gap-analysis.md#g-09)); no void/edit path (FR-BILL-17).
 
 ### Phase 4 — Customers & suppliers ✅
 
@@ -138,8 +138,8 @@ The honest read: v1.0.0 is a complete, coherent product built fast, sitting on a
 
 | # | Work | Ref |
 |---|---|---|
-| 7.1 | Move stock verification **inside** the transaction; use a conditional update (`updateMany where quantity >= qty`) and abort when zero rows change | [G-09](./08-gap-analysis.md#g-09) |
-| 7.2 | Replace count-based invoice numbering with a Postgres sequence or a retry-on-`P2002` loop | [G-01](./08-gap-analysis.md#g-01) |
+| ~~7.1~~ ✅ | Move stock verification **inside** the transaction; use a conditional update (`updateMany where quantity >= qty`) and abort when zero rows change — **done 2026-08-18** | [G-09](./08-gap-analysis.md#g-09) |
+| ~~7.2~~ ✅ | Replace count-based invoice numbering — **done 2026-08-18** via an atomic per-day `InvoiceCounter` upsert (retry alone proved insufficient) | [G-01](./08-gap-analysis.md#g-01) |
 | 7.3 | Migrate all money columns from `Float` to `Decimal(12,2)` | [G-07](./08-gap-analysis.md#g-07) |
 | 7.4 | Add `mfgDate` to `batchSchema` and to the batch form | [G-04](./08-gap-analysis.md#g-04) |
 | 7.5 | Add a Zod schema to `PUT /api/inventory/batches/:id` | [G-05](./08-gap-analysis.md#g-05) |

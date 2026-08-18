@@ -242,7 +242,7 @@ sequenceDiagram
     SPA->>SPA: setTimeout(window.print, 500)
 ```
 
-**Known weakness:** the stock check (read) happens *before* the transaction (write). Two concurrent invoices for the last unit of a batch can both pass validation and both commit, driving `quantity` negative. The invoice-number `COUNT` is likewise outside the transaction. Both are documented as [G-01](./08-gap-analysis.md#g-01) and [G-09](./08-gap-analysis.md#g-09), with the fix (move the check inside the transaction, use a conditional update or a DB sequence) specified there.
+**Concurrency (fixed 2026-08-18).** The pre-transaction stock check is advisory — it fails fast with a friendly message. The authoritative guard is the decrement itself, a conditional `updateMany` inside the transaction that matches zero rows when another sale took the units, rolling the whole invoice back. The serial likewise comes from an atomic per-day `InvoiceCounter` upsert inside the same transaction, not from a `COUNT()`. See [G-09](./08-gap-analysis.md#g-09) and [G-01](./08-gap-analysis.md#g-01) for the before/after and the verification runs.
 
 ### 6.3 Dashboard load
 

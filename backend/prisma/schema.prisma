@@ -171,6 +171,17 @@ enum PaymentStatus {
   PARTIAL
 }
 
+// ─── Invoice numbering ─────────────────────────────────
+
+// One row per business day. Serials are handed out by an atomic
+// INSERT … ON CONFLICT DO UPDATE inside the invoice transaction, which is what
+// makes concurrent checkouts safe — a COUNT() of today's invoices is a
+// read-then-write race that two counters lose simultaneously.
+model InvoiceCounter {
+  day String @id // yymmdd, matching the INV prefix
+  seq Int
+}
+
 // ─── Purchases ─────────────────────────────────────────
 
 model Purchase {

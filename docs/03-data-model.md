@@ -204,7 +204,7 @@ Relations: `category`, `manufacturer`, `batches Batch[]`.
 
 Relations: `medicine`, `supplier`, `invoiceItems`, `purchaseItems`.
 
-> `quantity` has **no non-negative constraint**. The application checks stock before deducting, but that check is outside the write transaction, so a concurrent race can drive it negative ([G-09](./08-gap-analysis.md#g-09)). A `CHECK (quantity >= 0)` constraint is the cheapest backstop.
+> `quantity` has **no non-negative constraint**. Since 2026-08-18 the decrement is a conditional `updateMany` inside the invoice transaction, so a concurrent sale can no longer drive it negative ([G-09](./08-gap-analysis.md#g-09)). A `CHECK (quantity >= 0)` constraint remains worth adding as a database-level backstop against any future write path.
 
 ### 3.6 `Supplier`
 
@@ -275,7 +275,20 @@ Relations: `customer?`, `user`, `items InvoiceItem[]`.
 
 Not stored, recomputable: line taxable value, line CGST, line SGST.
 
-### 3.10 `Purchase` / `PurchaseItem` — 🟡 modelled, unreachable
+### 3.10 `InvoiceCounter` — invoice serial allocation
+
+| Column | Type | Constraints | Notes |
+|---|---|---|---|
+| `day` | String | PK | `yymmdd`, matching the invoice-number prefix |
+| `seq` | Int | required | Last serial handed out for that day |
+
+One row per business day. `generateInvoiceNumber()` runs a single `INSERT … ON CONFLICT ("day") DO UPDATE SET seq = seq + 1 RETURNING seq` **inside the invoice transaction**, so concurrent checkouts queue on the row lock and each receives a distinct serial. Because the increment shares the invoice's transaction, a rolled-back sale returns its number — serials stay gapless, which matters for a tax document.
+
+When the row is first created for a day it seeds itself from the invoices already recorded that day, so days written before this table existed continue where they left off rather than colliding.
+
+This is the only raw SQL in the codebase; the atomicity guarantee is the reason.
+
+### 3.11 `Purchase` / `PurchaseItem` — 🟡 modelled, unreachable
 
 | `Purchase` | Type | Notes |
 |-----------|------|-------|
@@ -335,7 +348,7 @@ These must hold at all times. Any new write path must preserve them.
 | I-3 | Every `InvoiceItem` points at a real `Batch` | FK |
 | I-4 | `Invoice.totalAmount = subtotal + cgst + sgst − discountAmt` | Application (`billing.controller.js`) |
 | I-5 | `Invoice.cgst = Invoice.sgst` | Application — the 50/50 split is unconditional |
-| I-6 | `invoiceNumber` is unique | DB unique constraint; generation logic can collide and will raise `P2002` |
+| I-6 | `invoiceNumber` is unique and gapless per day | DB unique constraint + the atomic `InvoiceCounter` upsert inside the invoice transaction |
 | I-7 | Deactivating a user immediately denies access | `protect` reloads and checks `isActive` |
 | I-8 | Soft-deleted medicines never appear in list or search | `where: { isActive: true }` in both queries |
 | I-9 | Sold-out batches never appear at POS | `where: { quantity: { gt: 0 } }` in search |
@@ -348,6 +361,7 @@ These must hold at all times. Any new write path must preserve them.
 |-----------|------|----------|
 | `20260418054922_init` | 2026-04-18 | All 11 tables, 4 enums, all constraints |
 | `20260419152932_add_mfgdate` | 2026-04-19 | Adds nullable `Batch.mfgDate` |
+| `20260818171902_add_invoice_counter` | 2026-08-18 | Adds `InvoiceCounter` for race-free invoice serials |
 
 Workflow:
 

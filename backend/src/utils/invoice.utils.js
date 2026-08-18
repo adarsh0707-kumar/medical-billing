@@ -1,35 +1,69 @@
 const prisma = require("../config/db");
 
-const generateInvoiceNumber = async () => {
-  const today = new Date();
-  const year = today.getFullYear().toString().slice(-2);
-  const month = String(today.getMonth() + 1).padStart(2, "0");
-  const day = String(today.getDate()).padStart(2, "0");
-  const prefix = `INV${year}${month}${day}`;
+const twoDigit = (n) => String(n).padStart(2, "0");
 
-  // Count today's invoices
-  const startOfDay = new Date(today.setHours(0, 0, 0, 0));
-  const count = await prisma.invoice.count({
-    where: { createdAt: { gte: startOfDay } },
-  });
+const startOfDay = (date) =>
+  new Date(date.getFullYear(), date.getMonth(), date.getDate());
 
-  const serial = String(count + 1).padStart(4, "0");
-  return `${prefix}-${serial}`;
+const startOfNextDay = (date) =>
+  new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1);
+
+const startOfMonth = (date) => new Date(date.getFullYear(), date.getMonth(), 1);
+
+const dayKey = (date) =>
+  `${String(date.getFullYear()).slice(-2)}${twoDigit(date.getMonth() + 1)}${twoDigit(date.getDate())}`;
+
+// Allocates the next invoice serial for `now`'s date — INVyymmdd-nnnn.
+//
+// Counting today's invoices and adding one is a read-then-write race: two
+// checkouts read the same count and derive the same number, and retrying only
+// makes them collide again. Instead the serial comes from a single atomic
+// statement against a per-day counter row. Concurrent transactions queue on
+// that row's lock, so each gets a distinct value; and because the increment
+// lives inside the caller's transaction, a rolled-back sale gives its number
+// back rather than leaving a gap in a tax document.
+//
+// The row is seeded from the invoices already recorded for the day, so days
+// written before this counter existed continue where they left off.
+//
+// MUST be called with the transaction client that inserts the invoice.
+const generateInvoiceNumber = async (client = prisma, now = new Date()) => {
+  const [{ seq }] = await client.$queryRaw`
+    INSERT INTO "InvoiceCounter" ("day", "seq")
+    VALUES (
+      ${dayKey(now)},
+      (SELECT COUNT(*)::int FROM "Invoice"
+        WHERE "createdAt" >= ${startOfDay(now)}
+          AND "createdAt" < ${startOfNextDay(now)}) + 1
+    )
+    ON CONFLICT ("day") DO UPDATE SET "seq" = "InvoiceCounter"."seq" + 1
+    RETURNING "seq"`;
+
+  return `INV${dayKey(now)}-${String(seq).padStart(4, "0")}`;
 };
 
-const generatePurchaseNumber = async () => {
-  const today = new Date();
-  const year = today.getFullYear().toString().slice(-2);
-  const month = String(today.getMonth() + 1).padStart(2, "0");
-  const prefix = `PO${year}${month}`;
+// POyymm-nnnn. Still count-based: no purchase write path exists yet, so there
+// is nothing to race. Give it the same counter treatment when one is built.
+const generatePurchaseNumber = async (client = prisma, now = new Date()) => {
+  const prefix = `PO${String(now.getFullYear()).slice(-2)}${twoDigit(
+    now.getMonth() + 1,
+  )}`;
 
-  const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-  const count = await prisma.purchase.count({
-    where: { createdAt: { gte: startOfMonth } },
+  const count = await client.purchase.count({
+    where: { createdAt: { gte: startOfMonth(now) } },
   });
 
-  const serial = String(count + 1).padStart(4, "0");
-  return `${prefix}-${serial}`;
+  return `${prefix}-${String(count + 1).padStart(4, "0")}`;
 };
 
-module.exports = { generateInvoiceNumber, generatePurchaseNumber };
+// True when a write lost the race for a document number to a transaction that
+// committed first. The counter makes this unreachable in normal operation; it
+// stays as the backstop for numbers created before the counter existed.
+const isDuplicateNumber = (err, field) =>
+  err?.code === "P2002" && [].concat(err.meta?.target ?? []).includes(field);
+
+module.exports = {
+  generateInvoiceNumber,
+  generatePurchaseNumber,
+  isDuplicateNumber,
+};

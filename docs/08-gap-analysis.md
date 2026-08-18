@@ -40,8 +40,8 @@ Severity: 🔴 causes data corruption or a security exposure · 🟠 causes inco
 
 | ID | Severity | Finding |
 |---|---|---|
-| [G-01](#g-01) | 🔴 | Invoice numbers collide under concurrent checkout |
-| [G-09](#g-09) | 🔴 | Stock check happens outside the transaction — oversell race |
+| [G-01](#g-01) | ✅ Fixed | Invoice numbers collide under concurrent checkout |
+| [G-09](#g-09) | ✅ Fixed | Stock check happens outside the transaction — oversell race |
 | [G-07](#g-07) | 🔴 | All money stored as `Float` |
 | [G-02](#g-02) | 🟠 | Nginx entry point is unusable — origin missing from the CORS allowlist |
 | [G-05](#g-05) | 🟠 | `PUT /api/inventory/batches/:id` accepts arbitrary fields |
@@ -58,7 +58,7 @@ Severity: 🔴 causes data corruption or a security exposure · 🟠 causes inco
 
 ---
 
-### <a id="g-01"></a>G-01 🔴 Invoice numbers collide under concurrency
+### <a id="g-01"></a>G-01 ✅ FIXED — Invoice numbers collided under concurrency
 
 **Where:** [`backend/src/utils/invoice.utils.js`](../backend/src/utils/invoice.utils.js)
 
@@ -72,7 +72,7 @@ return `${prefix}-${serial}`;
 
 A second, subtler bug: `new Date(today.setHours(0,0,0,0))` **mutates** `today`, so `prefix` is computed from the date before mutation and the boundary from after. It happens to work because `prefix` is built first — but any reordering of those lines silently breaks day boundaries.
 
-**Fix.** Use a database sequence per day, or wrap generation and insertion in the same transaction with a retry on `P2002`:
+**Fix proposed at review time** (superseded — see the resolution below). Use a database sequence per day, or wrap generation and insertion in the same transaction with a retry on `P2002`:
 
 ```js
 for (let attempt = 0; attempt < 5; attempt++) {
@@ -86,7 +86,16 @@ Stop mutating `today`; derive both values from a single immutable date.
 
 ---
 
-### <a id="g-09"></a>G-09 🔴 Stock check is outside the transaction
+**Resolution (2026-08-18).** Replaced with an atomic per-day counter. A new `InvoiceCounter` table holds one row per business day; the serial comes from a single `INSERT … ON CONFLICT ("day") DO UPDATE SET seq = seq + 1 RETURNING seq` executed **inside the invoice transaction**. Concurrent transactions queue on that row's lock and each receives a distinct value, and because the increment shares the invoice's transaction, a rolled-back sale returns its number instead of leaving a gap in a tax document. The row seeds itself from the invoices already recorded that day, so days written before the counter existed continue where they left off. `today` is no longer mutated. A retry on `P2002` remains as a backstop.
+
+> A retry-only fix was tried first and **failed**: with 12 simultaneous checkouts, four still returned 409 after five attempts each — a count-based allocation livelocks because every retry re-reads the same count. The counter is the fix; the retry is only a safety net.
+
+**Verified** against a throwaway database: 12 concurrent sales on a batch of 10 → 10 created, 2 clean `400 Insufficient stock`, zero 409s; 40 concurrent sales on a batch of 50 → 40 created with gapless `INV260818-0001`…`-0040`; and a day with pre-existing invoices but no counter row continued at `-0041`.
+
+
+---
+
+### <a id="g-09"></a>G-09 ✅ FIXED — Stock check was outside the transaction
 
 **Where:** [`backend/src/controllers/billing.controller.js`](../backend/src/controllers/billing.controller.js), `createInvoice`
 
@@ -114,6 +123,23 @@ if (result.count === 0) throw new InsufficientStockError(item.medicineName);
 ```
 
 `updateMany` with a conditional `where` is atomic; zero affected rows means someone else took the stock, and throwing rolls the whole invoice back. Keep the pre-check for fast, friendly errors, but never rely on it. Add `CHECK (quantity >= 0)` as a backstop.
+
+---
+
+**Resolution (2026-08-18).** The decrement is now its own guard, inside the transaction:
+
+```js
+const { count } = await tx.batch.updateMany({
+  where: { id: item.batchId, quantity: { gte: item.quantity } },
+  data:  { quantity: { decrement: item.quantity } },
+});
+if (count === 0) throw new StockConflictError(/* re-reads the batch for the message */);
+```
+
+Check-and-decrement is a single atomic statement, so the loser of a race matches zero rows and rolls the entire invoice back. `StockConflictError` carries the status code out to the handler, preserving the existing 400/404 messages. The pre-transaction check is kept, now advisory only — it fails fast with a friendly message before any work is done.
+
+**Verified:** 12 concurrent single-unit sales against a batch of 10 leave the batch at exactly `0`, never negative, with 10 successes and 2 rejections. Still worth adding `CHECK (quantity >= 0)` as a database-level backstop (Phase 7.9).
+
 
 ---
 
@@ -307,7 +333,7 @@ Immutability is the right *default* for financial records; the missing piece is 
 
 | Order | Items | Rationale |
 |---|---|---|
-| 1 | [G-09](#g-09), [G-01](#g-01) | Silent data corruption during normal two-counter operation |
+| ~~1~~ | ~~[G-09](#g-09), [G-01](#g-01)~~ | **Done 2026-08-18** — both fixed and verified under concurrency |
 | 2 | [G-07](#g-07) | Financial precision; needs a data migration, so do it before invoice volume grows |
 | 3 | [G-05](#g-05), [G-11](#g-11), [G-06](#g-06) | Open write paths and an ineffective limiter |
 | 4 | [G-02](#g-02) | Blocks the documented deployment topology |
