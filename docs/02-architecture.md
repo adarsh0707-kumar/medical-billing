@@ -86,9 +86,12 @@ Start order is enforced: `backend` waits for Postgres to pass `pg_isready`; `fro
 
 ```
 backend/src/
-├── index.js                     Express bootstrap: helmet → compression → morgan → CORS
-│                                → json/urlencoded → rate limit (/api) → /health → routers
-│                                → notFound → errorHandler
+├── index.js                     Binds the port. Nothing else.
+├── app.js                       createApp() factory — helmet → compression → morgan → CORS
+│                                → json/urlencoded → rate limit (/api) → login limiter
+│                                → /health → routers → notFound → errorHandler.
+│                                A factory so tests mount the real stack without listening,
+│                                and can dial rate limits down to exercise them.
 ├── config/
 │   ├── db.js                    PrismaClient singleton; exits the process if connect fails
 │   └── redis.js                 Redis client; connects, logs, never throws — imported by nothing
@@ -105,6 +108,14 @@ backend/src/
     ├── jwt.utils.js             generateToken (7d) · generateRefreshToken (30d, unused)
     ├── invoice.utils.js         generateInvoiceNumber() · generatePurchaseNumber() (unused)
     └── seed.js                  Creates admin@medstore.com / admin123
+
+backend/tests/                   278 tests — Vitest + Supertest against real PostgreSQL
+├── setup/                       Database-name guard, migrations, per-test cleanup
+├── helpers/factory.js           buildApp(), signed-in users by role, inventory fixtures
+├── auth/                        Login, tokens, RBAC matrix, rate limiting
+├── billing/                     GST fixtures, concurrency, reports, customers
+├── inventory/                   Medicines, batches, master data
+└── users/                       User administration
 ```
 
 ### Router mounting — the real map

@@ -4,12 +4,13 @@
   "description": "Backend for medical billing systems",
   "license": "ISC",
   "author": "Adarsh Kumar",
-
   "main": "index.js",
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "seed": "node src/utils/seed.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
@@ -30,7 +31,10 @@
     "zod": "^3.22.4"
   },
   "devDependencies": {
+    "@vitest/coverage-v8": "^4.1.11",
     "nodemon": "^3.1.14",
-    "prisma": "^5.10.0"
+    "prisma": "^5.10.0",
+    "supertest": "^7.2.2",
+    "vitest": "^4.1.11"
   }
 }

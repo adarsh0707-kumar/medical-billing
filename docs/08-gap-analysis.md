@@ -20,7 +20,7 @@ The root `README.md`, `backend/README.md`, `frontend/README.md` and `nginx/READM
 | D-3 | Error responses are `{ success, error, statusCode }` | root README | Actual shape is `{ success, message }` (+ `errors[]` on validation) |
 | D-4 | JWT is stored in an HTTP-only cookie | backend README | Stored in `localStorage`, sent as a `Bearer` header |
 | D-5 | Frontend runs on port 3000 | root README | Compose maps **5173** |
-| D-6 | `npm test`, `npm run test:coverage`, `npm run test:watch`, `npm run lint`, `npm run format` for the backend | backend + root README | Only `test` exists and it exits 1. No lint or format script |
+| D-6 | `npm test`, `npm run test:coverage`, `npm run test:watch`, `npm run lint`, `npm run format` for the backend | backend + root README | ~~Only `test` exists and it exits 1~~ — the three test scripts are real as of 2026-08-19. There is still no backend lint or format script |
 | D-7 | `express-validator` is a dependency | backend README | The project uses **Zod** |
 | D-8 | Redis caches frequently accessed data | root + backend README | The client connects and is imported by **nothing** ([G-03](#g-03)) |
 | D-9 | Pagination, indexing and connection pooling are performance features | backend README | Pagination exists on 3 of 8 list endpoints; **no custom indexes exist**; pooling is Prisma's default |
@@ -53,7 +53,7 @@ Severity: 🔴 causes data corruption or a security exposure · 🟠 causes inco
 | [G-03](#g-03) | 🟡 | Redis is a dead dependency |
 | [G-08](#g-08) | 🟡 | Sales trend costs 7 HTTP round trips |
 | [G-13](#g-13) | 🟡 | Dead code: 4 empty route files, unused utils, empty nginx.conf |
-| [G-14](#g-14) | 🟡 | No automated tests |
+| [G-14](#g-14) | ✅ Fixed | No automated tests |
 | [G-15](#g-15) | 🟡 | Invoices are immutable with no correction path |
 
 ---
@@ -403,13 +403,38 @@ The empty route files are actively misleading — a reader reasonably assumes `r
 
 ---
 
-### <a id="g-14"></a>G-14 🟡 No automated tests
+### <a id="g-14"></a>G-14 ✅ FIXED — There were no automated tests
 
 **Problem.** Zero test files. `backend/package.json` has `"test": "echo \"Error: no test specified\" && exit 1"`; the frontend has no test script at all. The GST engine — the most consequential logic in the product — has never been asserted against a fixture. There is no CI configuration.
 
 Every fix in [Phase 7](./05-roadmap-and-phases.md#phase-7--correctness--data-integrity) changes financial code paths. Without tests, those changes are unverifiable.
 
 **Fix.** [Phase 9](./05-roadmap-and-phases.md#phase-9--test--ci-foundation); acceptance fixtures in [09 — Testing Strategy](./09-testing-strategy.md).
+
+---
+
+**Resolution (2026-08-19).** A backend suite of **278 tests across 11 files**, run by Vitest with Supertest against a real PostgreSQL database, plus a GitHub Actions workflow.
+
+`src/index.js` was split into `src/app.js` (a `createApp()` factory) and `src/index.js` (bind a port), so tests mount the real middleware stack without listening, and can build an app with small rate limits to exercise the limiter deliberately.
+
+What it covers:
+
+| Area | Notes |
+|---|---|
+| GST engine | All seven fixtures from [09 §4](./09-testing-strategy.md#4-gst-engine-fixtures), plus the reconciliation invariants on four rate/discount combinations |
+| Concurrency | The [G-09](#g-09) and [G-01](#g-01) regressions: last-unit races, a 12-way oversell burst, 20 simultaneous sales taking gapless serials, and serial reuse after a rollback |
+| Auth | Login, identical answers for unknown/wrong/disabled, token rejection cases, immediate revocation on deactivation, password change |
+| RBAC | The whole matrix from [04 §4](./04-api-reference.md#4-role-matrix) — 142 table-driven assertions, plus every route rejecting an anonymous caller |
+| Validation | Boundary cases per schema, and a named regression guard for each of [G-04](#g-04), [G-05](#g-05), [G-10](#g-10), [G-11](#g-11), [G-12](#g-12) |
+| Reports | Daily and monthly boundaries to the second, paid-only filtering, totals reconciling with the rows returned |
+| Rate limiting | [G-06](#g-06): the failed-login budget, per-forwarded-IP isolation, and successful sign-ins not counting |
+
+Two safety properties of the harness are worth knowing. The database is wiped between tests, so `global-setup.js` **refuses to run unless the database name ends in `_test`** — pointing it at a dev database is a hard error, not a data-loss incident. And cleanup uses `DELETE` rather than `TRUNCATE`, which at fixture scale cut the suite from 52s to **21s**.
+
+Coverage is 87% overall, with a CI gate at 90% on `billing.controller.js` (94%) and `auth.middleware.js` (96%) — the two files where a regression is a financial or security incident rather than a bug.
+
+**Still open:** the Playwright browser smoke test (9.6) and frontend unit tests (9.5). The backend, where all the money and stock logic lives, is covered.
+
 
 ---
 
@@ -432,6 +457,6 @@ Immutability is the right *default* for financial records; the missing piece is 
 | ~~3~~ | ~~[G-05](#g-05), [G-11](#g-11), [G-06](#g-06)~~ | **Done 2026-08-19** — write paths validated, limiter per-client with a login-specific budget |
 | ~~4~~ | ~~[G-02](#g-02)~~ | **Done 2026-08-19** — both entry points same-origin through a proxy |
 | ~~5~~ | ~~[G-10](#g-10), [G-04](#g-04), [G-12](#g-12)~~ | **Done 2026-08-19** — stock totals correct, manufacture dates recordable, delete conflicts explained |
-| 6 | [G-14](#g-14) | Required to keep 1–5 fixed |
+| ~~6~~ | ~~[G-14](#g-14)~~ | **Done 2026-08-19** — 278 tests, CI, and a coverage gate on the money and auth paths |
 | 7 | [G-08](#g-08), [G-03](#g-03), [G-13](#g-13), [G-15](#g-15) | Performance, dead weight, operational usability |
 | 8 | Part A (docs) | Trim the READMEs to point at `docs/` |

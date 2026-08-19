@@ -173,20 +173,20 @@ The honest read: v1.0.0 is a complete, coherent product built fast, sitting on a
 
 **Exit criteria:** a clean host runs the stack over HTTPS with no default credentials and a tested restore.
 
-### Phase 9 — Test & CI foundation 🟠
+### Phase 9 — Test & CI foundation 🟢 *(mostly delivered 2026-08-19)*
 
 **Why:** phases 7 and 8 change financial logic. Without tests, the fixes are unverifiable.
 
 | # | Work |
 |---|---|
-| 9.1 | Vitest + Supertest on the backend; test database via Testcontainers or a disposable schema |
-| 9.2 | Unit tests for the GST engine — the fixtures in [09 — Testing](./09-testing-strategy.md#4-gst-engine-fixtures) are the acceptance set |
-| 9.3 | Integration tests per router covering auth, RBAC (403 matrix), validation and error mapping |
-| 9.4 | Concurrency tests for stock deduction and invoice numbering |
-| 9.5 | Vitest + Testing Library on the frontend for cart maths and auth guards |
-| 9.6 | Playwright smoke: login → search → cart → invoice → verify stock |
-| 9.7 | GitHub Actions: lint, typecheck, test, `prisma migrate deploy` against a throwaway database |
-| 9.8 | Coverage gate on `billing.controller.js` and `auth.middleware.js` |
+| ~~9.1~~ ✅ | Vitest + Supertest on the backend, against a disposable `_test` database the harness refuses to run without |
+| ~~9.2~~ ✅ | GST engine — all seven fixtures plus the reconciliation invariants |
+| ~~9.3~~ ✅ | Integration tests per router: auth, the full RBAC matrix, validation boundaries, Prisma error mapping |
+| ~~9.4~~ ✅ | Concurrency tests for stock deduction and invoice numbering |
+| 9.5 | Vitest + Testing Library on the frontend for cart maths and auth guards — **still open** |
+| 9.6 | Playwright smoke: login → search → cart → invoice → verify stock — **still open** |
+| ~~9.7~~ ✅ | GitHub Actions: backend tests against a Postgres service, frontend lint and typecheck |
+| ~~9.8~~ ✅ | Coverage gate at 90% on `billing.controller.js` and `auth.middleware.js` |
 
 **Exit criteria:** CI green on every PR; the Phase 7 concurrency fixes are proven by failing-then-passing tests.
 

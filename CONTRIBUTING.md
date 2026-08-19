@@ -171,24 +171,28 @@ docker compose exec backend npx prisma generate
 
 ## Testing
 
-**There is no automated test suite yet.** `npm test` in `backend/` exits 1, the frontend has no test script, and there is no CI. This is the single largest gap in the project ([G-14](./docs/08-gap-analysis.md#g-14), [Phase 9](./docs/05-roadmap-and-phases.md#phase-9--test--ci-foundation)).
+The backend has a Vitest + Supertest suite that runs against a real PostgreSQL database. CI runs it on every push and pull request.
 
-Until that lands:
+```bash
+docker compose exec \
+  -e DATABASE_URL='postgresql://medadmin:medpass123@postgres:5432/medicaldb_test' \
+  backend npm test
 
-- Run the manual QA checklist in [`docs/09-testing-strategy.md`](./docs/09-testing-strategy.md#7-manual-qa-checklist) for anything touching billing, stock or auth.
-- Verify against a **throwaway database**, never your dev data:
+# or: npm run test:watch  /  npm run test:coverage
+```
 
-  ```bash
-  docker compose exec postgres psql -U medadmin -d postgres -c 'CREATE DATABASE scratch;'
-  docker compose exec -e DATABASE_URL='postgresql://medadmin:medpass123@postgres:5432/scratch' \
-    backend npx prisma migrate deploy
-  # run a second API against it on another port, exercise it, then drop the database
-  ```
+**`DATABASE_URL` must name a database ending in `_test`.** The suite empties every table between tests, so it refuses to start against anything else. That guard is the only thing standing between a mistyped variable and your dev data — don't remove it.
 
-  If you do this, make sure only **one** API process is serving that port — a stale instance from an earlier run will happily serve old code and send you chasing a phantom failure.
-- State in the PR what you ran and what you saw.
+### Writing tests
 
-**If you want to make the biggest single contribution to this project, build the test suite.** [`docs/09-testing-strategy.md`](./docs/09-testing-strategy.md) specifies the tooling, the priority order, the GST fixtures with expected values, and a CI workflow. It is ready to implement.
+- Use `tests/helpers/factory.js`: `buildApp()`, `signIn(app, "CASHIER")`, `makeSellable()`, `line()`. Rate limits are effectively off by default, so a test asserting a `401` never fails because an earlier test spent the budget.
+- Put a **named regression guard** on any bug you fix, and say in a comment which one it guards. Several existing tests reference their `G-nn` — that's what stops a fix from quietly coming undone.
+- Anything touching money asserts the invariants, not just the total: `cgst === sgst`, `subtotal + cgst + sgst − discountAmt === totalAmount`, and Σ line totals matching the header.
+- Concurrency bugs need concurrent tests. `Promise.all` over a burst of requests is how the stock and numbering races are pinned down.
+
+### What's still missing
+
+Frontend unit tests and a Playwright browser smoke test. [`docs/09-testing-strategy.md`](./docs/09-testing-strategy.md) specifies both, and they're good first contributions. Until they exist, run the [manual QA checklist](./docs/09-testing-strategy.md#7-manual-qa-checklist) for UI changes and say in the PR what you saw.
 
 ---
 
@@ -221,6 +225,7 @@ Scopes in use: `billing`, `inventory`, `auth`, `api`, `frontend`, `docs`, `chore
 
 ### Checklist
 
+- [ ] `npm test` passes in `backend/`
 - [ ] `npm run lint` passes in `frontend/`
 - [ ] `npm run build` passes in `frontend/` — `tsc -b` catches type errors lint won't
 - [ ] Schema changes ship with a migration

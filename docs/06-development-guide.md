@@ -132,7 +132,9 @@ All `.env` files are gitignored. Never commit one.
 | `npm run prisma:generate` | Regenerate the Prisma client (after any schema edit)                                                        |
 | `npm run prisma:migrate`  | `prisma migrate dev` — author and apply a migration                                                      |
 | `npm run prisma:studio`   | Database browser on :5555                                                                                   |
-| `npm test`                | ⚠️ Exits 1 —**no tests exist** ([Phase 9](./05-roadmap-and-phases.md#phase-9--test--ci-foundation)) |
+| `npm test`                | Run the suite. **Requires a `DATABASE_URL` whose database name ends in `_test`** — the harness refuses anything else, because it wipes tables between tests |
+| `npm run test:watch`      | Same, in watch mode |
+| `npm run test:coverage`   | With a coverage report and the 90% gate on the invoice and auth paths |
 
 ### Frontend (`cd frontend`)
 

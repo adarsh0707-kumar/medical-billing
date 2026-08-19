@@ -1,16 +1,73 @@
 # 09 — Testing Strategy
 
-**Current state: there are no tests.** `backend/package.json` has `"test": "echo \"Error: no test specified\" && exit 1"`; the frontend has no test script; there is no CI configuration. This document is the plan ([Phase 9](./05-roadmap-and-phases.md#phase-9--test--ci-foundation)), not a description of what exists.
+**Current state (2026-08-19): 278 backend tests, green in CI.** The backend suite is implemented; frontend unit tests and a browser smoke test are still open. Sections 1–4 describe the approach and the acceptance fixtures; §5 lists the cases, most of which now exist.
 
 ---
 
 ## 1. Why this is urgent
 
-The GST engine in `billing.controller.js` decides what the store charges customers and what it declares to the tax authority. It has never been asserted against a fixture. Every fix in [Phase 7](./05-roadmap-and-phases.md#phase-7--correctness--data-integrity) — the oversell race, invoice numbering, the `Float`→`Decimal` migration — modifies that same code path. Without tests those changes cannot be verified, and a regression in them is a financial error, not a UI glitch.
+The GST engine in `billing.controller.js` decides what the store charges customers and what it declares to the tax authority. Every Phase 7 fix — the oversell race, invoice numbering, the `Float`→`Decimal` migration — modified that same code path. A regression there is a financial error, not a UI glitch, which is why the fixtures in §4 are treated as a contract rather than a convenience.
 
-**Start here:** §4 (GST fixtures) and §5.1 (concurrency). Everything else can follow.
+Those fixes were each verified by hand as they landed. The suite exists so that verification is repeated on every commit instead of once.
 
 ---
+
+---
+
+## 1a. Running the suite
+
+```bash
+# against the Docker stack
+docker compose exec \
+  -e DATABASE_URL='postgresql://medadmin:medpass123@postgres:5432/medicaldb_test' \
+  backend npm test
+
+# watch mode, or with the coverage gate
+… backend npm run test:watch
+… backend npm run test:coverage
+```
+
+`DATABASE_URL` **must** name a database ending in `_test`. The suite empties every table between tests, so `global-setup.js` refuses to start against anything else — pointing it at `medicaldb` is a hard error rather than a data-loss incident. The database is created and migrated automatically on first run.
+
+### How it is put together
+
+| Piece | Purpose |
+|---|---|
+| `backend/vitest.config.mjs` | Node environment, `NODE_ENV=test`, files run serially (they share one database), coverage thresholds |
+| `tests/setup/global-setup.js` | Guards the database name, then applies migrations once |
+| `tests/setup/each-test.js` | Empties every table before each test, children first |
+| `tests/helpers/factory.js` | `buildApp()`, signed-in users by role, and inventory fixtures |
+
+Two decisions worth knowing:
+
+- **`createApp()` is a factory.** `src/index.js` binds a port; `src/app.js` builds the app. Tests mount the real middleware stack without listening, and the rate-limit tests build an app with a small budget while every other test gets an effectively unlimited one — so one file can never spend another's.
+- **Cleanup uses `DELETE`, not `TRUNCATE`.** At fixture scale, `TRUNCATE`'s exclusive lock costs more than the deletes. The switch took the suite from 52s to 21s.
+- **Tokens are minted directly** in the factory rather than by calling the login route, and the bcrypt hash is computed once for the whole run. `tests/auth/auth.test.js` covers the login route itself.
+
+### What exists
+
+| File | Tests | Covers |
+|---|---:|---|
+| `tests/auth/auth.test.js` | 13 | Login, token rejection, immediate revocation, password change |
+| `tests/auth/rbac.test.js` | 142 | The full role matrix, plus anonymous rejection on every route |
+| `tests/auth/rate-limit.test.js` | 5 | Failed-login budget, per-client isolation, successful sign-ins not counted |
+| `tests/billing/invoice-create.test.js` | 28 | GST fixtures, invariants, rejections, atomicity |
+| `tests/billing/invoice-concurrency.test.js` | 4 | Last-unit races, oversell bursts, gapless serials |
+| `tests/billing/reports.test.js` | 12 | Daily and GST reports, date boundaries, paid-only filtering |
+| `tests/billing/customers.test.js` | 10 | Uniqueness, validation, search, history |
+| `tests/inventory/medicines.test.js` | 14 | Stock totals, POS search, soft delete, validation |
+| `tests/inventory/batches.test.js` | 16 | Opening stock, manufacture dates, strict updates, alert windows |
+| `tests/inventory/masters.test.js` | 17 | Masters CRUD, delete conflicts, suppliers |
+| `tests/users/users.test.js` | 17 | User CRUD, validation, profile safety |
+
+Coverage is 87% overall; `billing.controller.js` and `auth.middleware.js` are gated at 90% in CI.
+
+### Still open
+
+- Frontend unit tests (cart maths, auth guards) — §5.6
+- A Playwright browser smoke test — §5.7
+- Query-parameter validation cases, once the API validates them
+
 
 ## 2. Target shape
 

@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    name: Backend tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          # The suite refuses to run unless the database name ends in _test.
+          POSTGRES_DB: medicaldb_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://test:test@localhost:5432/medicaldb_test
+      JWT_SECRET: ci-only-secret-not-used-anywhere-real
+      NODE_ENV: test
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - run: npm ci
+      - run: npx prisma generate
+
+      # The suite's global setup applies migrations itself; running it here too
+      # keeps a schema failure separate from a test failure in the log.
+      - run: npx prisma migrate deploy
+
+      # Coverage rather than plain `npm test`: the config gates the invoice
+      # controller and the auth middleware at 90%.
+      - run: npm run test:coverage
+
+  frontend:
+    name: Frontend lint and build
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci --legacy-peer-deps
+      - run: npm run lint
+
+      # tsc -b runs as part of the build and catches type errors lint does not.
+      - run: npm run build
