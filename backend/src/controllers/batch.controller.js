@@ -106,6 +106,7 @@ const update = async (req, res, next) => {
         ...(req.body.expiryDate && {
           expiryDate: new Date(req.body.expiryDate),
         }),
+        ...(req.body.mfgDate && { mfgDate: new Date(req.body.mfgDate) }),
       },
     });
     res.json({ success: true, message: "Batch updated", data: batch });

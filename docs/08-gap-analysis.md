@@ -46,10 +46,10 @@ Severity: 🔴 causes data corruption or a security exposure · 🟠 causes inco
 | [G-02](#g-02) | ✅ Fixed | Nginx entry point is unusable — origin missing from the CORS allowlist |
 | [G-05](#g-05) | ✅ Fixed | `PUT /api/inventory/batches/:id` accepts arbitrary fields |
 | [G-06](#g-06) | ✅ Fixed | Rate limiter is global, not per-client, behind the proxy |
-| [G-04](#g-04) | 🟠 | `mfgDate` can never be saved |
-| [G-10](#g-10) | 🟠 | `totalStock` reports one batch, not all |
+| [G-04](#g-04) | ✅ Fixed | `mfgDate` can never be saved |
+| [G-10](#g-10) | ✅ Fixed | `totalStock` reports one batch, not all |
 | [G-11](#g-11) | ✅ Fixed | User-management routes are unvalidated |
-| [G-12](#g-12) | 🟠 | FK violations surface as 500 |
+| [G-12](#g-12) | ✅ Fixed | FK violations surface as 500 |
 | [G-03](#g-03) | 🟡 | Redis is a dead dependency |
 | [G-08](#g-08) | 🟡 | Sales trend costs 7 HTTP round trips |
 | [G-13](#g-13) | 🟡 | Dead code: 4 empty route files, unused utils, empty nginx.conf |
@@ -254,7 +254,7 @@ A dedicated limiter now guards `POST /api/auth/login` at 10 attempts per 15 minu
 
 ---
 
-### <a id="g-04"></a>G-04 🟠 `mfgDate` can never be saved
+### <a id="g-04"></a>G-04 ✅ FIXED — `mfgDate` could never be saved
 
 **Where:** `inventory.validator.js` (`batchSchema`) vs `batch.controller.js#create`
 
@@ -266,7 +266,14 @@ This is the canonical example of the [AD-09](./02-architecture.md#9-architecture
 
 ---
 
-### <a id="g-10"></a>G-10 🟠 `totalStock` reports only one batch
+**Resolution (2026-08-19).** `mfgDate` added to `batchSchema` and to `batchUpdateSchema`, the batch update controller now coerces it to a `Date` the way create already did, and the Inventory batch form gained a **Mfg Date** input (optional, capped at the chosen expiry date). A cross-field rule rejects a manufacture date on or after the expiry date, reported against the `mfgDate` field.
+
+**Verified:** a batch created with `mfgDate` persists it instead of storing `null`; `mfgDate` after `expiryDate` is rejected with `400` and a field-level error; and the value is editable through `PUT /batches/:id` and stored as a real `Date`.
+
+
+---
+
+### <a id="g-10"></a>G-10 ✅ FIXED — `totalStock` reported only one batch
 
 **Where:** `medicine.controller.js#getAll`
 
@@ -288,6 +295,13 @@ const stock = await prisma.batch.groupBy({
 ```
 
 …or include all batches and keep `take: 1` only for the `nearestExpiry`/`sellingPrice` derivation. Rename the field if the intent really is "sellable-now stock".
+
+---
+
+**Resolution (2026-08-19).** Stock is now summed in its own `groupBy` over every in-stock batch of the listed medicines, keyed back onto each row. The `take: 1` include stays, because that batch is genuinely useful — it is the FEFO batch the POS would sell next, and therefore the right source for `nearestExpiry` and `sellingPrice`. The query is skipped when the page is empty.
+
+**Verified:** a medicine with batches of 20, 150 and 300 now reports `totalStock: 470` (previously `20`), while `nearestExpiry` and `sellingPrice` still come from the earliest-expiring batch.
+
 
 ---
 
@@ -317,7 +331,7 @@ Password rules are length-only; complexity and breach checks need an external se
 
 ---
 
-### <a id="g-12"></a>G-12 🟠 Foreign-key violations surface as 500
+### <a id="g-12"></a>G-12 ✅ FIXED — Foreign-key violations surfaced as 500
 
 **Where:** `error.middleware.js`
 
@@ -336,6 +350,15 @@ if (err.code === "P2003") {
 ```
 
 Consider soft-deleting suppliers the way medicines are soft-deleted, since batches keep referencing them forever.
+
+---
+
+**Resolution (2026-08-19).** `errorHandler` now maps Prisma `P2003` to `409` with `This record is still in use by other data and cannot be deleted.` and the offending field, alongside the existing `P2002` and `P2025` mappings.
+
+**Verified:** deleting a category that still has medicines returns `409` with that message rather than an opaque `500`; the same for a supplier that still has batches; and deleting an unused category still returns `200`.
+
+Soft-deleting suppliers the way medicines are soft-deleted remains worth considering, since batches reference them permanently.
+
 
 ---
 
@@ -408,7 +431,7 @@ Immutability is the right *default* for financial records; the missing piece is 
 | ~~2~~ | ~~[G-07](#g-07)~~ | **Done 2026-08-19** — money is `DECIMAL(12,2)`, arithmetic is `Prisma.Decimal`, invoices reconcile exactly |
 | ~~3~~ | ~~[G-05](#g-05), [G-11](#g-11), [G-06](#g-06)~~ | **Done 2026-08-19** — write paths validated, limiter per-client with a login-specific budget |
 | ~~4~~ | ~~[G-02](#g-02)~~ | **Done 2026-08-19** — both entry points same-origin through a proxy |
-| 5 | [G-10](#g-10), [G-04](#g-04), [G-12](#g-12) | Wrong or missing data shown to staff |
+| ~~5~~ | ~~[G-10](#g-10), [G-04](#g-04), [G-12](#g-12)~~ | **Done 2026-08-19** — stock totals correct, manufacture dates recordable, delete conflicts explained |
 | 6 | [G-14](#g-14) | Required to keep 1–5 fixed |
 | 7 | [G-08](#g-08), [G-03](#g-03), [G-13](#g-13), [G-15](#g-15) | Performance, dead weight, operational usability |
 | 8 | Part A (docs) | Trim the READMEs to point at `docs/` |

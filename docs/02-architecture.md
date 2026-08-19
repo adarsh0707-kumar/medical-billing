@@ -95,7 +95,7 @@ backend/src/
 ├── middlewares/
 │   ├── auth.middleware.js       protect() verifies JWT + reloads user; authorize(...roles) RBAC
 │   ├── validate.middleware.js   validate(zodSchema) — parses, replaces req.body, 400 on failure
-│   └── error.middleware.js      notFound() + errorHandler() incl. Prisma P2002/P2025 mapping
+│   └── error.middleware.js      notFound() + errorHandler() incl. Prisma P2002/P2003/P2025
 ├── validators/                  Zod schemas — billing.validator.js, inventory.validator.js
 ├── routes/                      auth · inventory · billing · user   (4 mounted)
 │                                customer · medicine · report · supplier  (4 EMPTY FILES)
@@ -272,7 +272,7 @@ The last two fetch one row purely to read a count — cheap, but a dedicated `/s
 | Authentication | JWT HS256, `Authorization: Bearer`, 7-day expiry, per-request DB reload | `auth.middleware.js` |
 | Authorisation | `authorize(...roles)` → 403 with the required role named | `auth.middleware.js` |
 | Validation | Zod `safeParse`; on success `req.body` is **replaced** by parsed data (unknown keys dropped) | `validate.middleware.js` |
-| Error handling | Central `errorHandler`; maps Prisma `P2002` → 409 (with offending field) and `P2025` → 404; stack included only when `NODE_ENV=development` | `error.middleware.js` |
+| Error handling | Central `errorHandler`; maps Prisma `P2002` → 409 (duplicate, with offending field), `P2003` → 409 (still referenced) and `P2025` → 404; stack included only when `NODE_ENV=development` | `error.middleware.js` |
 | 404 routing | `notFound` builds `Route not found: <url>` and delegates | `error.middleware.js` |
 | Logging | `morgan("dev")` to stdout; Prisma logs queries in development | `index.js`, `config/db.js` |
 | Rate limiting | 500 requests / 15 min, `/api` prefix only | `index.js` |

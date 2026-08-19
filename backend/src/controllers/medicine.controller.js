@@ -36,10 +36,28 @@ const getAll = async (req, res, next) => {
       prisma.medicine.count({ where }),
     ]);
 
-    // Add total stock to each medicine
+    // Stock is summed in its own query. The included `batches` array is capped
+    // at the nearest-expiry batch — reducing over it reported that one batch's
+    // quantity as the medicine's total, understating anything multi-batch.
+    const stockByMedicine = medicines.length
+      ? await prisma.batch.groupBy({
+          by: ["medicineId"],
+          where: {
+            medicineId: { in: medicines.map((m) => m.id) },
+            quantity: { gt: 0 },
+          },
+          _sum: { quantity: true },
+        })
+      : [];
+    const totalStock = new Map(
+      stockByMedicine.map((row) => [row.medicineId, row._sum.quantity ?? 0]),
+    );
+
+    // The single included batch is the FEFO one — what the POS would sell next,
+    // and therefore the price and expiry worth showing.
     const result = medicines.map((m) => ({
       ...m,
-      totalStock: m.batches.reduce((sum, b) => sum + b.quantity, 0),
+      totalStock: totalStock.get(m.id) ?? 0,
       nearestExpiry: m.batches[0]?.expiryDate || null,
       sellingPrice: m.batches[0]?.sellingPrice || 0,
     }));

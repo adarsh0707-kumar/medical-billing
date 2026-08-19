@@ -180,7 +180,7 @@ Relations: `category`, `manufacturer`, `batches Batch[]`.
 **No unique constraint on `name`.** Two medicines with the same brand name from different manufacturers are legal — and intended.
 
 **Derived fields** returned by `GET /api/inventory/medicines` but *not stored*:
-- `totalStock` — summed from the returned batches. ⚠️ The query includes only `take: 1` batch, so this equals the nearest-expiry batch's quantity, **not** true total stock across batches. See [G-10](./08-gap-analysis.md#g-10).
+- `totalStock` — true stock across every in-stock batch, from a separate `groupBy` ([G-10](./08-gap-analysis.md#g-10)).
 - `nearestExpiry` — expiry of that batch.
 - `sellingPrice` — selling price of that batch, `0` when no stock exists.
 
@@ -192,7 +192,7 @@ Relations: `category`, `manufacturer`, `batches Batch[]`.
 | `medicineId` | String | FK → Medicine | |
 | `batchNumber` | String | required | Printed on the manufacturer's pack |
 | `expiryDate` | DateTime | required | Drives FEFO ordering and alerts |
-| `mfgDate` | DateTime? | optional | Added by migration `20260419152932_add_mfgdate`; **always null in practice** — [G-04](./08-gap-analysis.md#g-04) |
+| `mfgDate` | DateTime? | optional, must precede `expiryDate` | Added by migration `20260419152932_add_mfgdate`; recordable since 2026-08-19 — [G-04](./08-gap-analysis.md#g-04) |
 | `purchasePrice` | Decimal(12,2) | > 0 | Cost. Never exposed at POS |
 | `sellingPrice` | Decimal(12,2) | > 0 | Pre-GST price used as the POS unit price |
 | `quantity` | Int | > 0 at creation | **Live stock.** Decremented per sale |
@@ -414,10 +414,10 @@ Idempotent (`upsert` on email). **Change this password immediately on any non-lo
 | # | Issue | Impact | Detail |
 |---|-------|--------|--------|
 | ~~1~~ | ~~Money stored as `Float`~~ | Fixed 2026-08-19 — now `DECIMAL(12,2)`. Historical rows keep the value they printed, so a pre-migration invoice can still be a paisa off its own components | [G-07](./08-gap-analysis.md#g-07) |
-| 2 | `mfgDate` unreachable | Column always null | [G-04](./08-gap-analysis.md#g-04) |
+| ~~2~~ | ~~`mfgDate` unreachable~~ | Fixed 2026-08-19. Rows created before then still hold `null` | [G-04](./08-gap-analysis.md#g-04) |
 | 3 | `Purchase`/`PurchaseItem` unused | Dead schema; misleading supplier response | [FR-PUR](./01-product-requirements.md#611-purchases--fr-pur) |
 | 4 | No `updatedAt` on `Batch`, `Customer`, `Supplier`, `Invoice` | Cannot tell when a record last changed | — |
 | 5 | No audit table | Price and stock edits are untraceable | NFR-17 |
 | 6 | `Medicine.unit` is a free string in the DB | Direct DB writes can bypass the Zod allowlist | Consider a Postgres enum |
 | 7 | No `CHECK (quantity >= 0)` | Oversell can persist a negative stock level | I-1 |
-| 8 | `totalStock` computed from one batch | Understates stock for multi-batch medicines | [G-10](./08-gap-analysis.md#g-10) |
+| ~~8~~ | ~~`totalStock` computed from one batch~~ | Fixed 2026-08-19 — summed with a `groupBy` | [G-10](./08-gap-analysis.md#g-10) |

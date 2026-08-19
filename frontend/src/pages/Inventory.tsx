@@ -78,6 +78,7 @@ interface Batch {
   id: string;
   batchNumber: string;
   expiryDate: string;
+  mfgDate?: string | null;
   purchasePrice: number;
   sellingPrice: number;
   quantity: number;
@@ -642,6 +643,7 @@ function BatchesTab() {
     supplierId: "",
     batchNumber: "",
     expiryDate: "",
+    mfgDate: "",
     purchasePrice: "",
     sellingPrice: "",
     quantity: "",
@@ -696,6 +698,7 @@ function BatchesTab() {
         supplierId: form.supplierId,
         batchNumber: form.batchNumber,
         expiryDate: form.expiryDate,
+        ...(form.mfgDate ? { mfgDate: form.mfgDate } : {}),
         purchasePrice: Number(form.purchasePrice),
         sellingPrice: Number(form.sellingPrice),
         quantity: Number(form.quantity),
@@ -708,6 +711,7 @@ function BatchesTab() {
         supplierId: "",
         batchNumber: "",
         expiryDate: "",
+        mfgDate: "",
         purchasePrice: "",
         sellingPrice: "",
         quantity: "",
@@ -975,6 +979,15 @@ function BatchesTab() {
                     setForm({ ...form, expiryDate: e.target.value })
                   }
                   required
+                  className={inputCls}
+                />
+              </Field>
+              <Field label="Mfg Date">
+                <Input
+                  type="date"
+                  value={form.mfgDate}
+                  onChange={(e) => setForm({ ...form, mfgDate: e.target.value })}
+                  max={form.expiryDate || undefined}
                   className={inputCls}
                 />
               </Field>

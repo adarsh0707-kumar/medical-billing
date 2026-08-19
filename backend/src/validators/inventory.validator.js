@@ -31,17 +31,32 @@ const medicineSchema = z.object({
   isScheduledH: z.boolean().default(false),
 });
 
-const batchSchema = z.object({
-  medicineId: z.string().min(1, "Medicine is required"),
-  batchNumber: z.string().min(1, "Batch number is required"),
-  expiryDate: z
-    .string()
-    .refine((d) => !isNaN(Date.parse(d)), "Invalid expiry date"),
-  purchasePrice: z.number().positive("Purchase price must be positive"),
-  sellingPrice: z.number().positive("Selling price must be positive"),
-  quantity: z.number().int().positive("Quantity must be positive"),
-  supplierId: z.string().min(1, "Supplier is required"),
-});
+// A batch cannot have been made after it expires. Applied wherever both dates
+// are present, so a partial update is still checked.
+const datesInOrder = (b) =>
+  !b.mfgDate || !b.expiryDate || Date.parse(b.mfgDate) < Date.parse(b.expiryDate);
+const dateOrderError = {
+  message: "Manufacture date must be before the expiry date",
+  path: ["mfgDate"],
+};
+
+const batchSchema = z
+  .object({
+    medicineId: z.string().min(1, "Medicine is required"),
+    batchNumber: z.string().min(1, "Batch number is required"),
+    expiryDate: z
+      .string()
+      .refine((d) => !isNaN(Date.parse(d)), "Invalid expiry date"),
+    mfgDate: z
+      .string()
+      .refine((d) => !isNaN(Date.parse(d)), "Invalid manufacture date")
+      .optional(),
+    purchasePrice: z.number().positive("Purchase price must be positive"),
+    sellingPrice: z.number().positive("Selling price must be positive"),
+    quantity: z.number().int().positive("Quantity must be positive"),
+    supplierId: z.string().min(1, "Supplier is required"),
+  })
+  .refine(datesInOrder, dateOrderError);
 
 // PUT /batches/:id. Deliberately narrow: stock quantity is NOT editable here.
 // Rewriting it silently bypasses every stock-accounting path and leaves no
@@ -58,10 +73,15 @@ const batchUpdateSchema = z
       .string()
       .refine((d) => !isNaN(Date.parse(d)), "Invalid expiry date")
       .optional(),
+    mfgDate: z
+      .string()
+      .refine((d) => !isNaN(Date.parse(d)), "Invalid manufacture date")
+      .optional(),
     purchasePrice: z.number().positive("Purchase price must be positive").optional(),
     sellingPrice: z.number().positive("Selling price must be positive").optional(),
   })
-  .strict();
+  .strict()
+  .refine(datesInOrder, dateOrderError);
 
 const supplierSchema = z.object({
   name: z.string().min(2, "Supplier name is required"),

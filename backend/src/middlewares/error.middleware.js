@@ -16,6 +16,17 @@ const errorHandler = (err, req, res, next) => {
     });
   }
 
+  // Deleting a record something else still points at: a conflict the caller can
+  // act on, not a server fault.
+  if (err.code === "P2003") {
+    return res.status(409).json({
+      success: false,
+      message:
+        "This record is still in use by other data and cannot be deleted.",
+      field: err.meta?.field_name,
+    });
+  }
+
   if (err.code === "P2025") {
     return res.status(404).json({
       success: false,

@@ -112,7 +112,7 @@ All currency fields are `DECIMAL(12,2)` in the database and are computed with ex
 | 401 | Missing / invalid / expired token, bad credentials, deactivated user |
 | 403 | Authenticated but role not permitted |
 | 404 | Record not found, or route not found (`Route not found: <url>`) |
-| 409 | Unique constraint violation — duplicate email, category name, phone, batch number (Prisma `P2002`, includes a `field` key) |
+| 409 | Conflict. Either a unique violation — duplicate email, category name, phone, batch number (`P2002`, includes a `field` key) — or a delete blocked because the record is still referenced (`P2003`) |
 | 429 | Rate limit exceeded |
 | 500 | Unhandled error |
 
@@ -283,7 +283,7 @@ Only `isActive: true` medicines are returned, ordered by name.
 }
 ```
 
-⚠️ **`totalStock` is not total stock.** The query includes only the single nearest-expiry in-stock batch (`take: 1`), so this field reports that one batch's quantity. Multi-batch medicines are understated — [G-10](./08-gap-analysis.md#g-10).
+`totalStock` is the sum across **every** in-stock batch. The single batch in `batches` is the FEFO one — what the POS would sell next — and it is where `nearestExpiry` and `sellingPrice` come from.
 
 #### `GET /api/inventory/medicines/search?q=<term>` — any role
 
@@ -387,7 +387,7 @@ Batches with `0 < quantity ≤ threshold`, ordered by quantity ascending. Includ
 
 The server sets `initialQty = quantity`. **409** if `(medicineId, batchNumber)` already exists.
 
-> `mfgDate` is **not** in the schema, so Zod strips it even though the column and the controller support it. Manufacture date cannot currently be recorded — [G-04](./08-gap-analysis.md#g-04).
+> `mfgDate` is optional. When supplied it must parse as a date and fall **before** `expiryDate`, otherwise the request is rejected with a field-level error on `mfgDate`.
 
 #### `PUT /api/inventory/batches/:id` — ADMIN, PHARMACIST
 
