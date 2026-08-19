@@ -43,7 +43,7 @@ Severity: 🔴 causes data corruption or a security exposure · 🟠 causes inco
 | [G-01](#g-01) | ✅ Fixed | Invoice numbers collide under concurrent checkout |
 | [G-09](#g-09) | ✅ Fixed | Stock check happens outside the transaction — oversell race |
 | [G-07](#g-07) | ✅ Fixed | All money stored as `Float` |
-| [G-02](#g-02) | 🟠 | Nginx entry point is unusable — origin missing from the CORS allowlist |
+| [G-02](#g-02) | ✅ Fixed | Nginx entry point is unusable — origin missing from the CORS allowlist |
 | [G-05](#g-05) | ✅ Fixed | `PUT /api/inventory/batches/:id` accepts arbitrary fields |
 | [G-06](#g-06) | ✅ Fixed | Rate limiter is global, not per-client, behind the proxy |
 | [G-04](#g-04) | 🟠 | `mfgDate` can never be saved |
@@ -170,17 +170,31 @@ Because `Decimal.toJSON()` emits a string and the API contract has always been n
 
 ---
 
-### <a id="g-02"></a>G-02 🟠 The Nginx entry point does not work
+### <a id="g-02"></a>G-02 ✅ FIXED — The Nginx entry point did not work
 
 **Where:** [`backend/src/index.js`](../backend/src/index.js) allowlist · [`nginx/nginx.conf`](../nginx/nginx.conf) · `docker-compose.yml`
 
 **Problem.** Nginx serves the app on `:80` and proxies `/api` to the backend. But the SPA is configured with `VITE_API_URL=http://localhost:5000`, so it calls the backend **directly** — and when the page is loaded from `http://localhost`, that origin is not in the CORS allowlist (`3000`, `5173`, `127.0.0.1:5173`, `172.17.0.1:5173`). Every API call fails. The proxy's `/api` block is never exercised, and the documented port-80 entry point is unusable. Everyone works on `:5173` and the proxy is decorative.
 
-**Fix — pick one:**
+**Fix — pick one** (the preferred option was taken; see the resolution below):
 - **Preferred:** set `VITE_API_URL=/api` so the SPA uses relative URLs through Nginx. Same origin, no CORS at all, and the deployment gains a single entry point.
 - **Minimal:** add `http://localhost` and the production hostname to the allowlist.
 
 Also note `frontend/nginx.conf` is an **empty file** — a placeholder for the production static-serving config that was never written.
+
+---
+
+**Resolution (2026-08-19).** Took the preferred option, and closed the dev-server half of it too:
+
+- `api.ts` defaults `baseURL` to `""` (`??` rather than `||`, so an explicit empty value survives), so the SPA calls `/api/...` on whatever origin served it.
+- `vite.config.ts` gains a dev-server proxy forwarding `/api` to the API, with `xfwd: true` so the rate limiter still sees the real client rather than the frontend container.
+- `docker-compose.yml` drops `VITE_API_URL` and sets `VITE_PROXY_TARGET=http://backend:5000` instead.
+- `http://localhost` was added to the CORS allowlist anyway, for tools that still call port 5000 directly and cross-origin.
+
+Both entry points are now same-origin, so **CORS never enters the picture for the SPA at all**, and Nginx's `/api` block does real work. Port 5173 keeps Vite's HMR exactly as before, so the development workflow is unchanged. `VITE_API_URL` remains available for a deployment where the API genuinely lives on another host.
+
+**Verified:** the SPA is served with `200` on both `:80` and `:5173`; `POST /api/auth/login` reaches the backend through **both** (401 on bad credentials, not a 404 or a CORS failure); a real sign-in through `:80` returns a token and an authenticated `GET /api/inventory/medicines` returns data — the exact flow that was broken. The served `api.ts` module no longer contains a hardcoded API origin, and `npm run build` (with `tsc -b`) passes.
+
 
 ---
 
@@ -393,7 +407,7 @@ Immutability is the right *default* for financial records; the missing piece is 
 | ~~1~~ | ~~[G-09](#g-09), [G-01](#g-01)~~ | **Done 2026-08-18** — both fixed and verified under concurrency |
 | ~~2~~ | ~~[G-07](#g-07)~~ | **Done 2026-08-19** — money is `DECIMAL(12,2)`, arithmetic is `Prisma.Decimal`, invoices reconcile exactly |
 | ~~3~~ | ~~[G-05](#g-05), [G-11](#g-11), [G-06](#g-06)~~ | **Done 2026-08-19** — write paths validated, limiter per-client with a login-specific budget |
-| 4 | [G-02](#g-02) | Blocks the documented deployment topology |
+| ~~4~~ | ~~[G-02](#g-02)~~ | **Done 2026-08-19** — both entry points same-origin through a proxy |
 | 5 | [G-10](#g-10), [G-04](#g-04), [G-12](#g-12) | Wrong or missing data shown to staff |
 | 6 | [G-14](#g-14) | Required to keep 1–5 fixed |
 | 7 | [G-08](#g-08), [G-03](#g-03), [G-13](#g-13), [G-15](#g-15) | Performance, dead weight, operational usability |

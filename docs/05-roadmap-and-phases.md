@@ -165,7 +165,7 @@ The honest read: v1.0.0 is a complete, coherent product built fast, sitting on a
 | 8.4 | Stop exposing Postgres and Redis on host ports |
 | 8.5 | Secrets from a store/`.env` file excluded from the image; remove the hard-coded DB password from compose |
 | ~~8.6~~ ✅ | `trust proxy` so rate limiting and logs see real client IPs — **done 2026-08-19** (pulled forward from Phase 8), scoped to private-range peers ([G-06](./08-gap-analysis.md#g-06)) |
-| 8.7 | Add the Nginx origin to the CORS allowlist, or route the SPA through `/api` and drop cross-origin entirely ([G-02](./08-gap-analysis.md#g-02)) |
+| ~~8.7~~ ✅ | Route the SPA through `/api` and drop cross-origin entirely — **done 2026-08-19** (pulled forward from Phase 8), with a Vite dev-server proxy so `:5173` stays same-origin too ([G-02](./08-gap-analysis.md#g-02)) |
 | 8.8 | Structured JSON logging with request IDs; replace `morgan("dev")` |
 | 8.9 | Real health/readiness probes that check Postgres and Redis |
 | 8.10 | Documented `pg_dump` backup + restore procedure, and a rehearsed restore |

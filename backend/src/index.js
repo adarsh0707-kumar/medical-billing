@@ -35,7 +35,11 @@ app.set(
 );
 
 // ─── CORS ─────────────────────────────────────────────
+// Only needed for callers that reach port 5000 directly and cross-origin. The
+// SPA no longer does: it calls /api on its own origin through nginx or the Vite
+// dev-server proxy, so its requests are same-origin and never preflighted.
 const allowedOrigins = [
+  "http://localhost", // nginx entry point on :80
   "http://localhost:3000",
   "http://localhost:5173",
   "http://127.0.0.1:5173",

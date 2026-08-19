@@ -34,12 +34,12 @@ docker compose exec backend npm run seed
 | ---------------------------- | -------------------------------------------------------- |
 | http://localhost:5173        | The application (Vite dev server)                        |
 | http://localhost:5000/health | API health check                                         |
-| http://localhost             | Nginx entry point — see the caveat below                |
+| http://localhost             | Nginx entry point — same app, proxied                   |
 | localhost:5432               | Postgres (`medadmin` / `medpass123` / `medicaldb`) |
 
 **Sign in:** `admin@medstore.com` / `admin123` — change it immediately anywhere real.
 
-> **Use port 5173, not port 80.** The SPA is built with `VITE_API_URL=http://localhost:5000`, so it calls the API directly. Loading it from `http://localhost` gives an origin that is not in the backend's CORS allowlist, and every API call fails. See [G-02](./08-gap-analysis.md#g-02).
+> **Either entry point works.** `:5173` gives you Vite's HMR and is the one to develop against; `:80` is the nginx path, closest to how a deployment behaves. Both serve the SPA and both forward `/api` to the backend on the same origin, so neither involves CORS ([G-02](./08-gap-analysis.md#g-02)).
 >
 > The root README's claim that the frontend runs on port 3000 is wrong — compose maps 5173.
 
@@ -87,7 +87,7 @@ npm install --legacy-peer-deps   # the Docker image uses this flag too
 npm run dev                      # Vite on :5173
 ```
 
-`frontend/.env` currently sets `PORT` and `FRONTEND_URL` but **not** `VITE_API_URL`; the axios client falls back to `http://localhost:5000`, which is correct for this setup. To point at another host, add `VITE_API_URL=` and restart Vite — Vite inlines env values at build time, so a running dev server will not pick it up.
+`frontend/.env` sets `PORT` and `FRONTEND_URL` but not `VITE_API_URL`, which is what you want: the client calls `/api` relative to its own origin and the dev server proxies it to `http://localhost:5000`. Set `VITE_PROXY_TARGET` if the API is elsewhere, or `VITE_API_URL` if it is on another host entirely — then restart Vite, since env values are inlined at build time.
 
 ## 4. Environment variables
 
@@ -109,7 +109,8 @@ CORS allows, always: `http://localhost:3000`, `http://localhost:5173`, `http://1
 
 | Variable         | Required | Default                   | Purpose                             |
 | ---------------- | :------: | ------------------------- | ----------------------------------- |
-| `VITE_API_URL` |          | `http://localhost:5000` | API base URL, inlined at build time |
+| `VITE_API_URL`     |          | *(empty — relative `/api`)* | Only for an API on another host. Inlined at build time |
+| `VITE_PROXY_TARGET` |          | `http://localhost:5000`    | Where the **dev server** forwards `/api` (compose sets `http://backend:5000`) |
 
 ### Root
 
@@ -263,7 +264,7 @@ setBatches(res.data.data);
 | Backend exits on start                  | Postgres unreachable —`config/db.js` calls `process.exit(1)` by design                    |
 | `⚠️ Redis connection failed`        | Non-fatal and expected when Redis is down; nothing depends on it                               |
 | Port already in use                     | `lsof -ti:5000 \| xargs kill -9`, or change the mapping in compose                            |
-| Frontend can't reach the API            | `VITE_API_URL` is inlined at build time — restart Vite after changing it                    |
+| Frontend can't reach the API            | Check the Vite proxy target (`VITE_PROXY_TARGET`); env values are inlined at build time, so restart Vite after changing either var |
 
 ## 11. Git workflow
 

@@ -9,7 +9,9 @@ services:
       - ./frontend:/app
       - /app/node_modules
     environment:
-      - VITE_API_URL=http://localhost:5000
+      # No VITE_API_URL: the SPA calls /api on its own origin. This is where the
+      # dev server forwards those calls.
+      - VITE_PROXY_TARGET=http://backend:5000
     depends_on:
       - backend
 

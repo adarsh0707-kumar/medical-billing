@@ -117,7 +117,9 @@ http://localhost:3000, http://localhost:5173, http://127.0.0.1:5173,
 http://172.17.0.1:5173, process.env.FRONTEND_URL
 ```
 
-Requests with **no Origin header are allowed** (`if (!origin) callback(null, true)`) — necessary for curl and server-to-server calls, and not a vulnerability by itself since browsers always send Origin on cross-origin requests. The real problem is the opposite: the Nginx origin (`http://localhost`, port 80) is **missing**, so the documented entry point fails ([G-02](./08-gap-analysis.md#g-02)).
+Requests with **no Origin header are allowed** (`if (!origin) callback(null, true)`) — necessary for curl and server-to-server calls, and not a vulnerability by itself since browsers always send Origin on cross-origin requests.
+
+Since 2026-08-19 the SPA is **same-origin** on both entry points (nginx on `:80`, the Vite dev-server proxy on `:5173`), so CORS no longer governs the application at all — it only affects tools calling port 5000 directly. `http://localhost` was added to the allowlist for those ([G-02](./08-gap-analysis.md#g-02)).
 
 **Rate limiting.** 500 requests / 15 minutes on `/api`. Two flaws:
 

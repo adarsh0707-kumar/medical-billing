@@ -57,14 +57,14 @@ graph TB
     end
 
     Browser -->|"HTTP /"| Nginx
-    Browser -.->|"XHR direct to :5000<br/>(VITE_API_URL)"| BE
+    Browser -->|"HTTP /api"| Nginx
     Nginx -->|"proxy /"| FE
     Nginx -->|"proxy /api"| BE
     BE -->|"Prisma / SQL"| PG
     BE -.->|"connected, unused"| RD
 ```
 
-> **Note the dotted line from the browser.** Although Nginx proxies `/api`, the SPA is configured with `VITE_API_URL=http://localhost:5000` and therefore calls the backend **directly**, bypassing the proxy. Nginx's `/api` location is currently dead weight in the default setup, and the CORS allowlist does not include the Nginx origin. See [G-02](./08-gap-analysis.md#g-02).
+> **The SPA is same-origin.** It calls `/api/...` on whichever origin served it — Nginx on `:80`, or the Vite dev server on `:5173`, which proxies `/api` to the backend itself. Neither path is cross-origin, so CORS never applies to the browser; the allowlist exists only for tools that call port 5000 directly. Set `VITE_API_URL` only when the API genuinely lives on another host. *(Before 2026-08-19 the SPA called `:5000` directly and the `:80` entry point was unusable — [G-02](./08-gap-analysis.md#g-02).)*
 
 ### Containers at a glance
 
@@ -322,9 +322,10 @@ Source is bind-mounted (`./backend:/app`, `./frontend:/app`) with anonymous volu
 | `NODE_ENV` | backend | `development` | Controls Prisma query logging and stack exposure |
 | `PORT` | backend | defaults to 5000 | Read in `index.js` |
 | `FRONTEND_URL` | backend | *(not set in compose)* | Appended to the CORS allowlist when present |
-| `VITE_API_URL` | frontend | `http://localhost:5000` | Baked into the bundle at build time |
+| `VITE_API_URL` | frontend | *(unset — relative `/api`)* | Baked into the bundle at build time; set only for a cross-host API |
+| `VITE_PROXY_TARGET` | frontend | `http://backend:5000` | Where the Vite dev server forwards `/api` |
 
-`frontend/.env` currently defines `PORT` and `FRONTEND_URL` but **not** `VITE_API_URL`; outside Docker the client falls back to the `http://localhost:5000` default in `api.ts`.
+`frontend/.env` defines `PORT` and `FRONTEND_URL` but not `VITE_API_URL`, which is correct — the client stays relative and the dev-server proxy defaults to `http://localhost:5000` for a non-Docker run.
 
 ### Production gaps
 

@@ -10,8 +10,9 @@ This document lists **every endpoint that exists**. It was written by reading `b
 
 | Environment | Base URL | Notes |
 |---|---|---|
-| Local / Docker (direct) | `http://localhost:5000` | What the SPA actually uses (`VITE_API_URL`) |
-| Via Nginx | `http://localhost/api` | Proxy exists; the CORS allowlist does not include this origin — see [G-02](./08-gap-analysis.md#g-02) |
+| Via Nginx | `http://localhost/api` | The entry point. Same-origin for the SPA |
+| Via the Vite dev server | `http://localhost:5173/api` | Proxied to the backend; also same-origin |
+| Direct | `http://localhost:5000` | The API itself. For curl, Postman and server-to-server calls |
 
 All paths below are absolute from the host root, e.g. `POST http://localhost:5000/api/auth/login`.
 

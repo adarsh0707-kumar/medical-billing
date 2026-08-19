@@ -1,7 +1,11 @@
 import axios from "axios";
 
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || "http://localhost:5000",
+  // Empty by default: the SPA talks to /api on whatever origin served it, via
+  // the nginx proxy on :80 or the Vite dev-server proxy on :5173. Set
+  // VITE_API_URL only when the API genuinely lives on another host.
+  // `??` rather than `||` so an explicit empty value stays empty.
+  baseURL: import.meta.env.VITE_API_URL ?? "",
   headers: { "Content-Type": "application/json" },
 });
 
