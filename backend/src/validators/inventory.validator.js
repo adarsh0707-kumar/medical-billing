@@ -43,6 +43,26 @@ const batchSchema = z.object({
   supplierId: z.string().min(1, "Supplier is required"),
 });
 
+// PUT /batches/:id. Deliberately narrow: stock quantity is NOT editable here.
+// Rewriting it silently bypasses every stock-accounting path and leaves no
+// trace — manual adjustment belongs in its own endpoint with an audit trail
+// (FR-BATCH-11). The FK columns are excluded for the same reason: repointing a
+// batch at another medicine or supplier rewrites history.
+//
+// .strict() so an unrecognised field is a 400 rather than a silent no-op, which
+// is the failure mode that hid the mfgDate bug.
+const batchUpdateSchema = z
+  .object({
+    batchNumber: z.string().min(1, "Batch number is required").optional(),
+    expiryDate: z
+      .string()
+      .refine((d) => !isNaN(Date.parse(d)), "Invalid expiry date")
+      .optional(),
+    purchasePrice: z.number().positive("Purchase price must be positive").optional(),
+    sellingPrice: z.number().positive("Selling price must be positive").optional(),
+  })
+  .strict();
+
 const supplierSchema = z.object({
   name: z.string().min(2, "Supplier name is required"),
   contactName: z.string().optional(),
@@ -57,5 +77,6 @@ module.exports = {
   manufacturerSchema,
   medicineSchema,
   batchSchema,
+  batchUpdateSchema,
   supplierSchema,
 };

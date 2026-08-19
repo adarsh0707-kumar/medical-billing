@@ -123,7 +123,14 @@ Supported by `GET /api/inventory/medicines`, `GET /api/billing/customers`, `GET 
 
 ### Rate limiting
 
-500 requests per 15 minutes, applied to the `/api` prefix only. Exceeding it returns `429` with `{ "success": false, "message": "Too many requests, please try again later." }`. `trust proxy` is not configured, so behind Nginx the limit is effectively global rather than per-client ([G-06](./08-gap-analysis.md#g-06)).
+Two limiters, both keyed on the client IP:
+
+| Scope | Budget | Notes |
+|---|---|---|
+| `/api/*` | 500 requests / 15 min | `429` with `Too many requests, please try again later.` |
+| `POST /api/auth/login` | 10 **failed** attempts / 15 min | `429` with `Too many failed login attempts. Please try again in 15 minutes.` Successful sign-ins are not counted |
+
+`trust proxy` is set to private-range peers, so behind Nginx the real client IP is used rather than the proxy's — but a client reaching port 5000 directly from outside cannot forge `X-Forwarded-For` to pick its own bucket. Override with the `TRUST_PROXY` environment variable ([G-06](./08-gap-analysis.md#g-06)).
 
 ---
 
@@ -175,7 +182,7 @@ Creates a user. Functionally the same as `POST /api/users`, but additionally ret
 
 `role` defaults to `CASHIER`. **201** returns `{ user, token }`; **409** if the email exists.
 
-> ⚠️ No validation: password strength, email format and role validity are unchecked. An invalid role string fails at the database layer as a 500.
+Validated: `name` ≥ 2 characters, valid email, password ≥ 8 characters, `role` one of the three enum values. Unknown fields are stripped.
 
 ### `GET /api/auth/me` — any authenticated role
 
@@ -193,7 +200,7 @@ Returns the freshly-loaded user attached by `protect` — no additional query.
 
 **200** `Password changed successfully.` · **400** `Current password is incorrect.`
 
-> No minimum length or complexity is enforced, and existing tokens remain valid after the change.
+> `newPassword` must be at least 8 characters. Complexity and breach checks are not enforced, and existing tokens remain valid after the change.
 
 ### `GET /api/users` — ADMIN
 
@@ -383,7 +390,9 @@ The server sets `initialQty = quantity`. **409** if `(medicineId, batchNumber)` 
 
 #### `PUT /api/inventory/batches/:id` — ADMIN, PHARMACIST
 
-⚠️ **No validation middleware on this route.** The request body is passed to `prisma.batch.update` almost as-is (only `expiryDate` is coerced to a Date). Any column can be written, including `quantity`, `initialQty` and `medicineId`. Treat it as an admin-grade tool and see [G-05](./08-gap-analysis.md#g-05).
+Accepts only `batchNumber`, `expiryDate`, `purchasePrice` and `sellingPrice`, all optional. The schema is **strict**: any other field — including `quantity`, `initialQty`, `medicineId` and `supplierId` — is rejected with a `400`, not silently ignored.
+
+> **Stock is not adjustable through this route.** Quantity changes only via batch creation and invoice creation, so stock always has a traceable cause. A manual-adjustment endpoint with an audit trail is [FR-BATCH-11](./01-product-requirements.md#65-stock--batches--fr-batch).
 
 ### 8.5 Suppliers
 

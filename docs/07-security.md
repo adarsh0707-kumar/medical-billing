@@ -10,15 +10,17 @@
 |---|---|
 | Authentication | **Solid** — bcrypt cost 12, no user enumeration, per-request user revalidation |
 | Authorisation | **Solid** — server-enforced RBAC on every mutating route |
-| Injection | **Solid** — Prisma parameterises everything, no raw SQL anywhere |
-| Input validation | **Mixed** — Zod on most write routes, absent on four |
+| Injection | **Solid** — Prisma parameterises everything; the single raw statement uses a bound tagged template |
+| Input validation | **Solid** — Zod on every mutating route; request bodies only. Query parameters are still unvalidated |
 | Token handling | **Weak** — `localStorage`, no revocation, no refresh, 7-day lifetime |
 | Transport | **Absent** — no TLS configuration exists |
 | Secrets | **Weak** — database password hard-coded in `docker-compose.yml`; seeded admin password in the repo |
 | Auditability | **Absent** — only invoice authorship is recorded |
-| Rate limiting | **Present but ineffective behind the proxy** |
+| Rate limiting | **Solid** — per-client behind the proxy, with a separate failed-login budget |
 
-The system is defensible on a trusted LAN with the fixes in §9. It is **not ready** for internet exposure.
+The system is defensible on a trusted LAN. It is **not ready** for internet exposure — TLS, secrets management and token revocation are the blockers; see §10.
+
+*Last revised 2026-08-19, after the Phase 7 validation and rate-limiting work.*
 
 ---
 
@@ -41,8 +43,8 @@ The system is defensible on a trusted LAN with the fixes in §9. It is **not rea
 | A-1 | Token stored in `localStorage` | Any XSS reads it and exfiltrates a 7-day credential |
 | A-2 | No revocation / denylist | A leaked token is valid for up to 7 days; logout is client-side only |
 | A-3 | 7-day lifetime with no refresh rotation | Long exposure window; `generateRefreshToken` exists but is unused |
-| A-4 | No password policy | `"1"` is an acceptable password — no length, complexity or breach check |
-| A-5 | No login rate limiting beyond the global 500/15 min | Password guessing is cheap, especially since the limiter is shared behind the proxy |
+| A-4 | Weak password policy | Minimum length 8 since 2026-08-19; still no complexity or breach check |
+| ~~A-5~~ | ~~No login rate limiting~~ | **Fixed 2026-08-19** — 10 failed attempts / 15 min per real client IP |
 | A-6 | Password change does not invalidate existing tokens | A compromised session survives the user's response to the compromise |
 | A-7 | Seeded admin `admin@medstore.com` / `admin123` is public in the repository | Any unchanged deployment is trivially owned |
 | A-8 | No MFA | Acceptable for the threat model; note it |
@@ -82,13 +84,13 @@ The full permission matrix is in [04 §4](./04-api-reference.md#4-role-matrix).
 | `POST /api/inventory/batches` | ✅ |
 | `POST/PUT /api/billing/customers` | ✅ |
 | `POST /api/billing/invoices` | ✅ |
-| **`PUT /api/inventory/batches/:id`** | ❌ Body forwarded to Prisma nearly raw — [G-05](./08-gap-analysis.md#g-05) |
-| **`POST /api/auth/register`** | ❌ No email/password/role checks |
-| **`POST /api/users`** | ❌ Same |
-| **`PUT /api/users/:id`** | ❌ Role and `isActive` accepted unchecked |
+| `PUT /api/inventory/batches/:id` | ✅ Strict narrow schema; `quantity`, `initialQty` and FK columns rejected — [G-05](./08-gap-analysis.md#g-05) |
+| `POST /api/auth/register` | ✅ `createUserSchema` — [G-11](./08-gap-analysis.md#g-11) |
+| `POST /api/users` | ✅ `createUserSchema` |
+| `PUT /api/users/:id` | ✅ `updateUserSchema` — role is enum-checked |
 | `POST /api/auth/login` | ❌ Presence check only (acceptable) |
 
-The four unvalidated write routes are all `ADMIN`-gated except the batch update (also `PHARMACIST`), which limits blast radius but does not excuse them.
+As of 2026-08-19 every mutating route runs a schema. `PUT /api/users/profile` and the batch update are additionally `.strict()`, so an unexpected field is a `400` rather than something that looks accepted and is silently dropped — the failure mode behind [G-04](./08-gap-analysis.md#g-04).
 
 **Query parameters are not validated anywhere.** `?month=abc` on the GST report produces `Invalid Date` and an empty result rather than a 400. `?limit=999999` on any list endpoint is honoured — a trivial resource-exhaustion vector.
 
@@ -96,9 +98,9 @@ The four unvalidated write routes are all `ADMIN`-gated except the batch update 
 
 ## 5. Injection & data-access safety
 
-- **SQL injection:** not reachable. Every query goes through Prisma's parameterised client; there is no `$queryRaw`/`$executeRaw` in the codebase.
+- **SQL injection:** not reachable. Every query goes through Prisma's parameterised client. There is exactly one raw statement — the invoice-serial upsert in `invoice.utils.js` ([G-01](./08-gap-analysis.md#g-01)) — and it uses a `$queryRaw` tagged template, so its two interpolations are bound parameters rather than string concatenation. Keep it that way: `$queryRawUnsafe` must not appear in this codebase.
 - **NoSQL/ORM operator injection:** query values are interpolated into `contains`/`equals` filters as plain strings, never spread from user input into Prisma operator objects.
-- **Mass assignment:** blocked by Zod's key-stripping on validated routes; **open** on the four routes above, most notably `PUT /api/inventory/batches/:id`, where `{ "quantity": 999999 }` or `{ "medicineId": "other" }` is accepted.
+- **Mass assignment:** blocked by Zod's key-stripping on every mutating route. The two highest-value targets go further and reject unknown keys outright: `PUT /api/inventory/batches/:id` (so `quantity`, `initialQty` and the FK columns cannot be written) and `PUT /api/users/profile` (so a stray `role` cannot look accepted).
 - **XSS:** React escapes interpolated content by default and there is no `dangerouslySetInnerHTML` in the codebase. The residual risk is a dependency-borne XSS combined with A-1.
 - **CSRF:** not applicable — authentication is a bearer header, not a cookie, so browsers do not attach it automatically.
 
@@ -119,8 +121,8 @@ Requests with **no Origin header are allowed** (`if (!origin) callback(null, tru
 
 **Rate limiting.** 500 requests / 15 minutes on `/api`. Two flaws:
 
-1. `app.set('trust proxy', …)` is never called, so behind Nginx `req.ip` is the proxy's container IP. **All clients share one bucket** — one busy user can lock out the store, and an attacker is never isolated ([G-06](./08-gap-analysis.md#g-06)).
-2. There is no stricter limit on `/api/auth/login`. 500 attempts per window is a comfortable password-guessing budget.
+1. ~~`trust proxy` is never called~~ **Fixed 2026-08-19.** `trust proxy` is set to `loopback, linklocal, uniquelocal`, so behind Nginx the real client IP keys the limiter, while a client reaching port 5000 directly cannot forge `X-Forwarded-For` to pick its own bucket ([G-06](./08-gap-analysis.md#g-06)).
+2. ~~No stricter limit on `/api/auth/login`~~ **Fixed 2026-08-19.** 10 failed attempts per 15 minutes per IP, with successful sign-ins not counted.
 
 **TLS.** None. Nginx listens on `:80` only. Credentials and tokens cross the network in cleartext. On a switched LAN this is a moderate risk; on anything else it is disqualifying.
 
@@ -165,12 +167,12 @@ Assets: customer PII and purchase history · financial records (invoices, GST li
 
 | # | Threat | Vector | Likelihood | Impact | Current control | Residual |
 |---|---|---|---|---|---|---|
-| T-1 | Credential stuffing / brute force on login | Public login endpoint | Med | High | bcrypt, 500/15min shared limit | **High** — needs a per-IP login limiter |
+| T-1 | Credential stuffing / brute force on login | Public login endpoint | Med | High | bcrypt, per-IP limiter: 10 failed logins / 15 min | Low — timing still leaks whether an email exists (P2-12) |
 | T-2 | Default admin credentials unchanged | Public repo | High | Critical | Seed script warns in stdout | **Critical** — force a change on first login |
 | T-3 | Token theft via XSS | `localStorage` + dependency-borne XSS | Low | High | React escaping, no `dangerouslySetInnerHTML` | Med — no CSP on the SPA |
 | T-4 | Token theft on the wire | No TLS | Med (LAN) | High | None | **High** — TLS required |
 | T-5 | Privilege escalation | Guessing admin routes | Low | High | `authorize()` on every route | Low |
-| T-6 | Stock/price tampering | Unvalidated `PUT /batches/:id` | Med | High | ADMIN/PHARMACIST only | **Med** — add a schema + audit log |
+| T-6 | Stock/price tampering | `PUT /batches/:id` | Low | High | ADMIN/PHARMACIST only; strict schema, stock not editable | Low — price edits are still untracked, pending an audit log (P1-11) |
 | T-7 | Direct database access | Exposed :5432 with a committed password | Med | Critical | None | **Critical** in any exposed deployment |
 | T-8 | Unauthenticated Redis access | Exposed :6379, no auth | Med | Low today (empty) | None | Low now, High once caching lands |
 | T-9 | Insider data exfiltration | Any role can page through all customers | Med | Med | None — no logging or export controls | **Med** |
@@ -187,12 +189,12 @@ Assets: customer PII and purchase history · financial records (invoices, GST li
 1. Force a password change for the seeded admin on first login; remove the credential from the repo's default path.
 2. Terminate TLS at Nginx; redirect 80 → 443; enable HSTS.
 3. Stop publishing 5432 and 6379 to the host; move Postgres credentials out of `docker-compose.yml`.
-4. `app.set('trust proxy', 1)` and add a strict per-IP limiter on `/api/auth/login` (e.g. 10 / 15 min).
-5. Add Zod schemas to `PUT /api/inventory/batches/:id`, `POST /api/auth/register`, `POST /api/users`, `PUT /api/users/:id`.
+4. ~~`trust proxy` and a strict per-IP limiter on `/api/auth/login`~~ — **done 2026-08-19.**
+5. ~~Zod schemas on `PUT /api/inventory/batches/:id`, `POST /api/auth/register`, `POST /api/users`, `PUT /api/users/:id`~~ — **done 2026-08-19.**
 
 **P1 — next**
 
-6. Password policy: minimum length, breach check, and a forced reset flow.
+6. Password policy: ~~minimum length~~ (done — 8 chars), breach check, and a forced reset flow.
 7. Invalidate tokens on password change and on deactivation (a Redis denylist keyed by user id + issued-at).
 8. Shorten the access token to 15–60 minutes and implement the refresh rotation the util already anticipates.
 9. Add a CSP header to the SPA.

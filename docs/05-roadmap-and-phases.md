@@ -82,7 +82,7 @@ The honest read: v1.0.0 is a complete, coherent product built fast, sitting on a
 - Frontend Inventory page with four tabs.
 - Migration `20260419152932_add_mfgdate`.
 
-**Known debt from this phase:** `mfgDate` never reaches the database ([G-04](./08-gap-analysis.md#g-04)); batch update has no validation ([G-05](./08-gap-analysis.md#g-05)); `totalStock` is computed from one batch ([G-10](./08-gap-analysis.md#g-10)).
+**Known debt from this phase:** `mfgDate` never reaches the database ([G-04](./08-gap-analysis.md#g-04)); ~~batch update has no validation~~ fixed 2026-08-19 ([G-05](./08-gap-analysis.md#g-05)); `totalStock` is computed from one batch ([G-10](./08-gap-analysis.md#g-10)).
 
 ### Phase 3 — Billing / POS ✅
 
@@ -142,9 +142,9 @@ The honest read: v1.0.0 is a complete, coherent product built fast, sitting on a
 | ~~7.2~~ ✅ | Replace count-based invoice numbering — **done 2026-08-18** via an atomic per-day `InvoiceCounter` upsert (retry alone proved insufficient) | [G-01](./08-gap-analysis.md#g-01) |
 | ~~7.3~~ ✅ | Migrate all money columns from `Float` to `Decimal(12,2)` — **done 2026-08-19**, with `Prisma.Decimal` arithmetic and a `json replacer` keeping the API on numbers | [G-07](./08-gap-analysis.md#g-07) |
 | 7.4 | Add `mfgDate` to `batchSchema` and to the batch form | [G-04](./08-gap-analysis.md#g-04) |
-| 7.5 | Add a Zod schema to `PUT /api/inventory/batches/:id` | [G-05](./08-gap-analysis.md#g-05) |
+| ~~7.5~~ ✅ | Add a Zod schema to `PUT /api/inventory/batches/:id` — **done 2026-08-19**, strict and excluding `quantity` | [G-05](./08-gap-analysis.md#g-05) |
 | 7.6 | Fix `totalStock` to aggregate across all batches | [G-10](./08-gap-analysis.md#g-10) |
-| 7.7 | Add validation to `POST /api/auth/register`, `POST /api/users`, `PUT /api/users/:id` | [G-11](./08-gap-analysis.md#g-11) |
+| ~~7.7~~ ✅ | Add validation to `POST /api/auth/register`, `POST /api/users`, `PUT /api/users/:id` — **done 2026-08-19**, plus profile and change-password | [G-11](./08-gap-analysis.md#g-11) |
 | 7.8 | Map FK-violation `P2003` to a clean 409 for category/manufacturer/supplier delete | [G-12](./08-gap-analysis.md#g-12) |
 | 7.9 | Add `CHECK (quantity >= 0)` on `Batch` | [Data model I-1](./03-data-model.md#5-invariants) |
 | 7.10 | Delete the four empty route files | [G-13](./08-gap-analysis.md#g-13) |
@@ -164,7 +164,7 @@ The honest read: v1.0.0 is a complete, coherent product built fast, sitting on a
 | 8.3 | TLS termination in Nginx + HSTS; redirect 80 → 443 |
 | 8.4 | Stop exposing Postgres and Redis on host ports |
 | 8.5 | Secrets from a store/`.env` file excluded from the image; remove the hard-coded DB password from compose |
-| 8.6 | `app.set('trust proxy', 1)` so rate limiting and logs see real client IPs ([G-06](./08-gap-analysis.md#g-06)) |
+| ~~8.6~~ ✅ | `trust proxy` so rate limiting and logs see real client IPs — **done 2026-08-19** (pulled forward from Phase 8), scoped to private-range peers ([G-06](./08-gap-analysis.md#g-06)) |
 | 8.7 | Add the Nginx origin to the CORS allowlist, or route the SPA through `/api` and drop cross-origin entirely ([G-02](./08-gap-analysis.md#g-02)) |
 | 8.8 | Structured JSON logging with request IDs; replace `morgan("dev")` |
 | 8.9 | Real health/readiness probes that check Postgres and Redis |

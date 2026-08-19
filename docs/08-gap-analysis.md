@@ -44,11 +44,11 @@ Severity: 🔴 causes data corruption or a security exposure · 🟠 causes inco
 | [G-09](#g-09) | ✅ Fixed | Stock check happens outside the transaction — oversell race |
 | [G-07](#g-07) | ✅ Fixed | All money stored as `Float` |
 | [G-02](#g-02) | 🟠 | Nginx entry point is unusable — origin missing from the CORS allowlist |
-| [G-05](#g-05) | 🟠 | `PUT /api/inventory/batches/:id` accepts arbitrary fields |
-| [G-06](#g-06) | 🟠 | Rate limiter is global, not per-client, behind the proxy |
+| [G-05](#g-05) | ✅ Fixed | `PUT /api/inventory/batches/:id` accepts arbitrary fields |
+| [G-06](#g-06) | ✅ Fixed | Rate limiter is global, not per-client, behind the proxy |
 | [G-04](#g-04) | 🟠 | `mfgDate` can never be saved |
 | [G-10](#g-10) | 🟠 | `totalStock` reports one batch, not all |
-| [G-11](#g-11) | 🟠 | User-management routes are unvalidated |
+| [G-11](#g-11) | ✅ Fixed | User-management routes are unvalidated |
 | [G-12](#g-12) | 🟠 | FK violations surface as 500 |
 | [G-03](#g-03) | 🟡 | Redis is a dead dependency |
 | [G-08](#g-08) | 🟡 | Sales trend costs 7 HTTP round trips |
@@ -184,7 +184,7 @@ Also note `frontend/nginx.conf` is an **empty file** — a placeholder for the p
 
 ---
 
-### <a id="g-05"></a>G-05 🟠 Batch update accepts arbitrary fields
+### <a id="g-05"></a>G-05 ✅ FIXED — Batch update accepted arbitrary fields
 
 **Where:** `inventory.routes.js` → `batch.controller.js#update`
 
@@ -202,7 +202,16 @@ data: { ...req.body, ...(req.body.expiryDate && { expiryDate: new Date(req.body.
 
 ---
 
-### <a id="g-06"></a>G-06 🟠 Rate limiter is effectively global
+**Resolution (2026-08-19).** `batchUpdateSchema` now guards the route, and it is deliberately narrow: `batchNumber`, `expiryDate`, `purchasePrice`, `sellingPrice`. **`quantity` and `initialQty` are not editable here** — rewriting stock silently bypasses every accounting path and leaves no trace. Manual adjustment is [FR-BATCH-11](./01-product-requirements.md#65-stock--batches--fr-batch) and needs its own endpoint with an audit trail. The FK columns are excluded for the same reason: repointing a batch at another medicine or supplier rewrites history.
+
+The schema is `.strict()`, so an unrecognised field is a `400` rather than a silent no-op. Silent stripping is exactly how [G-04](#g-04) hid, and this route is where it would be most expensive.
+
+**Verified:** `{ quantity: 99999 }`, `{ initialQty: 1 }` and `{ medicineId: … }` are all rejected with the stock left untouched; `{ sellingPrice: -5 }` is rejected; `{ sellingPrice: 30.5 }` applies and leaves `quantity` alone.
+
+
+---
+
+### <a id="g-06"></a>G-06 ✅ FIXED — Rate limiter was effectively global
 
 **Where:** `index.js`
 
@@ -213,6 +222,21 @@ data: { ...req.body, ...(req.body.expiryDate && { expiryDate: new Date(req.body.
 ```js
 app.use("/api/auth/login", rateLimit({ windowMs: 15*60*1000, max: 10 }));
 ```
+
+---
+
+**Resolution (2026-08-19).** Both parts landed:
+
+```js
+app.set("trust proxy", process.env.TRUST_PROXY || "loopback, linklocal, uniquelocal");
+```
+
+Trust is restricted to private-range peers rather than `true`. Port 5000 is published, so a client reaching it directly must not be able to forge `X-Forwarded-For` and pick its own bucket; `TRUST_PROXY` overrides it when the topology differs.
+
+A dedicated limiter now guards `POST /api/auth/login` at 10 attempts per 15 minutes with `skipSuccessfulRequests: true`, so only failures count and a cashier signing in and out through a shift never trips it.
+
+**Verified:** ten failed logins from one forwarded IP return `401`, the eleventh returns `429`, a different forwarded IP is unaffected (which is what proves the proxy header is being honoured), and fifteen successful logins in a row do not consume the budget.
+
 
 ---
 
@@ -253,13 +277,29 @@ const stock = await prisma.batch.groupBy({
 
 ---
 
-### <a id="g-11"></a>G-11 🟠 User-management routes are unvalidated
+### <a id="g-11"></a>G-11 ✅ FIXED — User-management routes were unvalidated
 
 **Where:** `auth.routes.js#register`, `user.routes.js` create/update
 
-**Problem.** No Zod schema on any of them. Consequences: no email format check; no password length or strength check (`"1"` is accepted); an invalid `role` string reaches Prisma and surfaces as a 500 rather than a 400; `PUT /api/users/:id` accepts whatever fields the controller destructures, and `updateProfile` will write `null` over a name if `name` is omitted.
+**Problem.** No Zod schema on any of them. Consequences: no email format check; no password length or strength check (`"1"` is accepted); an invalid `role` string reaches Prisma and surfaces as a 500 rather than a 400; and `PUT /api/users/:id` accepts whatever fields the controller destructures. *(An earlier draft of this entry also claimed `updateProfile` nulls an omitted name — that was wrong. Prisma treats `undefined` as "leave alone", so an omitted field is simply not written.)*
 
 **Fix.** Add `registerSchema` / `userUpdateSchema` alongside the existing validators — email format, password ≥ 8 with a breach check, `role` as `z.enum(["ADMIN","PHARMACIST","CASHIER"])`, and `.partial()` for updates so omitted fields are left alone rather than nulled.
+
+---
+
+**Resolution (2026-08-19).** New `validators/user.validator.js` supplies four schemas, wired into both routers:
+
+| Schema | Route | Notes |
+|---|---|---|
+| `createUserSchema` | `POST /api/users`, `POST /api/auth/register` | name ≥ 2, valid email, password ≥ 8, `role` enum |
+| `updateUserSchema` | `PUT /api/users/:id` | all fields optional; **not** `.strict()` — the active/inactive toggle posts the whole user row back |
+| `updateProfileSchema` | `PUT /api/users/profile` | `.strict()`, so a stray `role` is a 400 rather than something that looks accepted and is silently dropped |
+| `changePasswordSchema` | `PUT /api/auth/change-password` | new password ≥ 8 |
+
+Password rules are length-only; complexity and breach checks need an external service and stay on the [P1 hardening list](./07-security.md#10-hardening-backlog).
+
+**Verified:** malformed email, short password and an invalid role are each rejected with `400`; a valid create returns `201`; the Settings toggle posting the entire user object still returns `200`; a stray `role` on the profile route is rejected; and a weak new password on change-password is rejected.
+
 
 ---
 
@@ -352,7 +392,7 @@ Immutability is the right *default* for financial records; the missing piece is 
 |---|---|---|
 | ~~1~~ | ~~[G-09](#g-09), [G-01](#g-01)~~ | **Done 2026-08-18** — both fixed and verified under concurrency |
 | ~~2~~ | ~~[G-07](#g-07)~~ | **Done 2026-08-19** — money is `DECIMAL(12,2)`, arithmetic is `Prisma.Decimal`, invoices reconcile exactly |
-| 3 | [G-05](#g-05), [G-11](#g-11), [G-06](#g-06) | Open write paths and an ineffective limiter |
+| ~~3~~ | ~~[G-05](#g-05), [G-11](#g-11), [G-06](#g-06)~~ | **Done 2026-08-19** — write paths validated, limiter per-client with a login-specific budget |
 | 4 | [G-02](#g-02) | Blocks the documented deployment topology |
 | 5 | [G-10](#g-10), [G-04](#g-04), [G-12](#g-12) | Wrong or missing data shown to staff |
 | 6 | [G-14](#g-14) | Required to keep 1–5 fixed |

@@ -7,6 +7,7 @@ const {
   manufacturerSchema,
   medicineSchema,
   batchSchema,
+  batchUpdateSchema,
   supplierSchema,
 } = require("../validators/inventory.validator");
 
@@ -83,7 +84,12 @@ router.post(
   validate(batchSchema),
   batchCtrl.create,
 );
-router.put("/batches/:id", authorize("ADMIN", "PHARMACIST"), batchCtrl.update);
+router.put(
+  "/batches/:id",
+  authorize("ADMIN", "PHARMACIST"),
+  validate(batchUpdateSchema),
+  batchCtrl.update,
+);
 
 // ─── Suppliers ────────────────────────────────────────
 router.get("/suppliers", supplierCtrl.getAll);

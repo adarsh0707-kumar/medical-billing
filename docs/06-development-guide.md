@@ -101,6 +101,7 @@ npm run dev                      # Vite on :5173
 | `PORT`         |          | `5000`                   |                                                                         |
 | `NODE_ENV`     |          | —                         | `development` enables Prisma query logs and error stacks in responses |
 | `FRONTEND_URL` |          | —                         | Appended to the CORS allowlist when set                                 |
+| `TRUST_PROXY`  |          | `loopback, linklocal, uniquelocal` | Express `trust proxy` value — which peers may set `X-Forwarded-For`, and therefore what the rate limiter keys on |
 
 CORS allows, always: `http://localhost:3000`, `http://localhost:5173`, `http://127.0.0.1:5173`, `http://172.17.0.1:5173`, plus `FRONTEND_URL`. Requests with **no** Origin header (curl, Postman, server-to-server) are allowed.
 

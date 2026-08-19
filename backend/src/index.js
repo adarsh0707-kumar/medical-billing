@@ -20,6 +20,20 @@ app.use(helmet());
 app.use(compression());
 app.use(morgan("dev"));
 
+// ─── Proxy Awareness ───────────────────────────────────
+// Nginx sets X-Real-IP and X-Forwarded-For. Without this, req.ip is the proxy's
+// container address, so every client shares one rate-limit bucket and one busy
+// dashboard can lock out the billing counter.
+//
+// Trust is restricted to private-range peers rather than `true`: port 5000 is
+// published, and a client reaching it directly must not be able to forge
+// X-Forwarded-For to dodge the limiter. Override with TRUST_PROXY when the
+// deployment topology differs.
+app.set(
+  "trust proxy",
+  process.env.TRUST_PROXY || "loopback, linklocal, uniquelocal",
+);
+
 // ─── CORS ─────────────────────────────────────────────
 const allowedOrigins = [
   "http://localhost:3000",
@@ -68,6 +82,20 @@ const limiter = rateLimit({
   },
 });
 app.use("/api", limiter);
+
+// Login is the one endpoint worth guessing at, and 500 requests per window is a
+// comfortable password-guessing budget. Successful sign-ins are not counted, so
+// a counter signing in and out through a shift never trips this.
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  skipSuccessfulRequests: true,
+  message: {
+    success: false,
+    message: "Too many failed login attempts. Please try again in 15 minutes.",
+  },
+});
+app.use("/api/auth/login", loginLimiter);
 
 // ─── Health Check ──────────────────────────────────────
 app.get("/health", (req, res) => {
