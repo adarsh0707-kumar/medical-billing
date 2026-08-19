@@ -140,7 +140,7 @@ The honest read: v1.0.0 is a complete, coherent product built fast, sitting on a
 |---|---|---|
 | ~~7.1~~ ✅ | Move stock verification **inside** the transaction; use a conditional update (`updateMany where quantity >= qty`) and abort when zero rows change — **done 2026-08-18** | [G-09](./08-gap-analysis.md#g-09) |
 | ~~7.2~~ ✅ | Replace count-based invoice numbering — **done 2026-08-18** via an atomic per-day `InvoiceCounter` upsert (retry alone proved insufficient) | [G-01](./08-gap-analysis.md#g-01) |
-| 7.3 | Migrate all money columns from `Float` to `Decimal(12,2)` | [G-07](./08-gap-analysis.md#g-07) |
+| ~~7.3~~ ✅ | Migrate all money columns from `Float` to `Decimal(12,2)` — **done 2026-08-19**, with `Prisma.Decimal` arithmetic and a `json replacer` keeping the API on numbers | [G-07](./08-gap-analysis.md#g-07) |
 | 7.4 | Add `mfgDate` to `batchSchema` and to the batch form | [G-04](./08-gap-analysis.md#g-04) |
 | 7.5 | Add a Zod schema to `PUT /api/inventory/batches/:id` | [G-05](./08-gap-analysis.md#g-05) |
 | 7.6 | Fix `totalStock` to aggregate across all batches | [G-10](./08-gap-analysis.md#g-10) |

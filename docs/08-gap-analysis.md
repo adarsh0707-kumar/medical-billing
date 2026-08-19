@@ -42,7 +42,7 @@ Severity: 🔴 causes data corruption or a security exposure · 🟠 causes inco
 |---|---|---|
 | [G-01](#g-01) | ✅ Fixed | Invoice numbers collide under concurrent checkout |
 | [G-09](#g-09) | ✅ Fixed | Stock check happens outside the transaction — oversell race |
-| [G-07](#g-07) | 🔴 | All money stored as `Float` |
+| [G-07](#g-07) | ✅ Fixed | All money stored as `Float` |
 | [G-02](#g-02) | 🟠 | Nginx entry point is unusable — origin missing from the CORS allowlist |
 | [G-05](#g-05) | 🟠 | `PUT /api/inventory/batches/:id` accepts arbitrary fields |
 | [G-06](#g-06) | 🟠 | Rate limiter is global, not per-client, behind the proxy |
@@ -143,13 +143,30 @@ Check-and-decrement is a single atomic statement, so the loser of a race matches
 
 ---
 
-### <a id="g-07"></a>G-07 🔴 Money stored as `Float`
+### <a id="g-07"></a>G-07 ✅ FIXED — Money was stored as `Float`
 
 **Where:** [`schema.prisma`](../backend/prisma/schema.prisma) — `purchasePrice`, `sellingPrice`, `subtotal`, `discountAmt`, `cgst`, `sgst`, `totalAmount`, `unitPrice`, `discount`, `totalPrice`, `costPrice`.
 
 **Problem.** IEEE-754 doubles cannot represent most decimal fractions exactly. The controller rounds each line to 2 dp, but invoice-level `subtotal`, `cgst` and `sgst` accumulate **unrounded** values before rounding, and the GST report sums thousands of these floats. Monthly totals will drift from the sum of the printed invoices — precisely the number that goes on a tax filing.
 
 **Fix.** Migrate to `Decimal @db.Decimal(12, 2)` (Prisma returns `Decimal.js` instances) or store integer paise. Either way, round once per line at the boundary and aggregate exact values. Ship this migration on its own, with a verification query comparing pre- and post-migration totals.
+
+---
+
+**Resolution (2026-08-19).** Migration `20260819153025_money_to_decimal` converts every currency column to `DECIMAL(12,2)` and the two rate columns (`gstPercent`, line `discount` %) to `DECIMAL(5,2)`. Postgres rounds half-up on the cast, so existing rows land on the value that was already being displayed.
+
+The arithmetic moved to `Prisma.Decimal`, and the rounding rule changed to make invoices reconcile by construction:
+
+- each line rounds its taxable value, CGST and SGST to 2 dp, and the line total is built from those rounded parts;
+- the invoice header sums the **rounded** line components;
+- `totalAmount` is derived from those same rounded components, so `subtotal + cgst + sgst − discountAmt = totalAmount` holds exactly, and Σ line totals equals `subtotal + cgst + sgst`.
+
+Previously lines were rounded for display while the header accumulated unrounded binary error, so the two could disagree. **The migration exposed a real instance of this in existing data:** `INV260419-0005` stores `totalAmount = 106.79` while its own components sum to `106.78`. Historical rows are left as written — they are what was printed and given to the customer.
+
+Because `Decimal.toJSON()` emits a string and the API contract has always been numbers, `index.js` now sets an Express `json replacer` that unwraps `Decimal` to `Number` at the response boundary. Exactness matters in storage and arithmetic, not in a 2 dp display value — **the frontend needed no changes**.
+
+**Verified** against a throwaway database: all six GST fixtures from [09 — Testing Strategy](./09-testing-strategy.md#4-gst-engine-fixtures) produce their documented values; on every one, `cgst === sgst`, the header reconciles exactly, and Σ line totals matches. Across 100 invoices the daily-summary total equals the SQL `SUM` to the paisa. Every money field on the medicines, search, batches, invoice, invoice-detail, GST-report and daily-summary endpoints serialises as a JSON `number`. The [G-09](#g-09)/[G-01](#g-01) concurrency behaviour was re-tested unchanged.
+
 
 ---
 
@@ -334,7 +351,7 @@ Immutability is the right *default* for financial records; the missing piece is 
 | Order | Items | Rationale |
 |---|---|---|
 | ~~1~~ | ~~[G-09](#g-09), [G-01](#g-01)~~ | **Done 2026-08-18** — both fixed and verified under concurrency |
-| 2 | [G-07](#g-07) | Financial precision; needs a data migration, so do it before invoice volume grows |
+| ~~2~~ | ~~[G-07](#g-07)~~ | **Done 2026-08-19** — money is `DECIMAL(12,2)`, arithmetic is `Prisma.Decimal`, invoices reconcile exactly |
 | 3 | [G-05](#g-05), [G-11](#g-11), [G-06](#g-06) | Open write paths and an ineffective limiter |
 | 4 | [G-02](#g-02) | Blocks the documented deployment topology |
 | 5 | [G-10](#g-10), [G-04](#g-04), [G-12](#g-12) | Wrong or missing data shown to staff |

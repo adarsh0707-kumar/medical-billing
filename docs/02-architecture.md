@@ -355,7 +355,7 @@ The stack has no production path today. Minimum required before a real deploymen
 | AD-10 | Zustand over Redux/Context | Tiny surface for two small global stores | No caching/invalidation layer; each page hand-rolls fetching |
 | AD-11 | shadcn/ui (source-vendored Radix components) | Full control of component source, no runtime UI dependency | 20 component files to maintain in-repo |
 | AD-12 | Redis provisioned before it is used | Reserve the dependency and prove connectivity early | Dead dependency in the compose file; NFR-04 unmet |
-| AD-13 | `Float` for money | Fastest to model | Rounding drift on large or repeated aggregations ([G-07](./08-gap-analysis.md#g-07)) |
+| AD-13 | `DECIMAL(12,2)` for money, `Prisma.Decimal` for arithmetic, rounded half-up per line *(revised 2026-08-19; was `Float`)* | Exact totals; an invoice must reconcile with what it printed, and a month must reconcile with its invoices | Decimal objects must never meet the `+` operator, and are unwrapped to numbers by a `json replacer` at the response boundary ([G-07](./08-gap-analysis.md#g-07)) |
 | AD-14 | Vite dev server behind Nginx even in "prod-ish" runs | One entry point during development | No production asset pipeline exists yet |
 
 ---

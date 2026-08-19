@@ -97,6 +97,10 @@ In `NODE_ENV=development` unhandled errors also carry a `stack` string.
 
 > The root `README.md` documents `{ "success": false, "error": "...", "statusCode": 400 }`. That shape is **not** produced by any code path. The key is `message`.
 
+### Money
+
+All currency fields are `DECIMAL(12,2)` in the database and are computed with exact decimal arithmetic. They are serialised as JSON **numbers**, not strings, so the wire format is unchanged. Every invoice satisfies `totalAmount = subtotal + cgst + sgst − discountAmt` exactly, and `cgst = sgst` always. Rates (`gstPercent`, line `discount` %) are `DECIMAL(5,2)`, also serialised as numbers.
+
 ### Status codes
 
 | Code | Meaning |

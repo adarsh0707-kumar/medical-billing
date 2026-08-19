@@ -1,4 +1,5 @@
 const prisma = require("../config/db");
+const { Prisma } = require("@prisma/client");
 const {
   generateInvoiceNumber,
   isDuplicateNumber,
@@ -14,6 +15,16 @@ class StockConflictError extends Error {
     this.statusCode = statusCode;
   }
 }
+
+const D = Prisma.Decimal;
+
+// Every currency value that reaches the database is an exact Decimal rounded
+// to 2 dp, half-up. Rounding once per line and summing the *rounded* values is
+// what makes an invoice reconcile: the printed lines add up to the printed
+// total, and the monthly GST report adds up to the sum of the invoices. The
+// old float pipeline rounded lines for display but accumulated the unrounded
+// binary error into the header, so the two could disagree by a paisa.
+const money = (v) => new D(v).toDecimalPlaces(2, D.ROUND_HALF_UP);
 
 // Concurrent checkouts can derive the same serial; every retry re-reads the
 // count, so a handful of attempts covers far more simultaneous counters than a
@@ -54,37 +65,46 @@ const createInvoice = async (req, res, next) => {
     }
 
     // Step 2 — Calculate totals
-    let subtotal = 0;
-    let totalCgst = 0;
-    let totalSgst = 0;
+    let subtotal = new D(0);
+    let totalCgst = new D(0);
+    let totalSgst = new D(0);
 
     const processedItems = items.map((item) => {
-      const itemSubtotal = item.unitPrice * item.quantity;
-      const discountVal = (itemSubtotal * item.discount) / 100;
-      const taxableAmt = itemSubtotal - discountVal;
-      const gstAmt = (taxableAmt * item.gstPercent) / 100;
-      const cgst = gstAmt / 2;
-      const sgst = gstAmt / 2;
-      const totalPrice = taxableAmt + gstAmt;
+      // Round the unit price first so the stored price times the quantity
+      // always reproduces the line — a printed invoice has to add up.
+      const unitPrice = money(item.unitPrice);
+      const lineSubtotal = unitPrice.times(item.quantity);
+      const discountVal = lineSubtotal.times(item.discount).dividedBy(100);
+      const taxableAmt = money(lineSubtotal.minus(discountVal));
+      const gstAmt = taxableAmt.times(item.gstPercent).dividedBy(100);
 
-      subtotal += taxableAmt;
-      totalCgst += cgst;
-      totalSgst += sgst;
+      // CGST and SGST are rounded separately and the line total is built from
+      // the rounded halves, so a line always equals taxable + cgst + sgst.
+      const cgst = money(gstAmt.dividedBy(2));
+      const sgst = money(gstAmt.dividedBy(2));
+
+      subtotal = subtotal.plus(taxableAmt);
+      totalCgst = totalCgst.plus(cgst);
+      totalSgst = totalSgst.plus(sgst);
 
       return {
         batchId: item.batchId,
         medicineName: item.medicineName,
         quantity: item.quantity,
-        unitPrice: item.unitPrice,
-        discount: item.discount,
-        gstPercent: item.gstPercent,
-        totalPrice: parseFloat(totalPrice.toFixed(2)),
+        unitPrice,
+        discount: new D(item.discount),
+        gstPercent: new D(item.gstPercent),
+        totalPrice: taxableAmt.plus(cgst).plus(sgst),
       };
     });
 
-    const totalAmount = parseFloat(
-      (subtotal + totalCgst + totalSgst - discountAmt).toFixed(2),
-    );
+    // Derived from the same rounded components the lines carry, so
+    // totalAmount === subtotal + cgst + sgst - discountAmt holds exactly.
+    const billDiscount = money(discountAmt);
+    const totalAmount = subtotal
+      .plus(totalCgst)
+      .plus(totalSgst)
+      .minus(billDiscount);
 
     // Step 3 — Create invoice + deduct stock in a transaction.
     // The serial is allocated inside the transaction, but two concurrent
@@ -102,10 +122,10 @@ const createInvoice = async (req, res, next) => {
               invoiceNumber,
               customerId: customerId || null,
               userId: req.user.id,
-              subtotal: parseFloat(subtotal.toFixed(2)),
-              discountAmt,
-              cgst: parseFloat(totalCgst.toFixed(2)),
-              sgst: parseFloat(totalSgst.toFixed(2)),
+              subtotal,
+              discountAmt: billDiscount,
+              cgst: totalCgst,
+              sgst: totalSgst,
               totalAmount,
               paymentMode,
               paymentStatus,
@@ -296,16 +316,21 @@ const getDailySummary = async (req, res, next) => {
       _count: { id: true },
     });
 
+    // Prisma returns Decimal (or null on an empty day) — add with Decimal
+    // arithmetic, not `+`, which would concatenate the objects as strings.
+    const totalCgst = totalStats._sum.cgst ?? new D(0);
+    const totalSgst = totalStats._sum.sgst ?? new D(0);
+
     res.json({
       success: true,
       data: {
         invoices,
         summary: {
           totalInvoices: totalStats._count.id,
-          totalSales: totalStats._sum.totalAmount || 0,
-          totalCgst: totalStats._sum.cgst || 0,
-          totalSgst: totalStats._sum.sgst || 0,
-          totalGst: (totalStats._sum.cgst || 0) + (totalStats._sum.sgst || 0),
+          totalSales: totalStats._sum.totalAmount ?? new D(0),
+          totalCgst,
+          totalSgst,
+          totalGst: totalCgst.plus(totalSgst),
           byPaymentMode,
         },
       },
@@ -333,12 +358,12 @@ const getGstReport = async (req, res, next) => {
 
     const totals = invoices.reduce(
       (acc, inv) => ({
-        taxable: acc.taxable + inv.subtotal,
-        cgst: acc.cgst + inv.cgst,
-        sgst: acc.sgst + inv.sgst,
-        total: acc.total + inv.totalAmount,
+        taxable: acc.taxable.plus(inv.subtotal),
+        cgst: acc.cgst.plus(inv.cgst),
+        sgst: acc.sgst.plus(inv.sgst),
+        total: acc.total.plus(inv.totalAmount),
       }),
-      { taxable: 0, cgst: 0, sgst: 0, total: 0 },
+      { taxable: new D(0), cgst: new D(0), sgst: new D(0), total: new D(0) },
     );
 
     res.json({ success: true, data: { invoices, totals } });

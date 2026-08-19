@@ -4,6 +4,7 @@ const helmet = require("helmet");
 const morgan = require("morgan");
 const compression = require("compression");
 const rateLimit = require("express-rate-limit");
+const { Prisma } = require("@prisma/client");
 
 const authRoutes = require("./routes/auth.routes");
 const { errorHandler, notFound } = require("./middlewares/error.middleware");
@@ -40,6 +41,18 @@ app.use(
     credentials: true,
   }),
 );
+
+// ─── JSON Serialisation ────────────────────────────────
+// Money columns are Decimal in the database, and Decimal.toJSON() emits a
+// string. The API contract has always been numbers and the client does
+// arithmetic on them, so unwrap at the boundary. Exactness is what matters in
+// storage and in the calculations — not in a 2 dp display value.
+// The replacer receives the post-toJSON value, so read the original off the
+// holder (`this`) to recognise a Decimal.
+app.set("json replacer", function (key, value) {
+  const original = this[key];
+  return Prisma.Decimal.isDecimal(original) ? original.toNumber() : value;
+});
 
 // ─── Body Parser ───────────────────────────────────────
 app.use(express.json());

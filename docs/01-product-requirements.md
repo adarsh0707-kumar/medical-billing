@@ -261,7 +261,7 @@ Status legend: `✅` implemented · `🟡` partial · `⬜` planned. "Roles" is 
 | NFR-16 | Security        | Transport encryption in production                               | ⬜ No TLS termination configured                                                                                                   |       |
 | NFR-17 | Auditability    | Who-did-what trail for stock and price changes                   | ⬜ Only`Invoice.userId` is attributed                                                                                            |       |
 | NFR-18 | Data integrity  | Financial writes are atomic                                      | ✅ Invoice + stock in one transaction                                                                                              |       |
-| NFR-19 | Data integrity  | Monetary values avoid float rounding error                       | ❌ All money is`Float` — [G-07](./08-gap-analysis.md#g-07)                                                                       |       |
+| NFR-19 | Data integrity  | Monetary values avoid float rounding error                       | ✅ `DECIMAL(12,2)` columns with `Prisma.Decimal` arithmetic; invoices reconcile exactly ([G-07](./08-gap-analysis.md#g-07))         |       |
 | NFR-20 | Usability       | Responsive from 1024 px counter displays to tablets              | ✅ Tailwind responsive layout                                                                                                      |       |
 | NFR-21 | Usability       | Every failed action explains itself in plain language            | ✅ Toasts + structured API messages                                                                                                |       |
 | NFR-22 | Maintainability | Type safety on the client                                        | 🟡 TypeScript throughout, but API responses are typed ad-hoc per page, not from a shared contract                                  |       |
@@ -382,7 +382,7 @@ lineTotal    = taxable + gst          (rounded to 2 dp)
 
 - **Regulatory:** Indian GST invoicing requires taxable value and tax split per invoice; Schedule H medicines require prescription records under the Drugs and Cosmetics Rules. The system captures the Schedule H *flag* but stores **no prescription record**, so it does not by itself satisfy that requirement.
 - **Data sensitivity:** customer name, phone, age, gender and purchase history constitute health-adjacent personal data. See [07 — Security](./07-security.md#8-privacy-considerations).
-- **Technical:** Prisma 5 + PostgreSQL 15; Express 5; React 19. Money is stored as `Float`, which constrains achievable rounding guarantees until migrated to `Decimal`.
+- **Technical:** Prisma 5 + PostgreSQL 15; Express 5; React 19. Money is stored as `DECIMAL(12,2)` and computed with `Prisma.Decimal`, rounded half-up to 2 dp per line; the API serialises it as JSON numbers.
 
 ## 13. Dependencies
 

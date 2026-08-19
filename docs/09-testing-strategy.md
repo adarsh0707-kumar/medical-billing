@@ -66,7 +66,7 @@ These are the acceptance set for `createInvoice`. All values follow [PRD §8 BR-
 **Invariants to assert on every fixture:**
 
 - `cgst === sgst` (BR-03, unconditional 50/50 split).
-- `totalAmount === subtotal + cgst + sgst − discountAmt`, exactly. On the current `Float` schema this can fail by a paisa because `totalAmount` is computed from unrounded accumulators while `subtotal`/`cgst`/`sgst` are each rounded independently — **that failure is the point** ([G-07](./08-gap-analysis.md#g-07)). Assert exact equality after the `Decimal` migration; assert `≤ 0.01` before it and treat the tolerance as a known defect, not a passing grade.
+- `totalAmount === subtotal + cgst + sgst − discountAmt`, **exactly**. Since the `Decimal` migration (2026-08-19) the header is derived from the same rounded components the lines carry, so no tolerance is acceptable here ([G-07](./08-gap-analysis.md#g-07)). Invoices written before that migration can be a paisa off and are left as printed — exclude them by date rather than loosening the assertion.
 - Σ `InvoiceItem.totalPrice` reconciles to `subtotal + cgst + sgst`.
 - The client's cart total (Billing page) equals the server's `totalAmount` for the same input.
 

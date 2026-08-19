@@ -51,7 +51,7 @@ model Medicine {
   manufacturerId String
   hsnCode        String?
   unit           String       // tablet, syrup, injection, etc.
-  gstPercent     Float        @default(12) // 0, 5, 12, 18
+  gstPercent     Decimal      @default(12) @db.Decimal(5, 2) // 0, 5, 12, 18
   isScheduledH   Boolean      @default(false) // prescription required
   isActive       Boolean      @default(true)
   createdAt      DateTime     @default(now())
@@ -68,8 +68,8 @@ model Batch {
   batchNumber    String
   expiryDate     DateTime
   mfgDate        DateTime?
-  purchasePrice  Float
-  sellingPrice   Float
+  purchasePrice  Decimal  @db.Decimal(12, 2)
+  sellingPrice   Decimal  @db.Decimal(12, 2)
   quantity       Int      // current stock
   initialQty     Int      // when added
   supplierId     String
@@ -128,11 +128,11 @@ model Invoice {
   customerId    String?
   userId        String
   date          DateTime      @default(now())
-  subtotal      Float
-  discountAmt   Float         @default(0)
-  cgst          Float         @default(0)
-  sgst          Float         @default(0)
-  totalAmount   Float
+  subtotal      Decimal       @db.Decimal(12, 2)
+  discountAmt   Decimal       @default(0) @db.Decimal(12, 2)
+  cgst          Decimal       @default(0) @db.Decimal(12, 2)
+  sgst          Decimal       @default(0) @db.Decimal(12, 2)
+  totalAmount   Decimal       @db.Decimal(12, 2)
   paymentMode   PaymentMode   @default(CASH)
   paymentStatus PaymentStatus @default(PAID)
   notes         String?
@@ -149,10 +149,10 @@ model InvoiceItem {
   batchId     String
   medicineName String  // snapshot at time of sale
   quantity    Int
-  unitPrice   Float
-  discount    Float   @default(0)
-  gstPercent  Float
-  totalPrice  Float
+  unitPrice   Decimal @db.Decimal(12, 2)
+  discount    Decimal @default(0) @db.Decimal(5, 2) // percentage, not currency
+  gstPercent  Decimal @db.Decimal(5, 2)
+  totalPrice  Decimal @db.Decimal(12, 2)
 
   invoice     Invoice  @relation(fields: [invoiceId], references: [id])
   batch       Batch    @relation(fields: [batchId], references: [id])
@@ -189,7 +189,7 @@ model Purchase {
   purchaseNumber String         @unique
   supplierId     String
   date           DateTime       @default(now())
-  totalAmount    Float
+  totalAmount    Decimal        @db.Decimal(12, 2)
   notes          String?
   createdAt      DateTime       @default(now())
 
@@ -202,7 +202,7 @@ model PurchaseItem {
   purchaseId  String
   batchId     String
   quantity    Int
-  costPrice   Float
+  costPrice   Decimal  @db.Decimal(12, 2)
 
   purchase    Purchase @relation(fields: [purchaseId], references: [id])
   batch       Batch    @relation(fields: [batchId], references: [id])

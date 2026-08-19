@@ -170,7 +170,7 @@ Identical shape to `Category`: `id`, unique `name`, `medicines Medicine[]`. Hard
 | `manufacturerId` | String | FK → Manufacturer | |
 | `hsnCode` | String? | optional | HSN for GST classification; searchable |
 | `unit` | String | required | Constrained by Zod to: tablet, capsule, syrup, injection, cream, drops, powder, inhaler, other — **not** by the database |
-| `gstPercent` | Float | default `12` | Zod restricts to 0 / 5 / 12 / 18 |
+| `gstPercent` | Decimal(5,2) | default `12` | Zod restricts to 0 / 5 / 12 / 18 |
 | `isScheduledH` | Boolean | default `false` | Prescription-only flag; displayed at POS, not enforced |
 | `isActive` | Boolean | default `true` | Soft-delete flag; list and search filter on it |
 | `createdAt` / `updatedAt` | DateTime | auto | |
@@ -193,8 +193,8 @@ Relations: `category`, `manufacturer`, `batches Batch[]`.
 | `batchNumber` | String | required | Printed on the manufacturer's pack |
 | `expiryDate` | DateTime | required | Drives FEFO ordering and alerts |
 | `mfgDate` | DateTime? | optional | Added by migration `20260419152932_add_mfgdate`; **always null in practice** — [G-04](./08-gap-analysis.md#g-04) |
-| `purchasePrice` | Float | > 0 | Cost. Never exposed at POS |
-| `sellingPrice` | Float | > 0 | Pre-GST price used as the POS unit price |
+| `purchasePrice` | Decimal(12,2) | > 0 | Cost. Never exposed at POS |
+| `sellingPrice` | Decimal(12,2) | > 0 | Pre-GST price used as the POS unit price |
 | `quantity` | Int | > 0 at creation | **Live stock.** Decremented per sale |
 | `initialQty` | Int | set = `quantity` at creation | Opening stock, for depletion analysis |
 | `supplierId` | String | FK → Supplier | |
@@ -245,11 +245,11 @@ Relations: `invoices Invoice[]`. **No `updatedAt`, no soft delete, no delete rou
 | `customerId` | String? | FK → Customer, nullable | Null = walk-in |
 | `userId` | String | FK → User | Operator who raised it |
 | `date` | DateTime | default now | Business date used by every report filter |
-| `subtotal` | Float | | Σ of line taxable values (**after** line discounts, **before** tax) |
-| `discountAmt` | Float | default 0 | Bill-level flat discount, applied post-tax |
-| `cgst` | Float | default 0 | Σ line CGST |
-| `sgst` | Float | default 0 | Σ line SGST |
-| `totalAmount` | Float | | `subtotal + cgst + sgst − discountAmt` |
+| `subtotal` | Decimal(12,2) | | Σ of **rounded** line taxable values (after line discounts, before tax) |
+| `discountAmt` | Decimal(12,2) | default 0 | Bill-level flat discount, applied post-tax |
+| `cgst` | Decimal(12,2) | default 0 | Σ rounded line CGST |
+| `sgst` | Decimal(12,2) | default 0 | Σ rounded line SGST |
+| `totalAmount` | Decimal(12,2) | | `subtotal + cgst + sgst − discountAmt`, exactly |
 | `paymentMode` | PaymentMode | default `CASH` | |
 | `paymentStatus` | PaymentStatus | default `PAID` | Only `PAID` invoices enter the GST report |
 | `notes` | String? | optional | |
@@ -268,10 +268,10 @@ Relations: `customer?`, `user`, `items InvoiceItem[]`.
 | `batchId` | String | FK → Batch — ties the sale to the exact physical stock, which is what makes recalls traceable |
 | `medicineName` | String | **Snapshot** at time of sale |
 | `quantity` | Int | Units sold |
-| `unitPrice` | Float | Snapshot of batch selling price |
-| `discount` | Float | Line discount **percentage**, default 0 |
-| `gstPercent` | Float | Snapshot of the medicine's rate |
-| `totalPrice` | Float | `taxable + gst`, 2 dp |
+| `unitPrice` | Decimal(12,2) | Snapshot of batch selling price |
+| `discount` | Decimal(5,2) | Line discount **percentage**, default 0 |
+| `gstPercent` | Decimal(5,2) | Snapshot of the medicine's rate |
+| `totalPrice` | Decimal(12,2) | `taxable + cgst + sgst`, built from the rounded parts |
 
 Not stored, recomputable: line taxable value, line CGST, line SGST.
 
@@ -296,7 +296,7 @@ This is the only raw SQL in the codebase; the atomicity guarantee is the reason.
 | `purchaseNumber` | String | unique, `POyymm-nnnn` |
 | `supplierId` | String | FK → Supplier |
 | `date` / `createdAt` | DateTime | |
-| `totalAmount` | Float | |
+| `totalAmount` | Decimal(12,2) | |
 | `notes` | String? | |
 
 | `PurchaseItem` | Type |
@@ -305,7 +305,7 @@ This is the only raw SQL in the codebase; the atomicity guarantee is the reason.
 | `purchaseId` | FK → Purchase |
 | `batchId` | FK → Batch |
 | `quantity` | Int |
-| `costPrice` | Float |
+| `costPrice` | Decimal(12,2) |
 
 No route, controller, validator or UI touches these tables. `generatePurchaseNumber()` in `invoice.utils.js` is written but never called. `GET /api/inventory/suppliers/:id` includes a `purchases` array that is always empty. Decision needed — see [PRD Q7](./01-product-requirements.md#14-open-questions).
 
@@ -362,6 +362,7 @@ These must hold at all times. Any new write path must preserve them.
 | `20260418054922_init` | 2026-04-18 | All 11 tables, 4 enums, all constraints |
 | `20260419152932_add_mfgdate` | 2026-04-19 | Adds nullable `Batch.mfgDate` |
 | `20260818171902_add_invoice_counter` | 2026-08-18 | Adds `InvoiceCounter` for race-free invoice serials |
+| `20260819153025_money_to_decimal` | 2026-08-19 | Money → `DECIMAL(12,2)`, rates → `DECIMAL(5,2)` |
 
 Workflow:
 
@@ -412,7 +413,7 @@ Idempotent (`upsert` on email). **Change this password immediately on any non-lo
 
 | # | Issue | Impact | Detail |
 |---|-------|--------|--------|
-| 1 | Money stored as `Float` | Rounding drift in aggregated GST totals | [G-07](./08-gap-analysis.md#g-07) |
+| ~~1~~ | ~~Money stored as `Float`~~ | Fixed 2026-08-19 — now `DECIMAL(12,2)`. Historical rows keep the value they printed, so a pre-migration invoice can still be a paisa off its own components | [G-07](./08-gap-analysis.md#g-07) |
 | 2 | `mfgDate` unreachable | Column always null | [G-04](./08-gap-analysis.md#g-04) |
 | 3 | `Purchase`/`PurchaseItem` unused | Dead schema; misleading supplier response | [FR-PUR](./01-product-requirements.md#611-purchases--fr-pur) |
 | 4 | No `updatedAt` on `Batch`, `Customer`, `Supplier`, `Invoice` | Cannot tell when a record last changed | — |
