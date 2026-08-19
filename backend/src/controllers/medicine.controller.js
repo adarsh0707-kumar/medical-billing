@@ -104,7 +104,8 @@ const getOne = async (req, res, next) => {
 const search = async (req, res, next) => {
   try {
     const { q } = req.query;
-    if (!q || q.length < 2) return res.json({ success: true, data: [] });
+    if (typeof q !== "string" || q.length < 2)
+      return res.json({ success: true, data: [] });
 
     const medicines = await prisma.medicine.findMany({
       where: {
