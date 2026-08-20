@@ -333,7 +333,7 @@ No route, controller, validator or UI touches these tables. `generatePurchaseNum
 | `Invoice(customerId)` | customer history | |
 | `InvoiceItem(invoiceId)` | invoice detail/print | |
 | GIN `pg_trgm` on `Medicine(name, genericName)` | POS search | `ILIKE '%q%'` cannot use a b-tree index |
-| `CHECK (Batch.quantity >= 0)` | integrity | Backstop against the oversell race |
+| ~~`CHECK (Batch.quantity >= 0)`~~ | integrity | **Added 2026-08-20** (`Batch_quantity_non_negative`). Hand-written in migration `20260820052324_add_batch_quantity_check` — Prisma cannot express CHECK in `schema.prisma` |
 
 ---
 
@@ -343,7 +343,7 @@ These must hold at all times. Any new write path must preserve them.
 
 | # | Invariant | Enforced by |
 |---|-----------|-------------|
-| I-1 | `Batch.quantity ≥ 0` | Application check only — **not** the database |
+| I-1 | `Batch.quantity ≥ 0` | **Enforced by the database** — `CHECK ("quantity" >= 0)`, constraint `Batch_quantity_non_negative`, added 2026-08-20. The conditional decrement inside the invoice transaction remains the mechanism; the constraint is the backstop for write paths that do not exist yet |
 | I-2 | `Batch.quantity ≤ initialQty` | Nothing. Batch update can raise quantity arbitrarily |
 | I-3 | Every `InvoiceItem` points at a real `Batch` | FK |
 | I-4 | `Invoice.totalAmount = subtotal + cgst + sgst − discountAmt` | Application (`billing.controller.js`) |
@@ -419,5 +419,5 @@ Idempotent (`upsert` on email). **Change this password immediately on any non-lo
 | 4 | No `updatedAt` on `Batch`, `Customer`, `Supplier`, `Invoice` | Cannot tell when a record last changed | — |
 | 5 | No audit table | Price and stock edits are untraceable | NFR-17 |
 | 6 | `Medicine.unit` is a free string in the DB | Direct DB writes can bypass the Zod allowlist | Consider a Postgres enum |
-| 7 | No `CHECK (quantity >= 0)` | Oversell can persist a negative stock level | I-1 |
+| ~~7~~ | ~~No `CHECK (quantity >= 0)`~~ | Fixed 2026-08-20 — the database now rejects a negative quantity on any write path, not just the guarded decrement | I-1 |
 | ~~8~~ | ~~`totalStock` computed from one batch~~ | Fixed 2026-08-19 — summed with a `groupBy` | [G-10](./08-gap-analysis.md#g-10) |
