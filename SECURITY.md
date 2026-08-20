@@ -106,9 +106,9 @@ These are **already documented** in [`docs/07-security.md`](./docs/07-security.m
 
 | Issue | Status |
 |---|---|
-| Seeded admin credentials (`admin@medstore.com` / `admin123`) are in the repository | By design for first-run setup. **Change immediately on any real deployment.** A forced first-login change is planned |
-| The PostgreSQL password is hard-coded in `docker-compose.yml` | Development default. Must be replaced for any deployment |
-| No TLS anywhere — nginx listens on `:80` only | Deployment responsibility today; TLS termination is planned |
+| Seeded admin credentials (`admin@medstore.com` / `admin123`) are in the repository | By design for first-run setup. **Fixed 2026-08-20**: the account is created needing a password change, and the API refuses everything else until it happens |
+| The PostgreSQL password is hard-coded in `docker-compose.yml` | Development default, and still true of the *development* file. `docker-compose.prod.yml` has no credential literals |
+| No TLS anywhere — nginx listens on `:80` only | **Fixed 2026-08-20** for the production stack: TLS, HSTS and an 80 → 443 redirect. The development stack is still plain HTTP, deliberately |
 | JWTs are stored in `localStorage` and are valid for 7 days | Known trade-off. XSS would expose a long-lived credential |
 | No server-side logout or token revocation | A leaked token stays valid until it expires. Rotating `JWT_SECRET` invalidates every session as an emergency measure |
 | Changing a password doesn't invalidate existing sessions | Planned |
@@ -117,7 +117,7 @@ These are **already documented** in [`docs/07-security.md`](./docs/07-security.m
 | No audit log for stock or price changes | Only invoice authorship is attributed |
 | ~~Query parameters are unvalidated — e.g. `?limit=999999` is honoured~~ | **Fixed 2026-08-20.** Every query string is validated; `limit` is capped at 100 |
 | Any authenticated role can read every customer's purchase history | Intentional for a single small store; revisit as staff numbers grow |
-| PostgreSQL and Redis publish host ports, and Redis has no password | Development convenience. Must not be exposed in a deployment |
+| PostgreSQL and Redis publish host ports, and Redis has no password | **Fixed 2026-08-20**: the production stack publishes only 80 and 443, and Redis was removed as an unused dependency |
 
 If you can demonstrate impact **beyond** what's described here — a way to exploit one of these that the documentation doesn't anticipate — that is a genuine finding. Please report it.
 
@@ -129,17 +129,32 @@ This software is self-hosted, so most of its real-world security posture is a de
 
 Before running this anywhere real:
 
-- [ ] Change the seeded admin password, and delete the account if it isn't used
-- [ ] Replace the PostgreSQL credentials in `docker-compose.yml`; don't commit the replacements
-- [ ] Set a strong random `JWT_SECRET` (`openssl rand -hex 32`). There is no default — the API fails loudly without one, which is intended
-- [ ] Terminate TLS in front of the application and redirect `:80` → `:443`
-- [ ] Stop publishing PostgreSQL (`5432`) and Redis (`6379`) to the host
-- [ ] Set a Redis password if Redis is reachable from anywhere but the application
-- [ ] Set `NODE_ENV=production` so error stacks stay out of responses
-- [ ] Set `TRUST_PROXY` to match your topology — it decides which peers may set `X-Forwarded-For`, and therefore what the rate limiter keys on
-- [ ] Restrict the CORS allowlist to your real origin
-- [ ] Configure database backups **and rehearse a restore**
-- [ ] Decide a retention period for customer records — none is enforced, and purchase history accumulates indefinitely
+Use `docker-compose.prod.yml`. It exists precisely so most of this list is no longer something you have to remember:
+
+```bash
+./scripts/gen-cert.sh                     # or drop a real certificate into certs/
+cp .env.prod.example .env.prod            # then fill in every value
+docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+docker compose -f docker-compose.prod.yml --env-file .env.prod exec backend npx prisma migrate deploy
+docker compose -f docker-compose.prod.yml --env-file .env.prod exec backend npm run seed
+```
+
+- [x] **Change the seeded admin password** — now enforced, not requested. The seeded admin is created with `mustChangePassword`, and the API answers `403 PASSWORD_CHANGE_REQUIRED` to every route except reading its own profile and changing its password. It cannot sell, stock or administer anything until the password is replaced
+- [x] **Replace the PostgreSQL credentials** — `docker-compose.prod.yml` has no credential literals; all three come from `.env.prod` and the compose file refuses to start if any is unset. `DATABASE_URL` is built from the same variables, so the two can no longer drift
+- [x] **Set a strong random `JWT_SECRET`** — required by the prod compose file, which fails fast with a named error rather than starting without it
+- [x] **Terminate TLS and redirect `:80` → `:443`** — `nginx/nginx.prod.conf`. HSTS at one year with `includeSubDomains`; `preload` is deliberately omitted, being close to irreversible and your decision rather than a default
+- [x] **Stop publishing PostgreSQL and Redis to the host** — the prod stack publishes only 80 and 443. Postgres is reachable only on the internal network. Redis was removed entirely: it was running and unused ([G-03](./docs/08-gap-analysis.md#g-03))
+- [x] ~~Set a Redis password~~ — no longer applicable; there is no Redis
+- [x] **Set `NODE_ENV=production`** — set in the prod compose file and baked into the backend image, so error stacks stay out of responses
+- [x] **Set `TRUST_PROXY`** — defaults to the compose network's private ranges; override in `.env.prod` if another proxy sits in front
+- [x] **Restrict the CORS allowlist** — in production the allowlist is exactly `CORS_ORIGINS` and the development origins are *not* appended. It is a required variable
+- [x] **Configure database backups and rehearse a restore** — `scripts/backup.sh` and `scripts/restore.sh`. The restore has been rehearsed against the production stack: schema dropped entirely, restored from a dump, every row count matched and the application authenticated again. See [`docs/06`](./docs/06-development-guide.md)
+- [ ] **Decide a retention period for customer records** — still yours to make. None is enforced, and purchase history accumulates indefinitely
+
+Two things the software cannot decide for you:
+
+- **The certificate.** `scripts/gen-cert.sh` generates a self-signed one so the stack runs over HTTPS anywhere, which is what makes the above testable. A browser will warn on it, correctly. Replace the two files in `certs/` with a real certificate before anyone but you uses the system
+- **Rotating credentials on an existing deployment.** Postgres only applies `POSTGRES_USER`/`POSTGRES_PASSWORD` when it initialises an *empty* data directory. Changing them in `.env.prod` on a running system does nothing to the database and the API will simply fail to authenticate. Rotate with `ALTER ROLE ... WITH PASSWORD` inside Postgres, or take a dump, recreate the volume and restore
 
 The reasoning behind each item, and the current threat model, is in [`docs/07-security.md`](./docs/07-security.md).
 

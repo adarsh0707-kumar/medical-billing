@@ -311,3 +311,58 @@ medical-billing/
     ├── Dockerfile.dev        node:20-slim, npm install --legacy-peer-deps
     └── .env                  gitignored
 ```
+
+---
+
+## Running in production
+
+The development stack (`docker-compose.yml`) mounts the source, runs nodemon and the Vite dev server, and speaks plain HTTP. It is not a deployment. `docker-compose.prod.yml` is.
+
+```bash
+./scripts/gen-cert.sh                     # or drop a real certificate into certs/
+cp .env.prod.example .env.prod            # then fill in every value
+docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+docker compose -f docker-compose.prod.yml --env-file .env.prod exec backend npx prisma migrate deploy
+docker compose -f docker-compose.prod.yml --env-file .env.prod exec backend npm run seed
+```
+
+Then open `https://localhost`. The seeded admin can sign in and do exactly one thing: replace its password. Every other route answers `403 PASSWORD_CHANGE_REQUIRED` until it does.
+
+| | Development | Production |
+|---|---|---|
+| Source | Bind-mounted, hot reloaded | Baked into the image |
+| Frontend | Vite dev server on 5173 | Static files from `nginx:alpine` |
+| Backend | `nodemon` | `node src/index.js` as a non-root user |
+| Transport | HTTP on 80 | HTTPS on 443, HTTP redirects |
+| Postgres | Published on 5432 | Internal network only |
+| Credentials | Literals in compose | Required environment variables |
+| Logs | Pretty, human-readable | One JSON object per line |
+
+### Health
+
+`/health` is liveness — is the process up? It is deliberately cheap and touches nothing, so a database outage cannot cause an orchestrator to kill an otherwise healthy process and turn an incident into a restart loop.
+
+`/health/ready` is readiness — can it actually serve? It runs `SELECT 1` and returns **503** with the reason when the database is unreachable. That is what a load balancer needs in order to route around an instance.
+
+### Backups
+
+```bash
+COMPOSE_FILE=docker-compose.prod.yml ENV_FILE=.env.prod ./scripts/backup.sh
+COMPOSE_FILE=docker-compose.prod.yml ENV_FILE=.env.prod ./scripts/restore.sh backups/<file>.dump
+```
+
+`backup.sh` writes a compressed custom-format dump into `backups/` and prunes anything older than `RETAIN_DAYS` (30 by default). It reads the credentials from the running container rather than duplicating them, so it cannot drift out of step with the stack it backs up.
+
+**Rehearse the restore, on a schedule.** A backup you have never restored is a hope. The procedure above was rehearsed on 2026-08-20 by dropping the entire `public` schema from the running production stack, restoring from a dump, and confirming every row count matched and the application authenticated again.
+
+`restore.sh` asks for confirmation before replacing a database, and runs inside a single transaction so a failure rolls back rather than leaving something that is neither the old state nor the new. Set `FORCE=1` for unattended use.
+
+### Rotating the database password
+
+Postgres applies `POSTGRES_USER` and `POSTGRES_PASSWORD` **only when it initialises an empty data directory**. Changing them in `.env.prod` on a running system does nothing to the database, and the API then fails to authenticate with `P1000`. Either:
+
+```sql
+ALTER ROLE myuser WITH PASSWORD 'the new one';
+```
+
+then update `.env.prod` and restart the backend — or take a dump, recreate the volume, and restore into it.

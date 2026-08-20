@@ -342,12 +342,12 @@ Source is bind-mounted (`./backend:/app`, `./frontend:/app`) with anonymous volu
 
 The stack has no production path today. Minimum required before a real deployment — expanded in [Phase 8](./05-roadmap-and-phases.md#phase-8--production-readiness):
 
-- Multi-stage Dockerfiles; `vite build` output served statically by Nginx.
-- TLS termination and HSTS.
-- Postgres credentials and `JWT_SECRET` from a secret store, not compose literals.
-- Remove host port exposure for Postgres and Redis.
+- ~~Multi-stage Dockerfiles; `vite build` output served statically by Nginx.~~ **Done 2026-08-20** — `backend/Dockerfile` and `frontend/Dockerfile`.
+- ~~TLS termination and HSTS.~~ **Done** — `nginx/nginx.prod.conf`, plus the security headers and gzip the nginx README had long claimed.
+- ~~Postgres credentials and `JWT_SECRET` from a secret store, not compose literals.~~ **Done** — `docker-compose.prod.yml` has no credential literals and refuses to start without them.
+- ~~Remove host port exposure for Postgres and Redis.~~ **Done** — only 80 and 443 are published; Redis was removed entirely ([G-03](./08-gap-analysis.md#g-03)).
 - ~~`app.set('trust proxy', …)`~~ **done** — set to `loopback, linklocal, uniquelocal` (override with `TRUST_PROXY`), so the rate limiter keys on the real client address rather than a spoofable header.
-- Backup/restore for the `pgdata` volume.
+- ~~Backup/restore for the `pgdata` volume.~~ **Done** — `scripts/backup.sh` and `scripts/restore.sh`, rehearsed against the production stack.
 
 ---
 

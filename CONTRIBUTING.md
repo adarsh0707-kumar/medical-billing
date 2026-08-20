@@ -32,11 +32,11 @@ docker compose up -d
 docker compose exec backend npm run seed     # creates the bootstrap admin
 ```
 
-| URL | What |
-|---|---|
-| http://localhost:5173 | The app via the Vite dev server — **develop against this**, it has HMR |
-| http://localhost | The same app via nginx, closest to a deployment |
-| http://localhost:5000/health | The API directly |
+| URL                          | What                                                                         |
+| ---------------------------- | ---------------------------------------------------------------------------- |
+| http://localhost:5173        | The app via the Vite dev server —**develop against this**, it has HMR |
+| http://localhost             | The same app via nginx, closest to a deployment                              |
+| http://localhost:5000/health | The API directly                                                             |
 
 Sign in with `admin@medstore.com` / `admin123`.
 
@@ -48,11 +48,11 @@ Full setup, environment variables and troubleshooting: [`docs/06-development-gui
 
 ## Finding something to work on
 
-| Source | What's in it |
-|---|---|
-| [`docs/08-gap-analysis.md`](./docs/08-gap-analysis.md) | Known defects, each with a diagnosis and a suggested fix. Anything not marked ✅ Fixed is open |
-| [`docs/05-roadmap-and-phases.md`](./docs/05-roadmap-and-phases.md) | Phased plan with exit criteria; Phase 9 (tests and CI) is the highest-value open work |
-| [`docs/01-product-requirements.md`](./docs/01-product-requirements.md) | Every requirement with a status — `⬜ Planned` rows are unbuilt features |
+| Source                                                                  | What's in it                                                                                   |
+| ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| [`docs/08-gap-analysis.md`](./docs/08-gap-analysis.md)                 | Known defects, each with a diagnosis and a suggested fix. Anything not marked ✅ Fixed is open |
+| [`docs/05-roadmap-and-phases.md`](./docs/05-roadmap-and-phases.md)     | Phased plan with exit criteria; Phase 9 (tests and CI) is the highest-value open work          |
+| [`docs/01-product-requirements.md`](./docs/01-product-requirements.md) | Every requirement with a status —`⬜ Planned` rows are unbuilt features                     |
 
 If you're picking up a `G-nn` item, reference it in your PR. If you disagree with the diagnosis there, say so — several entries have already been corrected by the work of fixing them.
 

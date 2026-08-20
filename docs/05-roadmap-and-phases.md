@@ -33,7 +33,7 @@ timeline
 |---|---|
 | Feature completeness for a single store | Strong — the full sell/stock/report loop works |
 | Correctness under concurrency | **Sound** — both races fixed and proven by concurrent tests; stock also has a database `CHECK` backstop |
-| Production deployability | **Not ready** — dev-only images, no TLS, secrets in compose. Phase 8 is the remaining blocker |
+| Production deployability | **Ready to trial** — multi-stage images, TLS with HSTS and a CSP, no credential literals, data ports unpublished, structured logging, a readiness probe and a rehearsed restore. A real certificate and a retention decision remain the operator's |
 | Test coverage | 327 backend tests, 87% statements, with a 90% gate on the money and auth paths. 40 frontend tests cover the cart arithmetic; component and browser tests are still open |
 | Documentation accuracy | This `docs/` set is the reference; the component READMEs were trimmed to point at it on 2026-08-20 |
 
@@ -153,25 +153,25 @@ The honest read as of **2026-08-20**: the correctness gaps that made v1.0.0 unsa
 
 **Estimate:** 1 sprint. 7.3 carries a data migration and should ship first, alone.
 
-### Phase 8 — Production readiness 🔴
+### Phase 8 — Production readiness ✅ *(delivered 2026-08-20)*
 
-**Why:** there is currently no safe way to run this outside a laptop.
+**Why:** there was no safe way to run this outside a laptop.
 
 | # | Work |
 |---|---|
-| 8.1 | Multi-stage production Dockerfiles; `vite build` output served as static files by Nginx |
-| 8.2 | Production `docker-compose.prod.yml`: no bind mounts, no dev dependencies, restart policies |
-| 8.3 | TLS termination in Nginx + HSTS; redirect 80 → 443 |
-| 8.4 | Stop exposing Postgres and Redis on host ports |
-| 8.5 | Secrets from a store/`.env` file excluded from the image; remove the hard-coded DB password from compose |
+| ~~8.1~~ ✅ | Multi-stage production Dockerfiles — **done 2026-08-20**. The frontend image builds with Vite and serves the output from `nginx:alpine` (95 MB, no Node at runtime); the backend prunes dev dependencies but keeps the Prisma CLI so migrations are runnable in the deployed container |
+| ~~8.2~~ ✅ | `docker-compose.prod.yml` — **done**. No bind mounts, restart policies, healthcheck-gated startup, and a data volume separate from the development stack's |
+| ~~8.3~~ ✅ | TLS, HSTS, 80 → 443 — **done**, plus a CSP, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`, gzip and the `X-Forwarded-Proto` the dev config omits |
+| ~~8.4~~ ✅ | **Done** — the production stack publishes only 80 and 443. Redis was removed rather than secured ([G-03](./08-gap-analysis.md#g-03)) |
+| ~~8.5~~ ✅ | **Done** — no credential literals in the production compose file, which fails fast with a named error if any is unset. `DATABASE_URL` is composed from the same variables Postgres uses, so the two cannot drift |
 | ~~8.6~~ ✅ | `trust proxy` so rate limiting and logs see real client IPs — **done 2026-08-19** (pulled forward from Phase 8), scoped to private-range peers ([G-06](./08-gap-analysis.md#g-06)) |
 | ~~8.7~~ ✅ | Route the SPA through `/api` and drop cross-origin entirely — **done 2026-08-19** (pulled forward from Phase 8), with a Vite dev-server proxy so `:5173` stays same-origin too ([G-02](./08-gap-analysis.md#g-02)) |
-| 8.8 | Structured JSON logging with request IDs; replace `morgan("dev")` |
-| 8.9 | Real health/readiness probes that check Postgres and Redis |
-| 8.10 | Documented `pg_dump` backup + restore procedure, and a rehearsed restore |
-| 8.11 | Force a password change for the seeded admin on first login |
+| ~~8.8~~ ✅ | **Done** — pino. One JSON object per line in production, pretty in development, silent in tests. Every request carries a correlation id echoed as `X-Request-Id`, and credentials are redacted |
+| ~~8.9~~ ✅ | **Done** — `/health` stays a cheap liveness check; `/health/ready` runs `SELECT 1` and answers 503 when the database is unreachable. Verified by stopping Postgres and watching it flip and recover |
+| ~~8.10~~ ✅ | **Done** — `scripts/backup.sh` and `scripts/restore.sh`. Rehearsed against the production stack: the entire schema was dropped, restored from a dump, every row count matched and the app authenticated again |
+| ~~8.11~~ ✅ | **Done** — enforced by the API, not the UI. A flagged account gets `403 PASSWORD_CHANGE_REQUIRED` on every route but reading its own profile and changing its password |
 
-**Exit criteria:** a clean host runs the stack over HTTPS with no default credentials and a tested restore.
+**Exit criteria:** a clean host runs the stack over HTTPS with no default credentials and a tested restore. **Met 2026-08-20** — the browser smoke's six flows were re-run against the production images over TLS and all passed, the seeded admin cannot use the system until its password is replaced, and a full schema-loss restore was rehearsed.
 
 ### Phase 9 — Test & CI foundation 🟢 *(mostly delivered 2026-08-19)*
 

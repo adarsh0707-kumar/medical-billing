@@ -190,9 +190,9 @@ Assets: customer PII and purchase history · financial records (invoices, GST li
 
 **P0 — before any non-local deployment**
 
-1. Force a password change for the seeded admin on first login; remove the credential from the repo's default path.
-2. Terminate TLS at Nginx; redirect 80 → 443; enable HSTS.
-3. Stop publishing 5432 and 6379 to the host; move Postgres credentials out of `docker-compose.yml`.
+1. ~~Force a password change for the seeded admin on first login~~ **Done 2026-08-20** — enforced server-side by `password-change.middleware.js`, which answers `403 PASSWORD_CHANGE_REQUIRED` to every route but the two a blocked user needs. T-2 residual drops from Critical to Low.
+2. ~~Terminate TLS at Nginx; redirect 80 → 443; enable HSTS~~ **Done 2026-08-20** — `nginx/nginx.prod.conf`, with a CSP, `X-Frame-Options`, `Referrer-Policy` and `Permissions-Policy` alongside.
+3. ~~Stop publishing 5432 and 6379 to the host; move Postgres credentials out of `docker-compose.yml`~~ **Done 2026-08-20** in `docker-compose.prod.yml`. Redis was removed rather than secured.
 4. ~~`trust proxy` and a strict per-IP limiter on `/api/auth/login`~~ — **done 2026-08-19.**
 5. ~~Zod schemas on `PUT /api/inventory/batches/:id`, `POST /api/auth/register`, `POST /api/users`, `PUT /api/users/:id`~~ — **done 2026-08-19.**
 
