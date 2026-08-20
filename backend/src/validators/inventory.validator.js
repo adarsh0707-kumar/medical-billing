@@ -116,6 +116,8 @@ const medicineSearchQuerySchema = z.object({
 });
 
 const batchListQuerySchema = z.object({
+  page,
+  limit,
   medicineId: z.string().trim().min(1).optional(),
   expiringSoon: booleanFlag,
   lowStock: booleanFlag,

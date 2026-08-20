@@ -649,23 +649,32 @@ function BatchesTab() {
     quantity: "",
   });
 
+  const [batchPage, setBatchPage] = useState(1);
+  const [batchTotalPages, setBatchTotalPages] = useState(1);
+  const [batchTotal, setBatchTotal] = useState(0);
+
   const fetchBatches = useCallback(async () => {
     setLoading(true);
     try {
-      const params =
-        filter === "expiring"
-          ? "?expiringSoon=true"
-          : filter === "low"
-            ? "?lowStock=true"
-            : "";
-      const res = await api.get(`/api/inventory/batches${params}`);
+      // Paginated since 2026-08-20. Unfiltered this endpoint used to return
+      // every batch in the shop — 8 MB and about a second and a half at 25,000
+      // rows — to render one screen.
+      const params = new URLSearchParams({
+        page: String(batchPage),
+        limit: "20",
+        ...(filter === "expiring" && { expiringSoon: "true" }),
+        ...(filter === "low" && { lowStock: "true" }),
+      });
+      const res = await api.get(`/api/inventory/batches?${params}`);
       setBatches(res.data.data);
+      setBatchTotalPages(res.data.pagination?.pages ?? 1);
+      setBatchTotal(res.data.pagination?.total ?? res.data.data.length);
     } catch {
       toast.error("Failed to fetch batches");
     } finally {
       setLoading(false);
     }
-  }, [filter]);
+  }, [filter, batchPage]);
 
   useEffect(() => {
     fetchBatches();
@@ -733,7 +742,10 @@ function BatchesTab() {
           {(["all", "expiring", "low"] as const).map((f) => (
             <button
               key={f}
-              onClick={() => setFilter(f)}
+              onClick={() => {
+                setFilter(f);
+                setBatchPage(1);
+              }}
               className={`px-4 py-2 text-sm font-medium transition-colors capitalize ${
                 filter === f
                   ? "bg-teal-600 text-white"
@@ -876,6 +888,34 @@ function BatchesTab() {
               </tbody>
             </table>
           </div>
+
+          {batchTotalPages > 1 && (
+            <div className="flex items-center justify-between px-4 py-3 border-t border-slate-700">
+              <p className="text-slate-400 text-sm">
+                Page {batchPage} of {batchTotalPages} · {batchTotal} batches
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-slate-600 text-slate-300"
+                  onClick={() => setBatchPage((p) => p - 1)}
+                  disabled={batchPage === 1}
+                >
+                  Previous
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-slate-600 text-slate-300"
+                  onClick={() => setBatchPage((p) => p + 1)}
+                  disabled={batchPage === batchTotalPages}
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 

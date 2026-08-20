@@ -2,7 +2,11 @@ const prisma = require("../config/db");
 
 const getAll = async (req, res, next) => {
   try {
-    const { medicineId, expiringSoon, lowStock } = req.validatedQuery;
+    // `expiringSoon` and `lowStock` arrive as booleans: validateQuery coerces the
+    // "true"/"false" strings URLSearchParams sends. Comparing them to the string
+    // "true" here silently disabled both filters and returned every batch.
+    const { medicineId, expiringSoon, lowStock, page, limit } =
+      req.validatedQuery;
 
     const today = new Date();
     const thirtyDaysLater = new Date();
@@ -10,22 +14,38 @@ const getAll = async (req, res, next) => {
 
     const where = {
       ...(medicineId && { medicineId }),
-      ...(expiringSoon === "true" && {
+      ...(expiringSoon && {
         expiryDate: { lte: thirtyDaysLater, gte: today },
       }),
-      ...(lowStock === "true" && { quantity: { lte: 10, gt: 0 } }),
+      ...(lowStock && { quantity: { lte: 10, gt: 0 } }),
     };
 
-    const batches = await prisma.batch.findMany({
-      where,
-      include: {
-        medicine: { select: { name: true, unit: true } },
-        supplier: { select: { name: true } },
-      },
-      orderBy: { expiryDate: "asc" },
-    });
+    // Paginated: unfiltered this returned every batch in the shop, which at
+    // 25,000 rows was 8 MB and about a second and a half per page load.
+    const [batches, total] = await Promise.all([
+      prisma.batch.findMany({
+        where,
+        include: {
+          medicine: { select: { name: true, unit: true } },
+          supplier: { select: { name: true } },
+        },
+        orderBy: { expiryDate: "asc" },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      prisma.batch.count({ where }),
+    ]);
 
-    res.json({ success: true, data: batches });
+    res.json({
+      success: true,
+      data: batches,
+      pagination: {
+        total,
+        page,
+        limit,
+        pages: Math.max(1, Math.ceil(total / limit)),
+      },
+    });
   } catch (err) {
     next(err);
   }

@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, beforeEach } from "vitest";
 import request from "supertest";
+import prisma from "../../src/config/db.js";
 import { buildApp, signIn, makeSellable } from "../helpers/factory.js";
 
 /**
@@ -190,6 +191,59 @@ describe("filters and enums", () => {
   it("rejects a boolean flag that is not true or false", async () => {
     expect((await get("/api/inventory/batches?expiringSoon=maybe")).status).toBe(400);
     expect((await get("/api/inventory/batches?expiringSoon=true")).status).toBe(200);
+  });
+
+  // Regression guard. Adding validateQuery turned expiringSoon and lowStock from
+  // the strings URLSearchParams sends into booleans, but the controller still
+  // compared them to "true" — so both filters silently matched nothing and every
+  // batch came back. The original tests asserted only the status code and passed
+  // throughout. A filter test has to assert that the filter filtered.
+  it("actually filters on expiringSoon and lowStock, not just returns 200", async () => {
+    const { batch, medicine } = await makeSellable();
+
+    // Far future, plenty of stock: matches neither filter.
+    await prisma.batch.update({
+      where: { id: batch.id },
+      data: {
+        expiryDate: new Date(Date.now() + 400 * 24 * 60 * 60 * 1000),
+        quantity: 500,
+      },
+    });
+
+    const all = await get("/api/inventory/batches");
+    expect(all.status).toBe(200);
+    expect(all.body.pagination.total).toBe(1);
+
+    const expiring = await get("/api/inventory/batches?expiringSoon=true");
+    expect(expiring.status).toBe(200);
+    expect(expiring.body.pagination.total).toBe(0);
+
+    const low = await get("/api/inventory/batches?lowStock=true");
+    expect(low.status).toBe(200);
+    expect(low.body.pagination.total).toBe(0);
+
+    // Now make it match both, and confirm it appears in each.
+    await prisma.batch.update({
+      where: { id: batch.id },
+      data: {
+        expiryDate: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000),
+        quantity: 3,
+      },
+    });
+
+    expect((await get("/api/inventory/batches?expiringSoon=true")).body.pagination.total).toBe(1);
+    expect((await get("/api/inventory/batches?lowStock=true")).body.pagination.total).toBe(1);
+    expect(medicine.id).toBeTruthy();
+  });
+
+  it("paginates batches instead of returning every row", async () => {
+    for (let i = 0; i < 3; i++) await makeSellable();
+
+    const res = await get("/api/inventory/batches?limit=2");
+    expect(res.status).toBe(200);
+    expect(res.body.data).toHaveLength(2);
+    expect(res.body.pagination.total).toBe(3);
+    expect(res.body.pagination.pages).toBe(2);
   });
 
   // The POS search box calls this on every keystroke. One character is not a

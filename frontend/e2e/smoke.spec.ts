@@ -19,7 +19,11 @@ import { test, expect, type APIRequestContext, type Page } from "@playwright/tes
 
 const ADMIN = { email: "admin@medstore.com", password: "admin123" };
 
-const unique = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+// Random first: Date.now() in base 36 shares its leading characters across runs
+// in the same window, and the POS search returns only ten hits — a fixture whose
+// distinguishing suffix falls outside the search term is invisible.
+const unique = () =>
+  Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
 
 async function apiLogin(request: APIRequestContext, creds = ADMIN) {
   const res = await request.post("/api/auth/login", { data: creds });
@@ -66,13 +70,21 @@ async function seedSellable(
   return { name, medicine, batch, token };
 }
 
-async function batchStock(request: APIRequestContext, token: string, batchId: string) {
-  const res = await request.get("/api/inventory/batches", {
+async function batchStock(
+  request: APIRequestContext,
+  token: string,
+  batchId: string,
+  medicineId: string,
+) {
+  // Scoped to the medicine rather than scanning the whole list: /batches is
+  // paginated, so a freshly created batch is not on the first page.
+  const res = await request.get(`/api/inventory/batches?medicineId=${medicineId}&limit=100`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   expect(res.ok()).toBeTruthy();
   const found = (await res.json()).data.find((b: { id: string }) => b.id === batchId);
-  return found?.quantity as number;
+  expect(found, `batch ${batchId} should be in the medicine's batches`).toBeTruthy();
+  return found.quantity as number;
 }
 
 async function signIn(page: Page, creds = ADMIN) {
@@ -86,7 +98,7 @@ async function signIn(page: Page, creds = ADMIN) {
 /** Searches the POS and adds the first result to the cart. */
 async function addToCart(page: Page, name: string) {
   const box = page.getByPlaceholder(/search medicine by name/i);
-  await box.fill(name.slice(0, 20));
+  await box.fill(name);
   const row = page.getByRole("button", { name: new RegExp(name) });
   await expect(row).toBeVisible();
   await row.click();
@@ -116,7 +128,7 @@ test("a newly stocked medicine appears in POS search with the right stock", asyn
   await signIn(page);
   await page.goto("/billing");
 
-  await page.getByPlaceholder(/search medicine by name/i).fill(name.slice(0, 20));
+  await page.getByPlaceholder(/search medicine by name/i).fill(name);
 
   const row = page.getByRole("button", { name: new RegExp(name) });
   await expect(row).toBeVisible();
@@ -130,8 +142,8 @@ test("selling 2 units creates an invoice and drops the batch by exactly 2", asyn
   request,
 }) => {
   const token = await apiLogin(request);
-  const { name, batch } = await seedSellable(request, token, { quantity: 10 });
-  expect(await batchStock(request, token, batch.id)).toBe(10);
+  const { name, batch, medicine } = await seedSellable(request, token, { quantity: 10 });
+  expect(await batchStock(request, token, batch.id, medicine.id)).toBe(10);
 
   await signIn(page);
   await page.goto("/billing");
@@ -143,7 +155,7 @@ test("selling 2 units creates an invoice and drops the batch by exactly 2", asyn
   // The print view is the confirmation the cashier sees.
   await expect(page.getByText(/MedBill Pro/i).first()).toBeVisible();
 
-  expect(await batchStock(request, token, batch.id)).toBe(8);
+  expect(await batchStock(request, token, batch.id, medicine.id)).toBe(8);
 });
 
 // ─── 4 ───────────────────────────────────────────────────
@@ -153,7 +165,7 @@ test("an oversell attempt is refused and leaves stock untouched", async ({
   request,
 }) => {
   const token = await apiLogin(request);
-  const { name, batch } = await seedSellable(request, token, { quantity: 2 });
+  const { name, batch, medicine } = await seedSellable(request, token, { quantity: 2 });
 
   await signIn(page);
   await page.goto("/billing");
@@ -170,7 +182,7 @@ test("an oversell attempt is refused and leaves stock untouched", async ({
   // refused: the conditional decrement inside the invoice transaction is the
   // authoritative check (G-09), and it is proven under concurrency in the
   // backend suite rather than here.
-  expect(await batchStock(request, token, batch.id)).toBe(2);
+  expect(await batchStock(request, token, batch.id, medicine.id)).toBe(2);
 });
 
 // ─── 5 ───────────────────────────────────────────────────
