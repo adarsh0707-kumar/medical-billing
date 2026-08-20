@@ -329,7 +329,7 @@ Source is bind-mounted (`./backend:/app`, `./frontend:/app`) with anonymous volu
 | --------------------- | -------- | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
 | `DATABASE_URL`      | backend  | `postgresql://medadmin:medpass123@postgres:5432/medicaldb` | Credentials are hard-coded in`docker-compose.yml`                                                        |
 | `REDIS_URL`         | backend  | `redis://redis:6379`                                       | Client connects; nothing consumes it                                                                       |
-| `JWT_SECRET`        | backend  | `${JWT_SECRET}`                                            | **Sourced from the host env / root `.env`** — no default; an unset value makes `jwt.sign` throw |
+| `JWT_SECRET`        | backend  | `${JWT_SECRET}`                                            | **Sourced from the host env / root `.env`** — no default; the API refuses to start without it ([D-15](./08-gap-analysis.md#d-15)) |
 | `NODE_ENV`          | backend  | `development`                                              | Controls Prisma query logging and stack exposure                                                           |
 | `PORT`              | backend  | defaults to 5000                                             | Read in`index.js`                                                                                        |
 | `FRONTEND_URL`      | backend  | *(not set in compose)*                                     | Appended to the CORS allowlist when present                                                                |

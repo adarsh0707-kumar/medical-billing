@@ -51,7 +51,7 @@ The token comes from `POST /api/auth/login`, is signed HS256 with `JWT_SECRET`, 
 
 The 500 row matters to clients. Token verification and the user reload are checked separately, so a database failure is **not** reported as a bad token ([G-18](./08-gap-analysis.md#g-18)). A client that signs the user out on 401 — as `frontend/src/lib/api.ts` does — must not treat a 500 the same way, or a transient database fault becomes a forced logout for everyone.
 
-> An unset `JWT_SECRET` currently surfaces as `401 Invalid token.` on every request, because `jsonwebtoken` reports a missing secret as a `JsonWebTokenError`. Nothing validates the variable at startup — see [D-15](./08-gap-analysis.md#d-15).
+> An unset `JWT_SECRET` no longer reaches this layer: `src/index.js` checks it at boot and exits with a named error rather than starting. Until 2026-08-20 it surfaced here as `401 Invalid token.` on every request, because `jsonwebtoken` reports a missing secret as a `JsonWebTokenError` — indistinguishable from a forged one ([D-15](./08-gap-analysis.md#d-15)).
 
 ## 4. Role matrix
 

@@ -29,12 +29,17 @@ The root `README.md`, `backend/README.md`, `frontend/README.md` and `nginx/READM
 | D-12                  | `GET /api/billing/:id/invoice` downloads an invoice                                                                 | backend README                 | No such route; printing is`window.print()` in the browser                                                                                                                                                                                                                                                                          |
 | D-13                  | Backend`.env.example` exists (`cp .env.example .env`)                                                             | backend README                 | No`.env.example` file in the repository                                                                                                                                                                                                                                                                                            |
 | D-14                  | `Architecture.txt` route layout (`/api/invoices`, `/api/batches`, `/api/reports/*`)                           | Architecture.txt               | Superseded — everything moved under`/api/billing` and `/api/inventory`                                                                                                                                                                                                                                                          |
-| <a id="d-15"></a>D-15 | "There is no default — the API fails loudly without [`JWT_SECRET`]"                                                | SECURITY.md operator checklist | **Nothing validates it at startup.** `JWT_SECRET` is read only at use, so an unset variable lets the app boot normally and then answers `401 Invalid token.` on every request — the most misleading failure available. Login fails with a 500. A boot-time guard would make the claim true; until then the claim is wrong |
+| <a id="d-15"></a>D-15 | "There is no default — the API fails loudly without [`JWT_SECRET`]"                                                | SECURITY.md operator checklist | ~~**Nothing validates it at startup.**~~ **Fixed 2026-08-20** — `src/index.js` checks the variable at boot and exits 1 with a named error. Previously it was read only at use, so an unset value let the app boot normally and then answer `401 Invalid token.` on every request — the most misleading failure available — while login returned a 500. The claim is now true |
 
 **Resolved 2026-08-20.** All four READMEs were trimmed to a short "what this is / how to run it" plus links into `docs/` — the recommendation below, taken. `README.md` went from 287 lines to ~120, `backend/README.md` 447 → ~75, `frontend/README.md` 557 → ~75, `nginx/README.md` 558 → ~55. Every D-nn above is closed by that trim except:
 
 - **D-14** — `Architecture.txt` is kept as a historical artefact. It now carries a SUPERSEDED header, and its two outright-false details (frontend port, the `/api/reports` route list) were corrected rather than left to mislead.
-- **D-15** — still open. Nothing validates `JWT_SECRET` at boot, so SECURITY.md's claim that the API "fails loudly without one" remains wrong. A boot guard belongs with the Phase 8 deployment work.
+- **D-15** — **closed 2026-08-20.** `src/index.js` checks `JWT_SECRET` before the server listens and exits with an error naming the variable and the command to generate one, so SECURITY.md's claim that the API fails loudly without one is now true.
+
+  Two things about that guard are load-bearing and easy to undo by tidying:
+
+  - It sits **below** `require("./app")`. Nothing in this codebase calls `dotenv.config()` — requiring `@prisma/client` loads `backend/.env` into `process.env` as a side effect, and that is the only reason a non-Docker run picks the variable up at all. Hoisting the check above the require would read `process.env` too early and refuse to start a correctly configured machine.
+  - It is **not** inside `createApp()`. The test suite builds the app through that factory and mints its own tokens; a guard there would make every suite depend on process state rather than on its fixtures.
 
 The original recommendation, for the record: rather than rewriting four READMEs, trim each to a short "what this is / how to run it" and link to `docs/`. This set is the reference.
 
@@ -530,7 +535,7 @@ Guarded by `tests/auth/auth.test.js`, which forces the reload to reject by signi
 
 Splitting the catches also exposed that two documented behaviours had never been tested — expired tokens and `nbf` tokens both now have cases. `auth.middleware.js` coverage went from 95.65% to 96.15% statements and 91.67% to 93.75% branches.
 
-> Not fixed here: an unset `JWT_SECRET` still answers `401 Invalid token.`, because `jsonwebtoken` classifies a missing secret as a `JsonWebTokenError` rather than a generic error. Nothing validates the variable at boot either — see [D-15](#d-15). A boot-time guard is the right fix and belongs with the Phase 8 deployment work.
+> Not fixed here: an unset `JWT_SECRET` still answered `401 Invalid token.`, because `jsonwebtoken` classifies a missing secret as a `JsonWebTokenError` rather than a generic error — so the split above could not tell it apart from a forged token, and correctly did not try. **Fixed separately on 2026-08-20** by a boot-time guard in `src/index.js`, which is the right layer for it: the process now refuses to start rather than reaching this middleware at all ([D-15](#d-15)).
 
 ---
 
