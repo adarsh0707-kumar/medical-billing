@@ -1,4 +1,5 @@
 import api from "@/lib/api";
+import { calcItemTotal, calcCartTotals } from "@/lib/cart-math";
 import { toast } from "sonner";
 import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
@@ -72,13 +73,9 @@ interface Customer {
 
 // ─── Helpers ───────────────────────────────────────────
 
-const calcItemTotal = (item: CartItem) => {
-  const subtotal = item.unitPrice * item.quantity;
-  const discountVal = (subtotal * item.discount) / 100;
-  const taxable = subtotal - discountVal;
-  const gst = (taxable * item.gstPercent) / 100;
-  return { subtotal, discountVal, taxable, gst, total: taxable + gst };
-};
+// Cart arithmetic lives in lib/cart-math so it can be unit-tested against the
+// server's fixtures — see docs/09 section 4. It runs in integer paise and mirrors
+// the Decimal pipeline in backend/src/controllers/billing.controller.js.
 
 const formatINR = (val: number) =>
   new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(
@@ -418,12 +415,8 @@ export default function Billing() {
   };
 
   // ─── Totals ───────────────────────────────────────────
-  const subtotal = cart.reduce(
-    (sum, item) => sum + calcItemTotal(item).taxable,
-    0,
-  );
-  const totalGst = cart.reduce((sum, item) => sum + calcItemTotal(item).gst, 0);
-  const grandTotal = subtotal + totalGst - extraDiscount;
+  const { cgstPaise, sgstPaise, subtotal, totalGst, grandTotal } =
+    calcCartTotals(cart, extraDiscount);
 
   // ─── Submit Invoice ───────────────────────────────────
   const handleSubmit = async () => {
@@ -836,11 +829,11 @@ export default function Billing() {
             <div className="bg-slate-700/50 rounded-lg p-3 text-xs space-y-1 text-slate-400">
               <div className="flex justify-between">
                 <span>CGST</span>
-                <span>{formatINR(totalGst / 2)}</span>
+                <span>{formatINR(cgstPaise / 100)}</span>
               </div>
               <div className="flex justify-between">
                 <span>SGST</span>
-                <span>{formatINR(totalGst / 2)}</span>
+                <span>{formatINR(sgstPaise / 100)}</span>
               </div>
             </div>
 

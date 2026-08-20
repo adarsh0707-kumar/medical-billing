@@ -470,6 +470,29 @@ Nothing here is *incorrect* today — the screens work. It is a structural probl
 
 ---
 
+### <a id="g-17"></a>G-17 ✅ FIXED — The cart quoted a different total than the invoice
+
+**Problem.** `Billing.tsx` computed cart totals in floating point and summed unrounded values, while `createInvoice` rounds each line and builds every total from the rounded parts. The two disagreed on **roughly 40% of realistic single-line inputs** (measured over 2,000,000 price × quantity × GST × discount combinations).
+
+The dominant cause was not float drift. The server rounds **CGST and SGST separately** and sums the two rounded halves; the cart applied one rounding to the combined GST. Where half the GST lands on a half-paisa, the server's two halves each round up and the line gains a paisa:
+
+| Input | Cart showed | Invoice stored |
+|---|---|---|
+| ₹1.00 × 1, 0% discount, 5% GST | ₹1.05 | **₹1.06** |
+| ₹1.00 × 1, 0% discount, 12% GST, 5% line discount | ₹1.06 | **₹1.07** |
+
+The cashier quoted one number and the printed bill carried another. On a busy counter that is a customer dispute with no way to tell who was right.
+
+> The originally reported witness — ₹100.10 × 1 at 5% — does **not** reproduce. Its float lands on 105.10499999999999, which formats to ₹105.10 and matches. Binary error happened to fall the helpful way. The mechanism is the CGST/SGST split, not the float, and a witness has to be chosen accordingly.
+
+**Fix.** Cart arithmetic moved to [`frontend/src/lib/cart-math.ts`](../frontend/src/lib/cart-math.ts) and runs in **integer paise**, mirroring the server pipeline statement for statement — unit price to paise, one rounding on the discounted line, each GST half rounded separately, header summed from the rounded components. Verified against the server's own `Decimal` implementation over 2,000,000 single-line and 200,000 randomised multi-line combinations: **zero mismatches**. All seven [docs/09 §4](./09-testing-strategy.md#4-gst-engine-fixtures) fixtures now agree with a real created invoice on total, CGST and SGST.
+
+Extracted to `lib/` rather than exported from `Billing.tsx` so it is unit-testable without tripping `react-refresh/only-export-components`. Guarded by `frontend/src/pages/__tests__/cart-math.test.ts` (40 cases), which is the first frontend suite — see [G-16](#g-16) for what still is not tested.
+
+**Still open:** the frontend CI job runs only lint and build, so this suite does not yet gate a merge. Wiring it in is [Phase 9.5](./05-roadmap-and-phases.md).
+
+---
+
 ## Prioritised remediation order
 
 | Order | Items | Rationale |
@@ -480,6 +503,7 @@ Nothing here is *incorrect* today — the screens work. It is a structural probl
 | ~~4~~ | ~~[G-02](#g-02)~~ | **Done 2026-08-19** — both entry points same-origin through a proxy |
 | ~~5~~ | ~~[G-10](#g-10), [G-04](#g-04), [G-12](#g-12)~~ | **Done 2026-08-19** — stock totals correct, manufacture dates recordable, delete conflicts explained |
 | ~~6~~ | ~~[G-14](#g-14)~~ | **Done 2026-08-19** — 278 tests, CI, and a coverage gate on the money and auth paths |
+| ~~6b~~ | ~~[G-17](#g-17)~~ | **Done 2026-08-20** — cart and invoice round identically, verified over 2.2M combinations and guarded by the first frontend suite |
 | 7 | [G-08](#g-08), [G-03](#g-03), [G-13](#g-13), [G-15](#g-15) | Performance, dead weight, operational usability |
 | 8 | Part A (docs) | Trim the READMEs to point at `docs/` |
 | 9 | [G-16](#g-16) | Frontend data-layer refactor. Largest and least urgent — the screens work today. Closing it restores `set-state-in-effect` to `error` |

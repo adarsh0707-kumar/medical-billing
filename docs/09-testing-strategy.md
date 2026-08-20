@@ -1,6 +1,6 @@
 # 09 — Testing Strategy
 
-**Current state (2026-08-19): 278 backend tests, green in CI.** The backend suite is implemented; frontend unit tests and a browser smoke test are still open. Sections 1–4 describe the approach and the acceptance fixtures; §5 lists the cases, most of which now exist.
+**Current state (2026-08-20): 278 backend tests, plus 40 frontend cart-maths tests.** The backend suite is implemented. Frontend unit testing is now set up (Vitest + Testing Library) and covers the cart arithmetic; the remaining §5.6 cases and the browser smoke test are still open. Sections 1–4 describe the approach and the acceptance fixtures; §5 lists the cases, most of which now exist.
 
 ---
 
@@ -64,7 +64,8 @@ Coverage is 87% overall; `billing.controller.js` and `auth.middleware.js` are ga
 
 ### Still open
 
-- Frontend unit tests (cart maths, auth guards) — §5.6
+- Frontend unit tests — §5.6. **Cart maths done** ([`cart-math.test.ts`](../frontend/src/pages/__tests__/cart-math.test.ts), 40 cases, [G-17](./08-gap-analysis.md#g-17)); the auth-guard, stock-cap and notification-severity cases are still open.
+- Wiring `npm test` into the frontend CI job — the job still runs only lint and build, so the cart-maths suite does not yet gate a merge.
 - A Playwright browser smoke test — §5.7
 - Query-parameter validation cases, once the API validates them
 
@@ -125,7 +126,7 @@ These are the acceptance set for `createInvoice`. All values follow [PRD §8 BR-
 - `cgst === sgst` (BR-03, unconditional 50/50 split).
 - `totalAmount === subtotal + cgst + sgst − discountAmt`, **exactly**. Since the `Decimal` migration (2026-08-19) the header is derived from the same rounded components the lines carry, so no tolerance is acceptable here ([G-07](./08-gap-analysis.md#g-07)). Invoices written before that migration can be a paisa off and are left as printed — exclude them by date rather than loosening the assertion.
 - Σ `InvoiceItem.totalPrice` reconciles to `subtotal + cgst + sgst`.
-- The client's cart total (Billing page) equals the server's `totalAmount` for the same input.
+- The client's cart total (Billing page) equals the server's `totalAmount` for the same input. **Holds by construction since 2026-08-20** ([G-17](./08-gap-analysis.md#g-17)): the cart runs the same rounding pipeline in integer paise, in [`frontend/src/lib/cart-math.ts`](../frontend/src/lib/cart-math.ts), asserted against these fixtures by `frontend/src/pages/__tests__/cart-math.test.ts`. It previously summed unrounded floats and disagreed on roughly 40% of realistic inputs — the smallest witness being ₹1.00 × 1 at 5% GST, where the cart showed ₹1.05 and the invoice stored ₹1.06. Assert CGST and SGST **separately**, not just the total: the divergence lives in the split, and a test that only checks `totalAmount` misses it whenever the two errors cancel.
 
 ---
 
