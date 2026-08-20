@@ -2,6 +2,8 @@ import { describe, it, expect, beforeAll } from "vitest";
 import request from "supertest";
 import prisma from "../../src/config/db.js";
 import { buildApp, makeUser, signIn, PASSWORD } from "../helpers/factory.js";
+import { generateToken } from "../../src/utils/jwt.utils.js";
+import jwt from "jsonwebtoken";
 
 let app;
 beforeAll(() => {
@@ -101,6 +103,86 @@ describe("token handling", () => {
 
     const res = await request(app).get("/api/auth/me").set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(401);
+  });
+
+  // Regression guard for G-18. `protect` used to wrap token verification and the
+  // user reload in one try/catch that answered 401 for everything, so a database
+  // failure reached the caller as a bad token. lib/api.ts clears localStorage and
+  // redirects on any 401, so a few seconds of database trouble signed out every
+  // active user and told them their session was invalid.
+  //
+  // The token below is signed with the real secret but carries a numeric id,
+  // which Prisma rejects with a PrismaClientValidationError rather than returning
+  // a miss — a genuine throw out of the query, no mocking involved. (Mocking is
+  // not an option here: the suite's Prisma client and the app's are separate
+  // instances, because the tests import config/db.js as ESM while the middleware
+  // `require`s it.) Only our own secret can mint that token, so a valid signature
+  // carrying a payload our own code cannot use is a server fault, not a bad
+  // credential — 500 is the honest answer.
+  it("reports a failing user lookup as 500, not as a bad token", async () => {
+    const res = await request(app)
+      .get("/api/auth/me")
+      .set("Authorization", `Bearer ${generateToken(12345)}`);
+
+    expect(res.status).toBe(500);
+    expect(res.body.success).toBe(false);
+    // The half that matters: it must not look like a credential problem, because
+    // the client logs the user out whenever it does.
+    expect(res.body.message).not.toBe("Invalid token.");
+    expect(res.body.message).not.toBe("Token expired.");
+  });
+
+  it("keeps answering 401 for a genuinely bad token", async () => {
+    // The corollary to the split: verification runs first and on its own, so a
+    // garbage token is still a 401 and never reaches the database at all.
+    const res = await request(app)
+      .get("/api/auth/me")
+      .set("Authorization", "Bearer nonsense.nonsense.nonsense");
+
+    expect(res.status).toBe(401);
+    expect(res.body.message).toBe("Invalid token.");
+  });
+
+  // The other two ways verification can fail. Both are documented in
+  // docs/04-api-reference.md §3; neither had a test before G-18 split the catches.
+  it("answers 401 'Token expired.' for an expired token", async () => {
+    const expired = jwt.sign({ id: "whoever" }, process.env.JWT_SECRET, {
+      expiresIn: "-1s",
+    });
+    const res = await request(app).get("/api/auth/me").set("Authorization", `Bearer ${expired}`);
+
+    expect(res.status).toBe(401);
+    expect(res.body.message).toBe("Token expired.");
+  });
+
+  it("answers 401 for a token that is not valid yet", async () => {
+    const notYet = jwt.sign({ id: "whoever" }, process.env.JWT_SECRET, {
+      notBefore: 3600,
+    });
+    const res = await request(app).get("/api/auth/me").set("Authorization", `Bearer ${notYet}`);
+
+    expect(res.status).toBe(401);
+    expect(res.body.message).toBe("Invalid token.");
+  });
+
+  // Pins today's behaviour rather than endorsing it. jsonwebtoken reports an
+  // unset secret as a JsonWebTokenError, so an operator who forgets JWT_SECRET
+  // gets "Invalid token." on every request — and nothing validates the variable
+  // at boot, despite SECURITY.md claiming the API fails loudly without one.
+  // If a boot guard lands (docs/08 D-15), this test should be deleted with it.
+  it("currently reports an unset JWT_SECRET as a bad token", async () => {
+    const { token } = await signIn(app, "CASHIER");
+    const real = process.env.JWT_SECRET;
+    delete process.env.JWT_SECRET;
+
+    try {
+      const res = await request(app).get("/api/auth/me").set("Authorization", `Bearer ${token}`);
+
+      expect(res.status).toBe(401);
+      expect(res.body.message).toBe("Invalid token.");
+    } finally {
+      process.env.JWT_SECRET = real;
+    }
   });
 });
 

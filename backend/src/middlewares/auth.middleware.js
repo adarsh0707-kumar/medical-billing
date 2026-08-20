@@ -1,21 +1,46 @@
 const jwt = require("jsonwebtoken");
 const prisma = require("../config/db");
 
+// The two halves of this middleware fail for completely different reasons, so
+// they get separate catches. Verifying the token is a statement about the
+// caller's credential; reloading the user is infrastructure. Catching both and
+// answering 401 meant a database blip was reported as "Invalid token." — and
+// since lib/api.ts clears localStorage on any 401, a few seconds of database
+// trouble signed out every active user and told them their session was invalid.
 const protect = async (req, res, next) => {
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return res.status(401).json({
+      success: false,
+      message: "Access denied. No token provided.",
+    });
+  }
+
+  let decoded;
   try {
-    const authHeader = req.headers.authorization;
-
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return res.status(401).json({
-        success: false,
-        message: "Access denied. No token provided.",
-      });
+    decoded = jwt.verify(authHeader.split(" ")[1], process.env.JWT_SECRET);
+  } catch (err) {
+    if (err.name === "TokenExpiredError") {
+      return res
+        .status(401)
+        .json({ success: false, message: "Token expired." });
     }
+    if (err.name === "JsonWebTokenError" || err.name === "NotBeforeError") {
+      return res
+        .status(401)
+        .json({ success: false, message: "Invalid token." });
+    }
+    // jsonwebtoken raises only its own error classes today, including for an
+    // unset secret ("secret or public key must be provided" is a
+    // JsonWebTokenError). Anything outside them would be a fault on our side, and
+    // reporting that as a bad credential is what this whole split exists to stop.
+    return next(err);
+  }
 
-    const token = authHeader.split(" ")[1];
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
-    // Get fresh user from DB
+  try {
+    // Reloaded on every request so deactivating a user takes effect immediately
+    // (FR-AUTH-04, invariant I-7).
     const user = await prisma.user.findUnique({
       where: { id: decoded.id },
       select: { id: true, name: true, email: true, role: true, isActive: true },
@@ -31,12 +56,7 @@ const protect = async (req, res, next) => {
     req.user = user;
     next();
   } catch (err) {
-    if (err.name === "TokenExpiredError") {
-      return res
-        .status(401)
-        .json({ success: false, message: "Token expired." });
-    }
-    return res.status(401).json({ success: false, message: "Invalid token." });
+    next(err);
   }
 };
 

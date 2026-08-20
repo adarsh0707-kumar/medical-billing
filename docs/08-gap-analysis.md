@@ -29,6 +29,7 @@ The root `README.md`, `backend/README.md`, `frontend/README.md` and `nginx/READM
 | D-12 | `GET /api/billing/:id/invoice` downloads an invoice | backend README | No such route; printing is `window.print()` in the browser |
 | D-13 | Backend `.env.example` exists (`cp .env.example .env`) | backend README | No `.env.example` file in the repository |
 | D-14 | `Architecture.txt` route layout (`/api/invoices`, `/api/batches`, `/api/reports/*`) | Architecture.txt | Superseded — everything moved under `/api/billing` and `/api/inventory` |
+| <a id="d-15"></a>D-15 | "There is no default — the API fails loudly without [`JWT_SECRET`]" | SECURITY.md operator checklist | **Nothing validates it at startup.** `JWT_SECRET` is read only at use, so an unset variable lets the app boot normally and then answers `401 Invalid token.` on every request — the most misleading failure available. Login fails with a 500. A boot-time guard would make the claim true; until then the claim is wrong |
 
 **Recommendation:** rather than rewriting four READMEs, trim each to a short "what this is / how to run it" and link to `docs/`. This set is now the reference.
 
@@ -55,6 +56,8 @@ Severity: 🔴 causes data corruption or a security exposure · 🟠 causes inco
 | [G-13](#g-13) | 🟡 | Dead code: 4 empty route files, unused utils, empty nginx.conf |
 | [G-14](#g-14) | ✅ Fixed | No automated tests |
 | [G-15](#g-15) | 🟡 | Invoices are immutable with no correction path |
+| [G-17](#g-17) | ✅ Fixed | Cart total disagreed with the invoice the server wrote |
+| [G-18](#g-18) | ✅ Fixed | A database failure during `protect` was reported as an invalid token |
 
 ---
 
@@ -493,6 +496,24 @@ Extracted to `lib/` rather than exported from `Billing.tsx` so it is unit-testab
 
 ---
 
+### <a id="g-18"></a>G-18 ✅ FIXED — A database failure was reported as an invalid token
+
+**Where:** [`backend/src/middlewares/auth.middleware.js`](../backend/src/middlewares/auth.middleware.js)
+
+**Problem.** One `try` wrapped both `jwt.verify` and the Prisma user reload, and the `catch` answered `401 Invalid token.` for everything that was not a `TokenExpiredError`. The two halves fail for unrelated reasons: verification is a statement about the caller's credential, the reload is infrastructure.
+
+So any database trouble during an authenticated request — a dropped connection, a pool timeout, a failover — reached the client as a bad credential. `frontend/src/lib/api.ts` clears `localStorage` and redirects to `/login` on **any** 401, so a few seconds of database trouble signed out every active user at once and told each of them their session was invalid. The logs said the same thing, pointing an operator at authentication while the actual fault was the database.
+
+**Fix.** Verification runs first, in its own `try`, and only `TokenExpiredError`, `JsonWebTokenError` and `NotBeforeError` produce a 401 — with the existing messages, unchanged. The user reload has its own `try` that calls `next(err)`, so a failure there reaches `errorHandler` and returns 500. The 401 for a deleted or deactivated user is untouched, because that is a genuine authorisation outcome rather than an error ([FR-AUTH-04](./01-product-requirements.md), invariant I-7).
+
+Guarded by `tests/auth/auth.test.js`, which forces the reload to reject by signing a token with a numeric `id` — Prisma raises a `PrismaClientValidationError` instead of returning a miss, a real throw with no mocking. (Mocking is unavailable there: the suite's Prisma client and the app's are separate instances, because the tests import `config/db.js` as ESM while the middleware `require`s it.)
+
+Splitting the catches also exposed that two documented behaviours had never been tested — expired tokens and `nbf` tokens both now have cases. `auth.middleware.js` coverage went from 95.65% to 96.15% statements and 91.67% to 93.75% branches.
+
+> Not fixed here: an unset `JWT_SECRET` still answers `401 Invalid token.`, because `jsonwebtoken` classifies a missing secret as a `JsonWebTokenError` rather than a generic error. Nothing validates the variable at boot either — see [D-15](#d-15). A boot-time guard is the right fix and belongs with the Phase 8 deployment work.
+
+---
+
 ## Prioritised remediation order
 
 | Order | Items | Rationale |
@@ -504,6 +525,7 @@ Extracted to `lib/` rather than exported from `Billing.tsx` so it is unit-testab
 | ~~5~~ | ~~[G-10](#g-10), [G-04](#g-04), [G-12](#g-12)~~ | **Done 2026-08-19** — stock totals correct, manufacture dates recordable, delete conflicts explained |
 | ~~6~~ | ~~[G-14](#g-14)~~ | **Done 2026-08-19** — 278 tests, CI, and a coverage gate on the money and auth paths |
 | ~~6b~~ | ~~[G-17](#g-17)~~ | **Done 2026-08-20** — cart and invoice round identically, verified over 2.2M combinations and guarded by the first frontend suite |
+| ~~6c~~ | ~~[G-18](#g-18)~~ | **Done 2026-08-20** — infrastructure failures no longer masquerade as bad credentials |
 | 7 | [G-08](#g-08), [G-03](#g-03), [G-13](#g-13), [G-15](#g-15) | Performance, dead weight, operational usability |
 | 8 | Part A (docs) | Trim the READMEs to point at `docs/` |
 | 9 | [G-16](#g-16) | Frontend data-layer refactor. Largest and least urgent — the screens work today. Closing it restores `set-state-in-effect` to `error` |

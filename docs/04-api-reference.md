@@ -44,8 +44,14 @@ The token comes from `POST /api/auth/login`, is signed HS256 with `JWT_SECRET`, 
 | Header missing or not `Bearer …` | 401 | `Access denied. No token provided.` |
 | Signature invalid / malformed | 401 | `Invalid token.` |
 | Expired | 401 | `Token expired.` |
+| Not valid yet (`nbf` in the future) | 401 | `Invalid token.` |
 | User deleted or deactivated | 401 | `User not found or deactivated.` |
 | Authenticated but wrong role | 403 | `Access denied. Required role: ADMIN or PHARMACIST` |
+| **Database unreachable during the user reload** | **500** | The underlying error |
+
+The 500 row matters to clients. Token verification and the user reload are checked separately, so a database failure is **not** reported as a bad token ([G-18](./08-gap-analysis.md#g-18)). A client that signs the user out on 401 — as `frontend/src/lib/api.ts` does — must not treat a 500 the same way, or a transient database fault becomes a forced logout for everyone.
+
+> An unset `JWT_SECRET` currently surfaces as `401 Invalid token.` on every request, because `jsonwebtoken` reports a missing secret as a `JsonWebTokenError`. Nothing validates the variable at startup — see [D-15](./08-gap-analysis.md#d-15).
 
 ## 4. Role matrix
 
