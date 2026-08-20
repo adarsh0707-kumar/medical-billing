@@ -47,6 +47,10 @@ model Manufacturer {
   medicines Medicine[]
 }
 
+/// POS search runs `ILIKE '%q%'` against name and genericName. No b-tree can
+/// serve a leading wildcard, so migration `..._add_performance_indexes` also
+/// creates a pg_trgm GIN index over both columns. Prisma cannot express that,
+/// so it is invisible here — see the migration.
 model Medicine {
   id             String       @id @default(cuid())
   name           String
@@ -88,6 +92,12 @@ model Batch {
   purchaseItems  PurchaseItem[]
 
   @@unique([medicineId, batchNumber])
+  // Expiry alerts and FEFO ordering scan this on every dashboard load.
+  @@index([expiryDate])
+  // Low-stock reporting; a full scan of every batch otherwise.
+  @@index([quantity])
+  // Prisma does not create FK-side indexes, so the POS search join had none.
+  @@index([medicineId])
 }
 
 // ─── Customers ─────────────────────────────────────────
@@ -148,6 +158,11 @@ model Invoice {
   customer      Customer?     @relation(fields: [customerId], references: [id])
   user          User          @relation(fields: [userId], references: [id])
   items         InvoiceItem[]
+
+  // The hottest filter in the reporting layer: every report, the invoice list
+  // and the trend chart order or range-scan on this.
+  @@index([date])
+  @@index([customerId])
 }
 
 model InvoiceItem {
@@ -163,6 +178,9 @@ model InvoiceItem {
 
   invoice     Invoice  @relation(fields: [invoiceId], references: [id])
   batch       Batch    @relation(fields: [batchId], references: [id])
+
+  // Loading an invoice's lines for display or printing.
+  @@index([invoiceId])
 }
 
 enum PaymentMode {
