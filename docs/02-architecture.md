@@ -1,4 +1,4 @@
-# 02 — Architecture
+# Architecture
 
 **Version:** 1.0.0 · **Reviewed:** 2026-08-17 · Supersedes [`Architecture.txt`](../Architecture.txt), which describes an earlier plan that the code diverged from.
 
@@ -68,13 +68,13 @@ graph TB
 
 ### Containers at a glance
 
-| Container | Image / build | Port (host:container) | Persistence | Purpose |
-|-----------|---------------|----------------------|-------------|---------|
-| `nginx` | `nginx:alpine` | 80:80 | — | Single entry point; proxies SPA and `/api` |
-| `frontend` | `./frontend/Dockerfile.dev` (node:20-slim) | 5173:5173 | bind-mounted source | Vite dev server with HMR |
-| `backend` | `./backend/Dockerfile.dev` (node:20-slim + openssl) | 5000:5000 | bind-mounted source | Express API under nodemon |
-| `postgres` | `postgres:15-alpine` | 5432:5432 | named volume `pgdata` | System of record |
-| `redis` | `redis:7-alpine` | 6379:6379 | none | Cache (reserved) |
+| Container    | Image / build                                         | Port (host:container) | Persistence            | Purpose                                     |
+| ------------ | ----------------------------------------------------- | --------------------- | ---------------------- | ------------------------------------------- |
+| `nginx`    | `nginx:alpine`                                      | 80:80                 | —                     | Single entry point; proxies SPA and`/api` |
+| `frontend` | `./frontend/Dockerfile.dev` (node:20-slim)          | 5173:5173             | bind-mounted source    | Vite dev server with HMR                    |
+| `backend`  | `./backend/Dockerfile.dev` (node:20-slim + openssl) | 5000:5000             | bind-mounted source    | Express API under nodemon                   |
+| `postgres` | `postgres:15-alpine`                                | 5432:5432             | named volume`pgdata` | System of record                            |
+| `redis`    | `redis:7-alpine`                                    | 6379:6379             | none                   | Cache (reserved)                            |
 
 Start order is enforced: `backend` waits for Postgres to pass `pg_isready`; `frontend` waits for `backend`; `nginx` waits for both.
 
@@ -122,12 +122,12 @@ backend/tests/                   278 tests — Vitest + Supertest against real P
 
 `index.js` mounts exactly four routers. Resource grouping does **not** follow the file names:
 
-| Mount | Router file | Resources served |
-|-------|-------------|------------------|
-| `/api/auth` | `auth.routes.js` | login, register, me, change-password |
-| `/api/users` | `user.routes.js` | user CRUD + own-profile update |
-| `/api/inventory` | `inventory.routes.js` | categories, manufacturers, **medicines**, batches, **suppliers** |
-| `/api/billing` | `billing.routes.js` | **customers**, invoices, daily summary, GST report |
+| Mount              | Router file             | Resources served                                                            |
+| ------------------ | ----------------------- | --------------------------------------------------------------------------- |
+| `/api/auth`      | `auth.routes.js`      | login, register, me, change-password                                        |
+| `/api/users`     | `user.routes.js`      | user CRUD + own-profile update                                              |
+| `/api/inventory` | `inventory.routes.js` | categories, manufacturers,**medicines**, batches, **suppliers** |
+| `/api/billing`   | `billing.routes.js`   | **customers**, invoices, daily summary, GST report                    |
 
 Two consequences worth internalising before writing client code:
 
@@ -259,14 +259,14 @@ sequenceDiagram
 
 Six requests fire in parallel via `Promise.all`:
 
-| Call | Purpose |
-|------|---------|
-| `GET /api/billing/invoices/daily-summary?date=today` | Today's sales, GST, payment-mode split |
-| `GET /api/billing/invoices?limit=8&page=1` | Recent invoices table |
-| `GET /api/inventory/batches/expiring?days=30` | Expiry panel |
-| `GET /api/inventory/batches/low-stock?threshold=20` | Low-stock panel |
-| `GET /api/inventory/medicines?limit=1` | Total medicine count (from `pagination.total`) |
-| `GET /api/billing/customers?limit=1` | Total customer count (from `pagination.total`) |
+| Call                                                   | Purpose                                         |
+| ------------------------------------------------------ | ----------------------------------------------- |
+| `GET /api/billing/invoices/daily-summary?date=today` | Today's sales, GST, payment-mode split          |
+| `GET /api/billing/invoices?limit=8&page=1`           | Recent invoices table                           |
+| `GET /api/inventory/batches/expiring?days=30`        | Expiry panel                                    |
+| `GET /api/inventory/batches/low-stock?threshold=20`  | Low-stock panel                                 |
+| `GET /api/inventory/medicines?limit=1`               | Total medicine count (from`pagination.total`) |
+| `GET /api/billing/customers?limit=1`                 | Total customer count (from`pagination.total`) |
 
 The last two fetch one row purely to read a count — cheap, but a dedicated `/stats` endpoint would be cleaner.
 
@@ -278,19 +278,19 @@ The last two fetch one row purely to read a count — cheap, but a dedicated `/s
 
 ## 7. Cross-cutting concerns
 
-| Concern | Mechanism | Location |
-|---------|-----------|----------|
-| Authentication | JWT HS256, `Authorization: Bearer`, 7-day expiry, per-request DB reload | `auth.middleware.js` |
-| Authorisation | `authorize(...roles)` → 403 with the required role named | `auth.middleware.js` |
-| Validation | Zod `safeParse`; on success `req.body` is **replaced** by parsed data (unknown keys dropped) | `validate.middleware.js` |
-| Error handling | Central `errorHandler`; maps Prisma `P2002` → 409 (duplicate, with offending field), `P2003` → 409 (still referenced) and `P2025` → 404; stack included only when `NODE_ENV=development` | `error.middleware.js` |
-| 404 routing | `notFound` builds `Route not found: <url>` and delegates | `error.middleware.js` |
-| Logging | `morgan("dev")` to stdout; Prisma logs queries in development | `index.js`, `config/db.js` |
-| Rate limiting | 500 requests / 15 min, `/api` prefix only | `index.js` |
-| CORS | Explicit origin allowlist + `credentials: true` | `index.js` |
-| Compression | gzip on all responses | `index.js` |
-| Security headers | helmet defaults | `index.js` |
-| Caching | *None active* | — |
+| Concern          | Mechanism                                                                                                                                                                                            | Location                       |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
+| Authentication   | JWT HS256,`Authorization: Bearer`, 7-day expiry, per-request DB reload                                                                                                                             | `auth.middleware.js`         |
+| Authorisation    | `authorize(...roles)` → 403 with the required role named                                                                                                                                          | `auth.middleware.js`         |
+| Validation       | Zod`safeParse`; on success `req.body` is **replaced** by parsed data (unknown keys dropped)                                                                                                | `validate.middleware.js`     |
+| Error handling   | Central`errorHandler`; maps Prisma `P2002` → 409 (duplicate, with offending field), `P2003` → 409 (still referenced) and `P2025` → 404; stack included only when `NODE_ENV=development` | `error.middleware.js`        |
+| 404 routing      | `notFound` builds `Route not found: <url>` and delegates                                                                                                                                         | `error.middleware.js`        |
+| Logging          | `morgan("dev")` to stdout; Prisma logs queries in development                                                                                                                                      | `index.js`, `config/db.js` |
+| Rate limiting    | 500 requests / 15 min,`/api` prefix only                                                                                                                                                           | `index.js`                   |
+| CORS             | Explicit origin allowlist +`credentials: true`                                                                                                                                                     | `index.js`                   |
+| Compression      | gzip on all responses                                                                                                                                                                                | `index.js`                   |
+| Security headers | helmet defaults                                                                                                                                                                                      | `index.js`                   |
+| Caching          | *None active*                                                                                                                                                                                      | —                             |
 
 ### Response envelope
 
@@ -325,16 +325,16 @@ Source is bind-mounted (`./backend:/app`, `./frontend:/app`) with anonymous volu
 
 ### Environment matrix
 
-| Variable | Service | Compose value | Notes |
-|----------|---------|---------------|-------|
-| `DATABASE_URL` | backend | `postgresql://medadmin:medpass123@postgres:5432/medicaldb` | Credentials are hard-coded in `docker-compose.yml` |
-| `REDIS_URL` | backend | `redis://redis:6379` | Client connects; nothing consumes it |
-| `JWT_SECRET` | backend | `${JWT_SECRET}` | **Sourced from the host env / root `.env`** — no default; an unset value makes `jwt.sign` throw |
-| `NODE_ENV` | backend | `development` | Controls Prisma query logging and stack exposure |
-| `PORT` | backend | defaults to 5000 | Read in `index.js` |
-| `FRONTEND_URL` | backend | *(not set in compose)* | Appended to the CORS allowlist when present |
-| `VITE_API_URL` | frontend | *(unset — relative `/api`)* | Baked into the bundle at build time; set only for a cross-host API |
-| `VITE_PROXY_TARGET` | frontend | `http://backend:5000` | Where the Vite dev server forwards `/api` |
+| Variable              | Service  | Compose value                                                | Notes                                                                                                      |
+| --------------------- | -------- | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`      | backend  | `postgresql://medadmin:medpass123@postgres:5432/medicaldb` | Credentials are hard-coded in`docker-compose.yml`                                                        |
+| `REDIS_URL`         | backend  | `redis://redis:6379`                                       | Client connects; nothing consumes it                                                                       |
+| `JWT_SECRET`        | backend  | `${JWT_SECRET}`                                            | **Sourced from the host env / root `.env`** — no default; an unset value makes `jwt.sign` throw |
+| `NODE_ENV`          | backend  | `development`                                              | Controls Prisma query logging and stack exposure                                                           |
+| `PORT`              | backend  | defaults to 5000                                             | Read in`index.js`                                                                                        |
+| `FRONTEND_URL`      | backend  | *(not set in compose)*                                     | Appended to the CORS allowlist when present                                                                |
+| `VITE_API_URL`      | frontend | *(unset — relative `/api`)*                             | Baked into the bundle at build time; set only for a cross-host API                                         |
+| `VITE_PROXY_TARGET` | frontend | `http://backend:5000`                                      | Where the Vite dev server forwards`/api`                                                                 |
 
 `frontend/.env` exists but is **empty**, which is correct — the client calls `/api` on its own origin, so it needs no variables at all. The dev-server proxy target comes from `VITE_PROXY_TARGET` in compose and defaults to `http://localhost:5000` for a non-Docker run.
 
@@ -353,22 +353,22 @@ The stack has no production path today. Minimum required before a real deploymen
 
 ## 9. Architecture decisions
 
-| # | Decision | Rationale | Consequence / trade-off |
-|---|----------|-----------|-------------------------|
-| AD-01 | Monolithic Express API | Invoice + stock must be one transaction; the domain is small | Scales vertically only; the whole API redeploys as one unit |
-| AD-02 | Prisma over raw SQL/Sequelize | Type-safe client, first-class migrations, easy `$transaction` | Some query shapes (aggregations, trend series) are awkward and get pushed to the client |
-| AD-03 | Batch-level stock, not product-level | Pharmacy reality: price and expiry vary per batch | Every sale must resolve a batch, adding a step to search and the cart model |
-| AD-04 | FEFO batch auto-selection | Minimises expiry write-offs without operator effort | Operator cannot deliberately pick a different batch (FR-BILL-19) |
-| AD-05 | Snapshot medicine name and GST% onto invoice lines | Historical invoices must never change when masters change | Denormalised data; renames don't propagate (correct here) |
-| AD-06 | Soft delete for medicines only | Invoice lines and batches reference medicines | Inconsistent with hard-deleted suppliers/categories, which can fail on FK |
-| AD-07 | JWT in `localStorage`, no refresh flow | Simplest client; the SPA is not cookie-based | XSS-exfiltratable; no server-side revocation ([07 — Security](./07-security.md)) |
-| AD-08 | Per-request user reload in `protect` | Deactivation takes effect immediately | One extra query per request — prime cache candidate |
-| AD-09 | Zod at the route boundary | Validation lives next to the contract, and strips unknown keys | Any field absent from a schema is silently dropped — the cause of the `mfgDate` bug ([G-04](./08-gap-analysis.md#g-04)) |
-| AD-10 | Zustand over Redux/Context | Tiny surface for two small global stores | No caching/invalidation layer; each page hand-rolls fetching |
-| AD-11 | shadcn/ui (source-vendored Radix components) | Full control of component source, no runtime UI dependency | 20 component files to maintain in-repo |
-| AD-12 | Redis provisioned before it is used | Reserve the dependency and prove connectivity early | Dead dependency in the compose file; NFR-04 unmet |
-| AD-13 | `DECIMAL(12,2)` for money, `Prisma.Decimal` for arithmetic, rounded half-up per line *(revised 2026-08-19; was `Float`)* | Exact totals; an invoice must reconcile with what it printed, and a month must reconcile with its invoices | Decimal objects must never meet the `+` operator, and are unwrapped to numbers by a `json replacer` at the response boundary ([G-07](./08-gap-analysis.md#g-07)) |
-| AD-14 | Vite dev server behind Nginx even in "prod-ish" runs | One entry point during development | No production asset pipeline exists yet |
+| #     | Decision                                                                                                                         | Rationale                                                                                                  | Consequence / trade-off                                                                                                                                            |
+| ----- | -------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| AD-01 | Monolithic Express API                                                                                                           | Invoice + stock must be one transaction; the domain is small                                               | Scales vertically only; the whole API redeploys as one unit                                                                                                        |
+| AD-02 | Prisma over raw SQL/Sequelize                                                                                                    | Type-safe client, first-class migrations, easy`$transaction`                                             | Some query shapes (aggregations, trend series) are awkward and get pushed to the client                                                                            |
+| AD-03 | Batch-level stock, not product-level                                                                                             | Pharmacy reality: price and expiry vary per batch                                                          | Every sale must resolve a batch, adding a step to search and the cart model                                                                                        |
+| AD-04 | FEFO batch auto-selection                                                                                                        | Minimises expiry write-offs without operator effort                                                        | Operator cannot deliberately pick a different batch (FR-BILL-19)                                                                                                   |
+| AD-05 | Snapshot medicine name and GST% onto invoice lines                                                                               | Historical invoices must never change when masters change                                                  | Denormalised data; renames don't propagate (correct here)                                                                                                          |
+| AD-06 | Soft delete for medicines only                                                                                                   | Invoice lines and batches reference medicines                                                              | Inconsistent with hard-deleted suppliers/categories, which can fail on FK                                                                                          |
+| AD-07 | JWT in`localStorage`, no refresh flow                                                                                          | Simplest client; the SPA is not cookie-based                                                               | XSS-exfiltratable; no server-side revocation ([07 — Security](./07-security.md))                                                                                   |
+| AD-08 | Per-request user reload in`protect`                                                                                            | Deactivation takes effect immediately                                                                      | One extra query per request — prime cache candidate                                                                                                               |
+| AD-09 | Zod at the route boundary                                                                                                        | Validation lives next to the contract, and strips unknown keys                                             | Any field absent from a schema is silently dropped — the cause of the`mfgDate` bug ([G-04](./08-gap-analysis.md#g-04))                                           |
+| AD-10 | Zustand over Redux/Context                                                                                                       | Tiny surface for two small global stores                                                                   | No caching/invalidation layer; each page hand-rolls fetching                                                                                                       |
+| AD-11 | shadcn/ui (source-vendored Radix components)                                                                                     | Full control of component source, no runtime UI dependency                                                 | 20 component files to maintain in-repo                                                                                                                             |
+| AD-12 | Redis provisioned before it is used                                                                                              | Reserve the dependency and prove connectivity early                                                        | Dead dependency in the compose file; NFR-04 unmet                                                                                                                  |
+| AD-13 | `DECIMAL(12,2)` for money, `Prisma.Decimal` for arithmetic, rounded half-up per line *(revised 2026-08-19; was `Float`)* | Exact totals; an invoice must reconcile with what it printed, and a month must reconcile with its invoices | Decimal objects must never meet the`+` operator, and are unwrapped to numbers by a `json replacer` at the response boundary ([G-07](./08-gap-analysis.md#g-07)) |
+| AD-14 | Vite dev server behind Nginx even in "prod-ish" runs                                                                             | One entry point during development                                                                         | No production asset pipeline exists yet                                                                                                                            |
 
 ---
 

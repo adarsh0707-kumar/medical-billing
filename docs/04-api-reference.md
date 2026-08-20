@@ -1,4 +1,4 @@
-# 04 — API Reference
+# API Reference
 
 **Version:** 1.0.0 · **Verified against source:** 2026-08-17
 
@@ -8,11 +8,11 @@ This document lists **every endpoint that exists**. It was written by reading `b
 
 ## 1. Base URL
 
-| Environment | Base URL | Notes |
-|---|---|---|
-| Via Nginx | `http://localhost/api` | The entry point. Same-origin for the SPA |
-| Via the Vite dev server | `http://localhost:5173/api` | Proxied to the backend; also same-origin |
-| Direct | `http://localhost:5000` | The API itself. For curl, Postman and server-to-server calls |
+| Environment             | Base URL                      | Notes                                                        |
+| ----------------------- | ----------------------------- | ------------------------------------------------------------ |
+| Via Nginx               | `http://localhost/api`      | The entry point. Same-origin for the SPA                     |
+| Via the Vite dev server | `http://localhost:5173/api` | Proxied to the backend; also same-origin                     |
+| Direct                  | `http://localhost:5000`     | The API itself. For curl, Postman and server-to-server calls |
 
 All paths below are absolute from the host root, e.g. `POST http://localhost:5000/api/auth/login`.
 
@@ -20,12 +20,12 @@ All paths below are absolute from the host root, e.g. `POST http://localhost:500
 
 Four routers are mounted. **Resource paths do not follow the obvious REST grouping** — read this table before writing a client.
 
-| Prefix | Resources |
-|---|---|
-| `/api/auth` | login · register · me · change-password |
-| `/api/users` | user CRUD · own profile |
-| `/api/inventory` | categories · manufacturers · **medicines** · batches · **suppliers** |
-| `/api/billing` | **customers** · invoices · daily-summary · gst-report |
+| Prefix             | Resources                                                                           |
+| ------------------ | ----------------------------------------------------------------------------------- |
+| `/api/auth`      | login · register · me · change-password                                          |
+| `/api/users`     | user CRUD · own profile                                                            |
+| `/api/inventory` | categories · manufacturers ·**medicines** · batches · **suppliers** |
+| `/api/billing`   | **customers** · invoices · daily-summary · gst-report                      |
 
 > Customers are under **`/api/billing/customers`**. Suppliers and medicines are under **`/api/inventory/`**. There is no `/api/customers`, `/api/medicines`, `/api/suppliers` or `/api/reports`.
 
@@ -39,15 +39,15 @@ Authorization: Bearer <jwt>
 
 The token comes from `POST /api/auth/login`, is signed HS256 with `JWT_SECRET`, and expires in **7 days**. On each request the server decodes it and **reloads the user from the database**, so a deactivated (`isActive = false`) or deleted user is rejected immediately regardless of token validity.
 
-| Failure | Status | Body message |
-|---|---|---|
-| Header missing or not `Bearer …` | 401 | `Access denied. No token provided.` |
-| Signature invalid / malformed | 401 | `Invalid token.` |
-| Expired | 401 | `Token expired.` |
-| Not valid yet (`nbf` in the future) | 401 | `Invalid token.` |
-| User deleted or deactivated | 401 | `User not found or deactivated.` |
-| Authenticated but wrong role | 403 | `Access denied. Required role: ADMIN or PHARMACIST` |
-| **Database unreachable during the user reload** | **500** | The underlying error |
+| Failure                                               | Status        | Body message                                          |
+| ----------------------------------------------------- | ------------- | ----------------------------------------------------- |
+| Header missing or not`Bearer …`                    | 401           | `Access denied. No token provided.`                 |
+| Signature invalid / malformed                         | 401           | `Invalid token.`                                    |
+| Expired                                               | 401           | `Token expired.`                                    |
+| Not valid yet (`nbf` in the future)                 | 401           | `Invalid token.`                                    |
+| User deleted or deactivated                           | 401           | `User not found or deactivated.`                    |
+| Authenticated but wrong role                          | 403           | `Access denied. Required role: ADMIN or PHARMACIST` |
+| **Database unreachable during the user reload** | **500** | The underlying error                                  |
 
 The 500 row matters to clients. Token verification and the user reload are checked separately, so a database failure is **not** reported as a bad token ([G-18](./08-gap-analysis.md#g-18)). A client that signs the user out on 401 — as `frontend/src/lib/api.ts` does — must not treat a 500 the same way, or a transient database fault becomes a forced logout for everyone.
 
@@ -57,17 +57,17 @@ The 500 row matters to clients. Token verification and the user reload are check
 
 `ADMIN` › `PHARMACIST` › `CASHIER`. A blank cell means the role receives `403`.
 
-| Capability | ADMIN | PHARMACIST | CASHIER |
-|---|:---:|:---:|:---:|
-| Log in, read own profile, change own password, update own profile | ✅ | ✅ | ✅ |
-| List / create / update / delete users | ✅ | | |
-| Register user via `/api/auth/register` | ✅ | | |
-| Read categories, manufacturers, medicines, batches, suppliers | ✅ | ✅ | ✅ |
-| Create / update categories, manufacturers, medicines, batches, suppliers | ✅ | ✅ | |
-| Delete categories, manufacturers, medicines, suppliers | ✅ | | |
-| Read customers, create / update customers | ✅ | ✅ | ✅ |
-| Read invoices, create invoices, daily summary | ✅ | ✅ | ✅ |
-| GST report | ✅ | ✅ | |
+| Capability                                                               | ADMIN | PHARMACIST | CASHIER |
+| ------------------------------------------------------------------------ | :---: | :--------: | :-----: |
+| Log in, read own profile, change own password, update own profile        |  ✅  |     ✅     |   ✅   |
+| List / create / update / delete users                                    |  ✅  |            |        |
+| Register user via`/api/auth/register`                                  |  ✅  |            |        |
+| Read categories, manufacturers, medicines, batches, suppliers            |  ✅  |     ✅     |   ✅   |
+| Create / update categories, manufacturers, medicines, batches, suppliers |  ✅  |     ✅     |        |
+| Delete categories, manufacturers, medicines, suppliers                   |  ✅  |            |        |
+| Read customers, create / update customers                                |  ✅  |     ✅     |   ✅   |
+| Read invoices, create invoices, daily summary                            |  ✅  |     ✅     |   ✅   |
+| GST report                                                               |  ✅  |     ✅     |        |
 
 ## 5. Conventions
 
@@ -118,22 +118,22 @@ Every query string is validated before its controller runs (since 2026-08-20). A
 
 The rule is uniform: **absent means use the default; present but unparseable or out of range is a `400`.** A value is never silently corrected — `?days=abc` used to fall through `Number(x) || 30` and return a 30-day window indistinguishable from a deliberate one.
 
-| Parameter | Endpoints | Rule |
-|---|---|---|
-| `page` | medicines, customers, invoices | Integer ≥ 1. Default `1` |
-| `limit` | medicines, customers, invoices | Integer 1–**100**. Default `20`. Over the maximum is **rejected, not clamped** — a caller who asks for 999999 and quietly receives 100 would page through the set believing it complete |
-| `search` | medicines, customers, invoices, suppliers | String, max 200 chars. An empty string means no filter, not a bad request |
-| `categoryId` | medicines | Non-empty string |
-| `q` | medicines/search | String, max 200. Under 2 characters returns `[]` rather than a 400 — the POS box calls this on every keystroke |
-| `startDate`, `endDate` | invoices | Dates. Both must be present for the filter to apply |
-| `paymentMode` | invoices | `CASH` · `UPI` · `CARD` · `CREDIT` |
-| `paymentStatus` | invoices | `PAID` · `PENDING` · `PARTIAL` |
-| `date` | invoices/daily-summary | Date. Default today |
-| `month`, `year` | invoices/gst-report | **Both required.** `month` 1–12, `year` 2000–2100 |
-| `days` | batches/expiring | Integer 1–365. Default `30` |
-| `threshold` | batches/low-stock | Integer 1–100000. Default `10` |
-| `medicineId` | batches | Non-empty string |
-| `expiringSoon`, `lowStock` | batches | `"true"` or `"false"` |
+| Parameter                      | Endpoints                                 | Rule                                                                                                                                                                                                    |
+| ------------------------------ | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `page`                       | medicines, customers, invoices            | Integer ≥ 1. Default`1`                                                                                                                                                                              |
+| `limit`                      | medicines, customers, invoices            | Integer 1–**100**. Default `20`. Over the maximum is **rejected, not clamped** — a caller who asks for 999999 and quietly receives 100 would page through the set believing it complete |
+| `search`                     | medicines, customers, invoices, suppliers | String, max 200 chars. An empty string means no filter, not a bad request                                                                                                                               |
+| `categoryId`                 | medicines                                 | Non-empty string                                                                                                                                                                                        |
+| `q`                          | medicines/search                          | String, max 200. Under 2 characters returns`[]` rather than a 400 — the POS box calls this on every keystroke                                                                                        |
+| `startDate`, `endDate`     | invoices                                  | Dates. Both must be present for the filter to apply                                                                                                                                                     |
+| `paymentMode`                | invoices                                  | `CASH` · `UPI` · `CARD` · `CREDIT`                                                                                                                                                           |
+| `paymentStatus`              | invoices                                  | `PAID` · `PENDING` · `PARTIAL`                                                                                                                                                                  |
+| `date`                       | invoices/daily-summary                    | Date. Default today                                                                                                                                                                                     |
+| `month`, `year`            | invoices/gst-report                       | **Both required.** `month` 1–12, `year` 2000–2100                                                                                                                                           |
+| `days`                       | batches/expiring                          | Integer 1–365. Default`30`                                                                                                                                                                           |
+| `threshold`                  | batches/low-stock                         | Integer 1–100000. Default`10`                                                                                                                                                                        |
+| `medicineId`                 | batches                                   | Non-empty string                                                                                                                                                                                        |
+| `expiringSoon`, `lowStock` | batches                                   | `"true"` or `"false"`                                                                                                                                                                               |
 
 Unknown parameters are **stripped, not rejected**, so a cache-buster does not fail a request. As with body validation, a parameter missing from the schema silently vanishes — add it to the schema in the same commit as the controller that reads it.
 
@@ -143,17 +143,17 @@ All currency fields are `DECIMAL(12,2)` in the database and are computed with ex
 
 ### Status codes
 
-| Code | Meaning |
-|---|---|
-| 200 | OK |
-| 201 | Created (register, user create, medicine/batch/supplier/category/manufacturer/customer create, invoice create) |
-| 400 | Validation failure, insufficient stock, wrong current password, self-deletion attempt |
-| 401 | Missing / invalid / expired token, bad credentials, deactivated user |
-| 403 | Authenticated but role not permitted |
-| 404 | Record not found, or route not found (`Route not found: <url>`) |
-| 409 | Conflict. Either a unique violation — duplicate email, category name, phone, batch number (`P2002`, includes a `field` key) — or a delete blocked because the record is still referenced (`P2003`) |
-| 429 | Rate limit exceeded |
-| 500 | Unhandled error |
+| Code | Meaning                                                                                                                                                                                                    |
+| ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 200  | OK                                                                                                                                                                                                         |
+| 201  | Created (register, user create, medicine/batch/supplier/category/manufacturer/customer create, invoice create)                                                                                             |
+| 400  | Validation failure, insufficient stock, wrong current password, self-deletion attempt                                                                                                                      |
+| 401  | Missing / invalid / expired token, bad credentials, deactivated user                                                                                                                                       |
+| 403  | Authenticated but role not permitted                                                                                                                                                                       |
+| 404  | Record not found, or route not found (`Route not found: <url>`)                                                                                                                                          |
+| 409  | Conflict. Either a unique violation — duplicate email, category name, phone, batch number (`P2002`, includes a `field` key) — or a delete blocked because the record is still referenced (`P2003`) |
+| 429  | Rate limit exceeded                                                                                                                                                                                        |
+| 500  | Unhandled error                                                                                                                                                                                            |
 
 ### Pagination
 
@@ -165,10 +165,10 @@ Supported by `GET /api/inventory/medicines`, `GET /api/billing/customers`, `GET 
 
 Two limiters, both keyed on the client IP:
 
-| Scope | Budget | Notes |
-|---|---|---|
-| `/api/*` | 500 requests / 15 min | `429` with `Too many requests, please try again later.` |
-| `POST /api/auth/login` | 10 **failed** attempts / 15 min | `429` with `Too many failed login attempts. Please try again in 15 minutes.` Successful sign-ins are not counted |
+| Scope                    | Budget                               | Notes                                                                                                                |
+| ------------------------ | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| `/api/*`               | 500 requests / 15 min                | `429` with `Too many requests, please try again later.`                                                          |
+| `POST /api/auth/login` | 10**failed** attempts / 15 min | `429` with `Too many failed login attempts. Please try again in 15 minutes.` Successful sign-ins are not counted |
 
 `trust proxy` is set to private-range peers, so behind Nginx the real client IP is used rather than the proxy's — but a client reaching port 5000 directly from outside cannot forge `X-Forwarded-For` to pick its own bucket. Override with the `TRUST_PROXY` environment variable ([G-06](./08-gap-analysis.md#g-06)).
 
@@ -197,6 +197,7 @@ It does **not** check database or Redis connectivity — a `200` here does not m
 ```
 
 **200**
+
 ```json
 {
   "success": true,
@@ -270,12 +271,12 @@ All routes below require authentication (`router.use(protect)`).
 
 ### 8.1 Categories
 
-| Method | Path | Role | Body |
-|---|---|---|---|
-| GET | `/api/inventory/categories` | any | — |
-| POST | `/api/inventory/categories` | ADMIN, PHARMACIST | `{ name }` |
-| PUT | `/api/inventory/categories/:id` | ADMIN, PHARMACIST | `{ name }` |
-| DELETE | `/api/inventory/categories/:id` | ADMIN | — |
+| Method | Path                              | Role              | Body         |
+| ------ | --------------------------------- | ----------------- | ------------ |
+| GET    | `/api/inventory/categories`     | any               | —           |
+| POST   | `/api/inventory/categories`     | ADMIN, PHARMACIST | `{ name }` |
+| PUT    | `/api/inventory/categories/:id` | ADMIN, PHARMACIST | `{ name }` |
+| DELETE | `/api/inventory/categories/:id` | ADMIN             | —           |
 
 `name` must be ≥ 2 characters and unique (**409** otherwise). GET returns each category with `_count.medicines`, ordered by name:
 
@@ -293,12 +294,12 @@ Identical contract at `/api/inventory/manufacturers` — same methods, same role
 
 #### `GET /api/inventory/medicines` — any role
 
-| Query | Default | Purpose |
-|---|---|---|
-| `search` | — | Case-insensitive match on name, generic name or HSN |
-| `categoryId` | — | Filter by category |
-| `page` | 1 | |
-| `limit` | 20 | |
+| Query          | Default | Purpose                                             |
+| -------------- | ------- | --------------------------------------------------- |
+| `search`     | —      | Case-insensitive match on name, generic name or HSN |
+| `categoryId` | —      | Filter by category                                  |
+| `page`       | 1       |                                                     |
+| `limit`      | 20      |                                                     |
 
 Only `isActive: true` medicines are returned, ordered by name.
 
@@ -364,14 +365,14 @@ Full record including category, manufacturer and **all** batches (each with its 
 }
 ```
 
-| Field | Rule |
-|---|---|
-| `name` | required, ≥ 2 chars |
-| `genericName`, `hsnCode` | optional strings |
-| `categoryId`, `manufacturerId` | required, must exist |
-| `unit` | one of `tablet, capsule, syrup, injection, cream, drops, powder, inhaler, other` |
-| `gstPercent` | number, one of `0, 5, 12, 18` |
-| `isScheduledH` | boolean, default `false` |
+| Field                              | Rule                                                                              |
+| ---------------------------------- | --------------------------------------------------------------------------------- |
+| `name`                           | required, ≥ 2 chars                                                              |
+| `genericName`, `hsnCode`       | optional strings                                                                  |
+| `categoryId`, `manufacturerId` | required, must exist                                                              |
+| `unit`                           | one of`tablet, capsule, syrup, injection, cream, drops, powder, inhaler, other` |
+| `gstPercent`                     | number, one of`0, 5, 12, 18`                                                    |
+| `isScheduledH`                   | boolean, default`false`                                                         |
 
 **201** with the created medicine including its category and manufacturer. Unknown fields are silently stripped by Zod.
 
@@ -387,11 +388,11 @@ Same schema as create — all fields required, so send the complete object.
 
 #### `GET /api/inventory/batches` — any role
 
-| Query | Effect |
-|---|---|
-| `medicineId` | Only this medicine's batches |
+| Query                 | Effect                            |
+| --------------------- | --------------------------------- |
+| `medicineId`        | Only this medicine's batches      |
 | `expiringSoon=true` | Expiry between today and +30 days |
-| `lowStock=true` | `quantity ≤ 10` and `> 0` |
+| `lowStock=true`     | `quantity ≤ 10` and `> 0`    |
 
 Ordered by expiry ascending, each batch including `medicine { name, unit }` and `supplier { name }`. Unpaginated.
 
@@ -417,12 +418,12 @@ Batches with `0 < quantity ≤ threshold`, ordered by quantity ascending. Includ
 }
 ```
 
-| Field | Rule |
-|---|---|
-| `medicineId`, `supplierId`, `batchNumber` | required, non-empty |
-| `expiryDate` | any `Date.parse`-able string |
-| `purchasePrice`, `sellingPrice` | numbers > 0 |
-| `quantity` | positive integer |
+| Field                                           | Rule                          |
+| ----------------------------------------------- | ----------------------------- |
+| `medicineId`, `supplierId`, `batchNumber` | required, non-empty           |
+| `expiryDate`                                  | any`Date.parse`-able string |
+| `purchasePrice`, `sellingPrice`             | numbers > 0                   |
+| `quantity`                                    | positive integer              |
 
 The server sets `initialQty = quantity`. **409** if `(medicineId, batchNumber)` already exists.
 
@@ -436,13 +437,13 @@ Accepts only `batchNumber`, `expiryDate`, `purchasePrice` and `sellingPrice`, al
 
 ### 8.5 Suppliers
 
-| Method | Path | Role |
-|---|---|---|
-| GET | `/api/inventory/suppliers?search=` | any |
-| GET | `/api/inventory/suppliers/:id` | any |
-| POST | `/api/inventory/suppliers` | ADMIN, PHARMACIST |
-| PUT | `/api/inventory/suppliers/:id` | ADMIN, PHARMACIST |
-| DELETE | `/api/inventory/suppliers/:id` | ADMIN |
+| Method | Path                                 | Role              |
+| ------ | ------------------------------------ | ----------------- |
+| GET    | `/api/inventory/suppliers?search=` | any               |
+| GET    | `/api/inventory/suppliers/:id`     | any               |
+| POST   | `/api/inventory/suppliers`         | ADMIN, PHARMACIST |
+| PUT    | `/api/inventory/suppliers/:id`     | ADMIN, PHARMACIST |
+| DELETE | `/api/inventory/suppliers/:id`     | ADMIN             |
 
 `search` matches name (case-insensitive) or phone. Results ordered by name, unpaginated.
 
@@ -467,11 +468,11 @@ All routes require authentication.
 
 #### `GET /api/billing/customers` — any role
 
-| Query | Default |
-|---|---|
+| Query      | Default                   |
+| ---------- | ------------------------- |
 | `search` | — (name, phone or email) |
-| `page` | 1 |
-| `limit` | 20 |
+| `page`   | 1                         |
+| `limit`  | 20                        |
 
 ```json
 {
@@ -495,13 +496,13 @@ The customer plus their 10 most recent invoices (`id, invoiceNumber, date, total
 { "name": "Ramesh Gupta", "phone": "9876543210", "email": "", "address": "MG Road", "age": 54, "gender": "MALE" }
 ```
 
-| Field | Rule |
-|---|---|
-| `name` | required, ≥ 2 chars |
-| `phone` | optional, **unique** across customers → 409 |
-| `email` | optional, valid email or `""` |
-| `age` | optional, string or number, 0–150 |
-| `gender` | optional, `MALE` \| `FEMALE` \| `OTHER` |
+| Field      | Rule                                              |
+| ---------- | ------------------------------------------------- |
+| `name`   | required, ≥ 2 chars                              |
+| `phone`  | optional,**unique** across customers → 409 |
+| `email`  | optional, valid email or`""`                    |
+| `age`    | optional, string or number, 0–150                |
+| `gender` | optional,`MALE` \| `FEMALE` \| `OTHER`      |
 
 **201** with the created customer. This is the endpoint behind the POS "add customer" dialog.
 
@@ -538,19 +539,19 @@ The central write path of the product.
 }
 ```
 
-| Field | Rule |
-|---|---|
-| `customerId` | optional — omit for a walk-in sale |
-| `items` | required, at least 1 |
-| `items[].batchId`, `medicineId`, `medicineName` | required, non-empty |
-| `items[].quantity` | positive integer |
-| `items[].unitPrice` | positive number |
-| `items[].discount` | 0–100, **percentage**, default 0 |
-| `items[].gstPercent` | number, default 0 |
-| `discountAmt` | ≥ 0, **flat currency amount** on the bill, default 0 |
-| `paymentMode` | `CASH` \| `UPI` \| `CARD` \| `CREDIT`, default `CASH` |
-| `paymentStatus` | `PAID` \| `PENDING` \| `PARTIAL`, default `PAID` |
-| `notes` | optional string |
+| Field                                                 | Rule                                                            |
+| ----------------------------------------------------- | --------------------------------------------------------------- |
+| `customerId`                                        | optional — omit for a walk-in sale                             |
+| `items`                                             | required, at least 1                                            |
+| `items[].batchId`, `medicineId`, `medicineName` | required, non-empty                                             |
+| `items[].quantity`                                  | positive integer                                                |
+| `items[].unitPrice`                                 | positive number                                                 |
+| `items[].discount`                                  | 0–100,**percentage**, default 0                          |
+| `items[].gstPercent`                                | number, default 0                                               |
+| `discountAmt`                                       | ≥ 0,**flat currency amount** on the bill, default 0      |
+| `paymentMode`                                       | `CASH` \| `UPI` \| `CARD` \| `CREDIT`, default `CASH` |
+| `paymentStatus`                                     | `PAID` \| `PENDING` \| `PARTIAL`, default `PAID`        |
+| `notes`                                             | optional string                                                 |
 
 **Server-side computation** (see [PRD §8](./01-product-requirements.md#8-key-business-rules)) — the client's totals are never trusted:
 
@@ -572,24 +573,24 @@ invoice:   subtotal    = Σ taxable
 
 **201** returns the invoice with `items`, `customer` and `user.name`.
 
-| Failure | Status | Message |
-|---|---|---|
-| Body fails schema | 400 | `Validation failed` + `errors[]` |
-| A `batchId` does not exist | 404 | `Batch not found for <medicineName>` |
-| Quantity exceeds stock | 400 | `Insufficient stock for <medicineName>. Available: <n>` |
-| Invoice number collision | 409 | `A record with this value already exists.` — unreachable in normal operation since the atomic per-day counter landed ([G-01](./08-gap-analysis.md#g-01)); retained as a backstop |
+| Failure                     | Status | Message                                                                                                                                                                            |
+| --------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Body fails schema           | 400    | `Validation failed` + `errors[]`                                                                                                                                               |
+| A`batchId` does not exist | 404    | `Batch not found for <medicineName>`                                                                                                                                             |
+| Quantity exceeds stock      | 400    | `Insufficient stock for <medicineName>. Available: <n>`                                                                                                                          |
+| Invoice number collision    | 409    | `A record with this value already exists.` — unreachable in normal operation since the atomic per-day counter landed ([G-01](./08-gap-analysis.md#g-01)); retained as a backstop |
 
 There is **no update or delete** for invoices.
 
 #### `GET /api/billing/invoices` — any role
 
-| Query | Effect |
-|---|---|
-| `page`, `limit` | Pagination (defaults 1 / 20) |
-| `search` | Invoice number or customer name, case-insensitive |
-| `startDate` + `endDate` | Inclusive date range — **both must be supplied**, either alone is ignored |
-| `paymentMode` | Exact enum match |
-| `paymentStatus` | Exact enum match |
+| Query                       | Effect                                                                          |
+| --------------------------- | ------------------------------------------------------------------------------- |
+| `page`, `limit`         | Pagination (defaults 1 / 20)                                                    |
+| `search`                  | Invoice number or customer name, case-insensitive                               |
+| `startDate` + `endDate` | Inclusive date range —**both must be supplied**, either alone is ignored |
+| `paymentMode`             | Exact enum match                                                                |
+| `paymentStatus`           | Exact enum match                                                                |
 
 Ordered newest first; each row carries the customer summary, `user.name` and `_count.items`.
 
@@ -641,20 +642,20 @@ The full invoice for printing: items (each with `batch.batchNumber` and `batch.e
 
 Documented elsewhere in the repo but absent from the code. Requests to these return **404** `Route not found: …`.
 
-| Claimed in | Path | Reality |
-|---|---|---|
-| root + backend README | `POST /api/auth/logout` | Logout is client-side only |
-| backend README | `POST /api/auth/refresh` | `generateRefreshToken` exists, no route |
-| backend README | `POST /api/auth/forgot-password`, `/reset-password` | Not implemented |
-| backend README | `PUT /api/users/:id/password`, `/:id/role` | Covered by `PUT /api/users/:id` |
-| root + backend README | `/api/customers/*` | Use `/api/billing/customers` |
-| root + backend README | `/api/medicines/*` | Use `/api/inventory/medicines` |
-| root + backend README | `/api/suppliers/*` | Use `/api/inventory/suppliers` |
-| root + backend README | `/api/reports/*` (sales, inventory, billing, top-medicines, daily-sales, low-stock, gst-summary) | Use `/api/billing/invoices/daily-summary`, `/gst-report`, `/api/inventory/batches/expiring`, `/low-stock` |
-| backend README | `GET /api/inventory` , `/inventory/add`, `/inventory/remove` | Stock moves only via batch create and invoice create |
-| backend README | `GET /api/billing/:id/invoice` (download) | Printing is browser-side |
-| backend README | `DELETE /api/billing/:id`, `PUT /api/billing/:id` | Invoices are immutable |
-| Architecture.txt | `POST /api/batches`, `GET /api/batches/expiring` | Under `/api/inventory/` |
+| Claimed in            | Path                                                                                               | Reality                                                                                                          |
+| --------------------- | -------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| root + backend README | `POST /api/auth/logout`                                                                          | Logout is client-side only                                                                                       |
+| backend README        | `POST /api/auth/refresh`                                                                         | `generateRefreshToken` exists, no route                                                                        |
+| backend README        | `POST /api/auth/forgot-password`, `/reset-password`                                            | Not implemented                                                                                                  |
+| backend README        | `PUT /api/users/:id/password`, `/:id/role`                                                     | Covered by`PUT /api/users/:id`                                                                                 |
+| root + backend README | `/api/customers/*`                                                                               | Use`/api/billing/customers`                                                                                    |
+| root + backend README | `/api/medicines/*`                                                                               | Use`/api/inventory/medicines`                                                                                  |
+| root + backend README | `/api/suppliers/*`                                                                               | Use`/api/inventory/suppliers`                                                                                  |
+| root + backend README | `/api/reports/*` (sales, inventory, billing, top-medicines, daily-sales, low-stock, gst-summary) | Use`/api/billing/invoices/daily-summary`, `/gst-report`, `/api/inventory/batches/expiring`, `/low-stock` |
+| backend README        | `GET /api/inventory` , `/inventory/add`, `/inventory/remove`                                 | Stock moves only via batch create and invoice create                                                             |
+| backend README        | `GET /api/billing/:id/invoice` (download)                                                        | Printing is browser-side                                                                                         |
+| backend README        | `DELETE /api/billing/:id`, `PUT /api/billing/:id`                                              | Invoices are immutable                                                                                           |
+| Architecture.txt      | `POST /api/batches`, `GET /api/batches/expiring`                                               | Under`/api/inventory/`                                                                                         |
 
 There is no `customer.routes.js`, `medicine.routes.js`, `report.routes.js` or `supplier.routes.js`. Four zero-byte placeholders with those names were deleted on 2026-08-20 ([G-13](./08-gap-analysis.md#g-13)); the four routers that exist are `auth`, `inventory`, `billing` and `user`.
 

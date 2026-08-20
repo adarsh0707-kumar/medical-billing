@@ -1,4 +1,4 @@
-# 07 — Security
+# Security
 
 **Scope:** the security posture of v1.0.0 as built. Every control listed as present was verified in source; every gap is actionable.
 
@@ -6,17 +6,17 @@
 
 ## 1. Summary
 
-| Area | Posture |
-|---|---|
-| Authentication | **Solid** — bcrypt cost 12, no user enumeration, per-request user revalidation |
-| Authorisation | **Solid** — server-enforced RBAC on every mutating route |
-| Injection | **Solid** — Prisma parameterises everything; the single raw statement uses a bound tagged template |
-| Input validation | **Solid** — Zod on every mutating route body, and on every query string since 2026-08-20 |
-| Token handling | **Weak** — `localStorage`, no revocation, no refresh, 7-day lifetime |
-| Transport | **Absent** — no TLS configuration exists |
-| Secrets | **Weak** — database password hard-coded in `docker-compose.yml`; seeded admin password in the repo |
-| Auditability | **Absent** — only invoice authorship is recorded |
-| Rate limiting | **Solid** — per-client behind the proxy, with a separate failed-login budget |
+| Area             | Posture                                                                                                     |
+| ---------------- | ----------------------------------------------------------------------------------------------------------- |
+| Authentication   | **Solid** — bcrypt cost 12, no user enumeration, per-request user revalidation                       |
+| Authorisation    | **Solid** — server-enforced RBAC on every mutating route                                             |
+| Injection        | **Solid** — Prisma parameterises everything; the single raw statement uses a bound tagged template   |
+| Input validation | **Solid** — Zod on every mutating route body, and on every query string since 2026-08-20             |
+| Token handling   | **Weak** — `localStorage`, no revocation, no refresh, 7-day lifetime                               |
+| Transport        | **Absent** — no TLS configuration exists                                                             |
+| Secrets          | **Weak** — database password hard-coded in `docker-compose.yml`; seeded admin password in the repo |
+| Auditability     | **Absent** — only invoice authorship is recorded                                                     |
+| Rate limiting    | **Solid** — per-client behind the proxy, with a separate failed-login budget                         |
 
 The system is defensible on a trusted LAN. It is **not ready** for internet exposure — TLS, secrets management and token revocation are the blockers; see §10.
 
@@ -38,16 +38,16 @@ The system is defensible on a trusted LAN. It is **not ready** for internet expo
 
 ### Weaknesses
 
-| # | Issue | Impact |
-|---|---|---|
-| A-1 | Token stored in `localStorage` | Any XSS reads it and exfiltrates a 7-day credential |
-| A-2 | No revocation / denylist | A leaked token is valid for up to 7 days; logout is client-side only |
-| A-3 | 7-day lifetime with no refresh rotation | Long exposure window; `generateRefreshToken` exists but is unused |
-| A-4 | Weak password policy | Minimum length 8 since 2026-08-19; still no complexity or breach check |
-| ~~A-5~~ | ~~No login rate limiting~~ | **Fixed 2026-08-19** — 10 failed attempts / 15 min per real client IP |
-| A-6 | Password change does not invalidate existing tokens | A compromised session survives the user's response to the compromise |
-| A-7 | Seeded admin `admin@medstore.com` / `admin123` is public in the repository | Any unchanged deployment is trivially owned |
-| A-8 | No MFA | Acceptable for the threat model; note it |
+| #        | Issue                                                                         | Impact                                                                       |
+| -------- | ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| A-1      | Token stored in`localStorage`                                               | Any XSS reads it and exfiltrates a 7-day credential                          |
+| A-2      | No revocation / denylist                                                      | A leaked token is valid for up to 7 days; logout is client-side only         |
+| A-3      | 7-day lifetime with no refresh rotation                                       | Long exposure window;`generateRefreshToken` exists but is unused           |
+| A-4      | Weak password policy                                                          | Minimum length 8 since 2026-08-19; still no complexity or breach check       |
+| ~~A-5~~ | ~~No login rate limiting~~                                                   | **Fixed 2026-08-19** — 10 failed attempts / 15 min per real client IP |
+| A-6      | Password change does not invalidate existing tokens                           | A compromised session survives the user's response to the compromise         |
+| A-7      | Seeded admin`admin@medstore.com` / `admin123` is public in the repository | Any unchanged deployment is trivially owned                                  |
+| A-8      | No MFA                                                                        | Acceptable for the threat model; note it                                     |
 
 ---
 
@@ -78,17 +78,17 @@ The full permission matrix is in [04 §4](./04-api-reference.md#4-role-matrix).
 
 `validate(schema)` runs `safeParse`, returns `400` with field-level errors on failure, and **replaces `req.body` with the parsed output** on success. Because Zod objects strip unknown keys by default, this also acts as a mass-assignment guard.
 
-| Route | Validated |
-|---|:--:|
-| `POST/PUT /api/inventory/categories`, `/manufacturers`, `/medicines`, `/suppliers` | ✅ |
-| `POST /api/inventory/batches` | ✅ |
-| `POST/PUT /api/billing/customers` | ✅ |
-| `POST /api/billing/invoices` | ✅ |
-| `PUT /api/inventory/batches/:id` | ✅ Strict narrow schema; `quantity`, `initialQty` and FK columns rejected — [G-05](./08-gap-analysis.md#g-05) |
-| `POST /api/auth/register` | ✅ `createUserSchema` — [G-11](./08-gap-analysis.md#g-11) |
-| `POST /api/users` | ✅ `createUserSchema` |
-| `PUT /api/users/:id` | ✅ `updateUserSchema` — role is enum-checked |
-| `POST /api/auth/login` | ❌ Presence check only (acceptable) |
+| Route                                                                                      |                                                    Validated                                                    |
+| ------------------------------------------------------------------------------------------ | :--------------------------------------------------------------------------------------------------------------: |
+| `POST/PUT /api/inventory/categories`, `/manufacturers`, `/medicines`, `/suppliers` |                                                        ✅                                                        |
+| `POST /api/inventory/batches`                                                            |                                                        ✅                                                        |
+| `POST/PUT /api/billing/customers`                                                        |                                                        ✅                                                        |
+| `POST /api/billing/invoices`                                                             |                                                        ✅                                                        |
+| `PUT /api/inventory/batches/:id`                                                         | ✅ Strict narrow schema;`quantity`, `initialQty` and FK columns rejected — [G-05](./08-gap-analysis.md#g-05) |
+| `POST /api/auth/register`                                                                |                            ✅`createUserSchema` — [G-11](./08-gap-analysis.md#g-11)                            |
+| `POST /api/users`                                                                        |                                              ✅`createUserSchema`                                              |
+| `PUT /api/users/:id`                                                                     |                                  ✅`updateUserSchema` — role is enum-checked                                  |
+| `POST /api/auth/login`                                                                   |                                       ❌ Presence check only (acceptable)                                       |
 
 As of 2026-08-19 every mutating route runs a schema. `PUT /api/users/profile` and the batch update are additionally `.strict()`, so an unexpected field is a `400` rather than something that looks accepted and is silently dropped — the failure mode behind [G-04](./08-gap-analysis.md#g-04).
 
@@ -136,12 +136,12 @@ Since 2026-08-19 the SPA is **same-origin** on both entry points (nginx on `:80`
 
 ## 7. Secrets management
 
-| Secret | Where it lives | Assessment |
-|---|---|---|
-| `JWT_SECRET` | Host env / root `.env`, interpolated by compose | ✅ Correct pattern. No default fallback — an unset value fails loudly at login rather than signing with a guessable key |
-| Postgres credentials | **Hard-coded** in `docker-compose.yml` (`medadmin` / `medpass123`) | ❌ Committed to git |
-| Seeded admin password | **Hard-coded** in `src/utils/seed.js` (`admin123`) | ❌ Committed to git |
-| `.env` files | Gitignored (`backend/.env`, `frontend/.env`, root `.env`) | ✅ |
+| Secret                | Where it lives                                                                 | Assessment                                                                                                               |
+| --------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
+| `JWT_SECRET`        | Host env / root`.env`, interpolated by compose                               | ✅ Correct pattern. No default fallback — an unset value fails loudly at login rather than signing with a guessable key |
+| Postgres credentials  | **Hard-coded** in `docker-compose.yml` (`medadmin` / `medpass123`) | ❌ Committed to git                                                                                                      |
+| Seeded admin password | **Hard-coded** in `src/utils/seed.js` (`admin123`)                   | ❌ Committed to git                                                                                                      |
+| `.env` files        | Gitignored (`backend/.env`, `frontend/.env`, root `.env`)                | ✅                                                                                                                       |
 
 There is no secret rotation story. Rotating `JWT_SECRET` invalidates every session at once, which is a blunt but working revocation mechanism in an emergency.
 
@@ -169,20 +169,20 @@ Before handling real customers, decide: retention period, deletion path (right-t
 
 Assets: customer PII and purchase history · financial records (invoices, GST liability) · stock levels and pricing · user credentials.
 
-| # | Threat | Vector | Likelihood | Impact | Current control | Residual |
-|---|---|---|---|---|---|---|
-| T-1 | Credential stuffing / brute force on login | Public login endpoint | Med | High | bcrypt, per-IP limiter: 10 failed logins / 15 min | Low — timing still leaks whether an email exists (P2-12) |
-| T-2 | Default admin credentials unchanged | Public repo | High | Critical | Seed script warns in stdout | **Critical** — force a change on first login |
-| T-3 | Token theft via XSS | `localStorage` + dependency-borne XSS | Low | High | React escaping, no `dangerouslySetInnerHTML` | Med — no CSP on the SPA |
-| T-4 | Token theft on the wire | No TLS | Med (LAN) | High | None | **High** — TLS required |
-| T-5 | Privilege escalation | Guessing admin routes | Low | High | `authorize()` on every route | Low |
-| T-6 | Stock/price tampering | `PUT /batches/:id` | Low | High | ADMIN/PHARMACIST only; strict schema, stock not editable | Low — price edits are still untracked, pending an audit log (P1-11) |
-| T-7 | Direct database access | Exposed :5432 with a committed password | Med | Critical | None | **Critical** in any exposed deployment |
-| T-8 | Unauthenticated Redis access | Exposed :6379, no auth | Med | Low today (empty) | None | Low now, High once caching lands |
-| T-9 | Insider data exfiltration | Any role can page through all customers | Med | Med | None — no logging or export controls | **Med** |
-| T-10 | Denial of service | ~~`?limit=999999`~~, shared rate bucket | Med | Med | Per-client limiter; `limit` capped at 100 and every query parameter validated (2026-08-20) | Low — bounded page sizes; volumetric DoS remains out of scope |
-| T-11 | Financial data corruption | Concurrency races ([G-01](./08-gap-analysis.md#g-01), [G-09](./08-gap-analysis.md#g-09)) | Med | High | None | **High** — Phase 7 |
-| T-12 | Repudiation of a sale | No audit trail beyond `Invoice.userId` | Low | Med | Invoice authorship | Med |
+| #    | Threat                                     | Vector                                                                                 | Likelihood | Impact            | Current control                                                                             | Residual                                                             |
+| ---- | ------------------------------------------ | -------------------------------------------------------------------------------------- | ---------- | ----------------- | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| T-1  | Credential stuffing / brute force on login | Public login endpoint                                                                  | Med        | High              | bcrypt, per-IP limiter: 10 failed logins / 15 min                                           | Low — timing still leaks whether an email exists (P2-12)            |
+| T-2  | Default admin credentials unchanged        | Public repo                                                                            | High       | Critical          | Seed script warns in stdout                                                                 | **Critical** — force a change on first login                  |
+| T-3  | Token theft via XSS                        | `localStorage` + dependency-borne XSS                                                | Low        | High              | React escaping, no`dangerouslySetInnerHTML`                                               | Med — no CSP on the SPA                                             |
+| T-4  | Token theft on the wire                    | No TLS                                                                                 | Med (LAN)  | High              | None                                                                                        | **High** — TLS required                                       |
+| T-5  | Privilege escalation                       | Guessing admin routes                                                                  | Low        | High              | `authorize()` on every route                                                              | Low                                                                  |
+| T-6  | Stock/price tampering                      | `PUT /batches/:id`                                                                   | Low        | High              | ADMIN/PHARMACIST only; strict schema, stock not editable                                    | Low — price edits are still untracked, pending an audit log (P1-11) |
+| T-7  | Direct database access                     | Exposed :5432 with a committed password                                                | Med        | Critical          | None                                                                                        | **Critical** in any exposed deployment                         |
+| T-8  | Unauthenticated Redis access               | Exposed :6379, no auth                                                                 | Med        | Low today (empty) | None                                                                                        | Low now, High once caching lands                                     |
+| T-9  | Insider data exfiltration                  | Any role can page through all customers                                                | Med        | Med               | None — no logging or export controls                                                       | **Med**                                                        |
+| T-10 | Denial of service                          | ~~`?limit=999999`~~, shared rate bucket                                             | Med        | Med               | Per-client limiter;`limit` capped at 100 and every query parameter validated (2026-08-20) | Low — bounded page sizes; volumetric DoS remains out of scope       |
+| T-11 | Financial data corruption                  | Concurrency races ([G-01](./08-gap-analysis.md#g-01), [G-09](./08-gap-analysis.md#g-09)) | Med        | High              | None                                                                                        | **High** — Phase 7                                            |
+| T-12 | Repudiation of a sale                      | No audit trail beyond`Invoice.userId`                                                | Low        | Med               | Invoice authorship                                                                          | Med                                                                  |
 
 ---
 

@@ -1,4 +1,4 @@
-# 06 — Development Guide
+# Development Guide
 
 Everything needed to go from a clean checkout to a running, editable system.
 
@@ -92,24 +92,24 @@ npm run dev                      # Vite on :5173
 
 ### Backend
 
-| Variable         | Required | Default                    | Purpose                                                                 |
-| ---------------- | :------: | -------------------------- | ----------------------------------------------------------------------- |
-| `DATABASE_URL` |    ✅    | —                         | Postgres connection string. Process exits if unreachable                |
-| `JWT_SECRET`   |    ✅    | —                         | HMAC key for tokens.**No fallback** — signing throws without it  |
-| `REDIS_URL`    |          | `redis://localhost:6379` | Client connects; nothing reads it yet                                   |
-| `PORT`         |          | `5000`                   |                                                                         |
-| `NODE_ENV`     |          | —                         | `development` enables Prisma query logs and error stacks in responses |
-| `FRONTEND_URL` |          | —                         | Appended to the CORS allowlist when set                                 |
-| `TRUST_PROXY`  |          | `loopback, linklocal, uniquelocal` | Express `trust proxy` value — which peers may set `X-Forwarded-For`, and therefore what the rate limiter keys on |
+| Variable         | Required | Default                              | Purpose                                                                                                              |
+| ---------------- | :------: | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL` |    ✅    | —                                   | Postgres connection string. Process exits if unreachable                                                             |
+| `JWT_SECRET`   |    ✅    | —                                   | HMAC key for tokens.**No fallback** — signing throws without it                                               |
+| `REDIS_URL`    |          | `redis://localhost:6379`           | Client connects; nothing reads it yet                                                                                |
+| `PORT`         |          | `5000`                             |                                                                                                                      |
+| `NODE_ENV`     |          | —                                   | `development` enables Prisma query logs and error stacks in responses                                              |
+| `FRONTEND_URL` |          | —                                   | Appended to the CORS allowlist when set                                                                              |
+| `TRUST_PROXY`  |          | `loopback, linklocal, uniquelocal` | Express`trust proxy` value — which peers may set `X-Forwarded-For`, and therefore what the rate limiter keys on |
 
 CORS allows, always: `http://localhost:3000`, `http://localhost:5173`, `http://127.0.0.1:5173`, `http://172.17.0.1:5173`, plus `FRONTEND_URL`. Requests with **no** Origin header (curl, Postman, server-to-server) are allowed.
 
 ### Frontend
 
-| Variable         | Required | Default                   | Purpose                             |
-| ---------------- | :------: | ------------------------- | ----------------------------------- |
-| `VITE_API_URL`     |          | *(empty — relative `/api`)* | Only for an API on another host. Inlined at build time |
-| `VITE_PROXY_TARGET` |          | `http://localhost:5000`    | Where the **dev server** forwards `/api` (compose sets `http://backend:5000`) |
+| Variable              | Required | Default                          | Purpose                                                                                |
+| --------------------- | :------: | -------------------------------- | -------------------------------------------------------------------------------------- |
+| `VITE_API_URL`      |          | *(empty — relative `/api`)* | Only for an API on another host. Inlined at build time                                 |
+| `VITE_PROXY_TARGET` |          | `http://localhost:5000`        | Where the**dev server** forwards `/api` (compose sets `http://backend:5000`) |
 
 ### Root
 
@@ -123,17 +123,17 @@ All `.env` files are gitignored. Never commit one.
 
 ### Backend (`cd backend`)
 
-| Command                     | Effect                                                                                                      |
-| --------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `npm run dev`             | nodemon on`src/index.js`                                                                                  |
-| `npm start`               | plain node                                                                                                  |
-| `npm run seed`            | Upsert the admin user                                                                                       |
-| `npm run prisma:generate` | Regenerate the Prisma client (after any schema edit)                                                        |
-| `npm run prisma:migrate`  | `prisma migrate dev` — author and apply a migration                                                      |
-| `npm run prisma:studio`   | Database browser on :5555                                                                                   |
-| `npm test`                | Run the suite. **Requires a `DATABASE_URL` whose database name ends in `_test`** — the harness refuses anything else, because it wipes tables between tests |
-| `npm run test:watch`      | Same, in watch mode |
-| `npm run test:coverage`   | With a coverage report and the 90% gate on the invoice and auth paths |
+| Command                     | Effect                                                                                                                                                                |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run dev`             | nodemon on`src/index.js`                                                                                                                                            |
+| `npm start`               | plain node                                                                                                                                                            |
+| `npm run seed`            | Upsert the admin user                                                                                                                                                 |
+| `npm run prisma:generate` | Regenerate the Prisma client (after any schema edit)                                                                                                                  |
+| `npm run prisma:migrate`  | `prisma migrate dev` — author and apply a migration                                                                                                                |
+| `npm run prisma:studio`   | Database browser on :5555                                                                                                                                             |
+| `npm test`                | Run the suite.**Requires a `DATABASE_URL` whose database name ends in `_test`** — the harness refuses anything else, because it wipes tables between tests |
+| `npm run test:watch`      | Same, in watch mode                                                                                                                                                   |
+| `npm run test:coverage`   | With a coverage report and the 90% gate on the invoice and auth paths                                                                                                 |
 
 ### Frontend (`cd frontend`)
 
@@ -253,18 +253,18 @@ setBatches(res.data.data);
 
 ## 10. Debugging
 
-| Symptom                                 | Where to look                                                                                  |
-| --------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| 401 on every request                    | Token missing/expired in`localStorage`; the axios interceptor redirects to `/login` on 401 |
-| 403 with a role message                 | `authorize()` on the route — check the [role matrix](./04-api-reference.md#4-role-matrix)    |
-| CORS error in the console               | Origin not in the allowlist in`index.js` — are you on port 80 instead of 5173?              |
-| `Validation failed` with `errors[]` | The Zod schema for that route; field paths are dotted (`items.0.quantity`)                   |
-| 409 with a`field` key                 | Unique constraint — email, category name, customer phone, or`(medicineId, batchNumber)`     |
-| Silent field loss on save               | The field is absent from the Zod schema and was stripped                                       |
-| Prisma engine / openssl error           | Re-run`npx prisma generate` in the current environment                                       |
-| Backend exits on start                  | Postgres unreachable —`config/db.js` calls `process.exit(1)` by design                    |
-| `⚠️ Redis connection failed`        | Non-fatal and expected when Redis is down; nothing depends on it                               |
-| Port already in use                     | `lsof -ti:5000 \| xargs kill -9`, or change the mapping in compose                            |
+| Symptom                                 | Where to look                                                                                                                        |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| 401 on every request                    | Token missing/expired in`localStorage`; the axios interceptor redirects to `/login` on 401                                       |
+| 403 with a role message                 | `authorize()` on the route — check the [role matrix](./04-api-reference.md#4-role-matrix)                                          |
+| CORS error in the console               | Origin not in the allowlist in`index.js` — are you on port 80 instead of 5173?                                                    |
+| `Validation failed` with `errors[]` | The Zod schema for that route; field paths are dotted (`items.0.quantity`)                                                         |
+| 409 with a`field` key                 | Unique constraint — email, category name, customer phone, or`(medicineId, batchNumber)`                                           |
+| Silent field loss on save               | The field is absent from the Zod schema and was stripped                                                                             |
+| Prisma engine / openssl error           | Re-run`npx prisma generate` in the current environment                                                                             |
+| Backend exits on start                  | Postgres unreachable —`config/db.js` calls `process.exit(1)` by design                                                          |
+| `⚠️ Redis connection failed`        | Non-fatal and expected when Redis is down; nothing depends on it                                                                     |
+| Port already in use                     | `lsof -ti:5000 \| xargs kill -9`, or change the mapping in compose                                                                  |
 | Frontend can't reach the API            | Check the Vite proxy target (`VITE_PROXY_TARGET`); env values are inlined at build time, so restart Vite after changing either var |
 
 ## 11. Git workflow
@@ -328,15 +328,15 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod exec backend npm 
 
 Then open `https://localhost`. The seeded admin can sign in and do exactly one thing: replace its password. Every other route answers `403 PASSWORD_CHANGE_REQUIRED` until it does.
 
-| | Development | Production |
-|---|---|---|
-| Source | Bind-mounted, hot reloaded | Baked into the image |
-| Frontend | Vite dev server on 5173 | Static files from `nginx:alpine` |
-| Backend | `nodemon` | `node src/index.js` as a non-root user |
-| Transport | HTTP on 80 | HTTPS on 443, HTTP redirects |
-| Postgres | Published on 5432 | Internal network only |
-| Credentials | Literals in compose | Required environment variables |
-| Logs | Pretty, human-readable | One JSON object per line |
+|             | Development                | Production                               |
+| ----------- | -------------------------- | ---------------------------------------- |
+| Source      | Bind-mounted, hot reloaded | Baked into the image                     |
+| Frontend    | Vite dev server on 5173    | Static files from`nginx:alpine`        |
+| Backend     | `nodemon`                | `node src/index.js` as a non-root user |
+| Transport   | HTTP on 80                 | HTTPS on 443, HTTP redirects             |
+| Postgres    | Published on 5432          | Internal network only                    |
+| Credentials | Literals in compose        | Required environment variables           |
+| Logs        | Pretty, human-readable     | One JSON object per line                 |
 
 ### Health
 

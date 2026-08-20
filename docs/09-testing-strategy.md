@@ -1,4 +1,4 @@
-# 09 — Testing Strategy
+# Testing Strategy
 
 **Current state (2026-08-20): 327 backend tests, 66 frontend unit tests and a 6-flow browser smoke — all three layers on CI.** The backend suite is implemented. Frontend unit testing is now set up (Vitest + Testing Library) and covers the cart arithmetic; the remaining §5.6 cases and the browser smoke test are still open. Sections 1–4 describe the approach and the acceptance fixtures; §5 lists the cases, most of which now exist.
 
@@ -31,12 +31,12 @@ docker compose exec \
 
 ### How it is put together
 
-| Piece | Purpose |
-|---|---|
-| `backend/vitest.config.mjs` | Node environment, `NODE_ENV=test`, files run serially (they share one database), coverage thresholds |
-| `tests/setup/global-setup.js` | Guards the database name, then applies migrations once |
-| `tests/setup/each-test.js` | Empties every table before each test, children first |
-| `tests/helpers/factory.js` | `buildApp()`, signed-in users by role, and inventory fixtures |
+| Piece                           | Purpose                                                                                               |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `backend/vitest.config.mjs`   | Node environment,`NODE_ENV=test`, files run serially (they share one database), coverage thresholds |
+| `tests/setup/global-setup.js` | Guards the database name, then applies migrations once                                                |
+| `tests/setup/each-test.js`    | Empties every table before each test, children first                                                  |
+| `tests/helpers/factory.js`    | `buildApp()`, signed-in users by role, and inventory fixtures                                       |
 
 Two decisions worth knowing:
 
@@ -46,19 +46,19 @@ Two decisions worth knowing:
 
 ### What exists
 
-| File | Tests | Covers |
-|---|---:|---|
-| `tests/auth/auth.test.js` | 13 | Login, token rejection, immediate revocation, password change |
-| `tests/auth/rbac.test.js` | 142 | The full role matrix, plus anonymous rejection on every route |
-| `tests/auth/rate-limit.test.js` | 5 | Failed-login budget, per-client isolation, successful sign-ins not counted |
-| `tests/billing/invoice-create.test.js` | 28 | GST fixtures, invariants, rejections, atomicity |
-| `tests/billing/invoice-concurrency.test.js` | 4 | Last-unit races, oversell bursts, gapless serials |
-| `tests/billing/reports.test.js` | 12 | Daily and GST reports, date boundaries, paid-only filtering |
-| `tests/billing/customers.test.js` | 10 | Uniqueness, validation, search, history |
-| `tests/inventory/medicines.test.js` | 14 | Stock totals, POS search, soft delete, validation |
-| `tests/inventory/batches.test.js` | 16 | Opening stock, manufacture dates, strict updates, alert windows |
-| `tests/inventory/masters.test.js` | 17 | Masters CRUD, delete conflicts, suppliers |
-| `tests/users/users.test.js` | 17 | User CRUD, validation, profile safety |
+| File                                          | Tests | Covers                                                                     |
+| --------------------------------------------- | ----: | -------------------------------------------------------------------------- |
+| `tests/auth/auth.test.js`                   |    13 | Login, token rejection, immediate revocation, password change              |
+| `tests/auth/rbac.test.js`                   |   142 | The full role matrix, plus anonymous rejection on every route              |
+| `tests/auth/rate-limit.test.js`             |     5 | Failed-login budget, per-client isolation, successful sign-ins not counted |
+| `tests/billing/invoice-create.test.js`      |    28 | GST fixtures, invariants, rejections, atomicity                            |
+| `tests/billing/invoice-concurrency.test.js` |     4 | Last-unit races, oversell bursts, gapless serials                          |
+| `tests/billing/reports.test.js`             |    12 | Daily and GST reports, date boundaries, paid-only filtering                |
+| `tests/billing/customers.test.js`           |    10 | Uniqueness, validation, search, history                                    |
+| `tests/inventory/medicines.test.js`         |    14 | Stock totals, POS search, soft delete, validation                          |
+| `tests/inventory/batches.test.js`           |    16 | Opening stock, manufacture dates, strict updates, alert windows            |
+| `tests/inventory/masters.test.js`           |    17 | Masters CRUD, delete conflicts, suppliers                                  |
+| `tests/users/users.test.js`                 |    17 | User CRUD, validation, profile safety                                      |
 
 Coverage is 87% overall; `billing.controller.js` and `auth.middleware.js` are gated at 90% in CI.
 
@@ -70,7 +70,6 @@ Coverage is 87% overall; `billing.controller.js` and `auth.middleware.js` are ga
 - Component coverage beyond the §5.6 screens, and a second browser besides Chromium.
 - ~~Query-parameter validation cases, once the API validates them~~ — **done 2026-08-20**, `tests/api/query-validation.test.js` (44 cases)
 
-
 ## 2. Target shape
 
 ```
@@ -81,12 +80,12 @@ Coverage is 87% overall; `billing.controller.js` and `auth.middleware.js` are ga
 
 Integration tests carry the weight here, because most of the risk lives in the interaction between validator, controller, Prisma and the database — not in isolated pure functions. Aim high on the money paths and low everywhere else; a coverage percentage across the whole repo is not a useful target.
 
-| Layer | Tooling | Scope |
-|---|---|---|
-| Backend unit | Vitest | GST maths, invoice numbering, JWT utils |
+| Layer               | Tooling                                 | Scope                                                            |
+| ------------------- | --------------------------------------- | ---------------------------------------------------------------- |
+| Backend unit        | Vitest                                  | GST maths, invoice numbering, JWT utils                          |
 | Backend integration | Vitest + Supertest + throwaway Postgres | Every route: auth, RBAC, validation, error mapping, transactions |
-| Frontend unit | Vitest + Testing Library | Cart totals, auth store, notification derivation |
-| E2E | Playwright | Login → sell → verify stock → report |
+| Frontend unit       | Vitest + Testing Library                | Cart totals, auth store, notification derivation                 |
+| E2E                 | Playwright                              | Login → sell → verify stock → report                          |
 
 **Test database:** a disposable schema per run (`DATABASE_URL` pointing at `medicaldb_test`, `prisma migrate deploy`, truncate between tests) or Testcontainers. Do not mock Prisma — the bugs in [08](./08-gap-analysis.md) are database-behaviour bugs, and a mock would have hidden every one of them.
 
@@ -94,17 +93,17 @@ Integration tests carry the weight here, because most of the risk lives in the i
 
 ## 3. Priority order
 
-| Priority | Area | Why |
-|---|---|---|
-| P0 | Invoice creation: maths, stock deduction, transaction rollback | The core write path; two known 🔴 defects live here |
-| P0 | Concurrency: simultaneous invoices on one batch, simultaneous invoice numbering | Proves [G-01](./08-gap-analysis.md#g-01) and [G-09](./08-gap-analysis.md#g-09) fixed |
-| P0 | Auth: login, token verification, `isActive` revocation | The security boundary |
-| P1 | RBAC: the full 403 matrix | Cheap, tabular, high regression value |
-| P1 | Validation: every Zod schema's boundaries | Catches stripped-field bugs like [G-04](./08-gap-analysis.md#g-04) |
-| P1 | Reports: daily summary and GST aggregation | Feeds tax filing |
-| P2 | Inventory CRUD, soft delete, unique constraints | |
-| P2 | Frontend cart maths mirroring the server | Client and server compute totals independently — they must agree |
-| P3 | E2E smoke | Integration confidence, slow feedback |
+| Priority | Area                                                                            | Why                                                                               |
+| -------- | ------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| P0       | Invoice creation: maths, stock deduction, transaction rollback                  | The core write path; two known 🔴 defects live here                               |
+| P0       | Concurrency: simultaneous invoices on one batch, simultaneous invoice numbering | Proves[G-01](./08-gap-analysis.md#g-01) and [G-09](./08-gap-analysis.md#g-09) fixed |
+| P0       | Auth: login, token verification,`isActive` revocation                         | The security boundary                                                             |
+| P1       | RBAC: the full 403 matrix                                                       | Cheap, tabular, high regression value                                             |
+| P1       | Validation: every Zod schema's boundaries                                       | Catches stripped-field bugs like[G-04](./08-gap-analysis.md#g-04)                  |
+| P1       | Reports: daily summary and GST aggregation                                      | Feeds tax filing                                                                  |
+| P2       | Inventory CRUD, soft delete, unique constraints                                 |                                                                                   |
+| P2       | Frontend cart maths mirroring the server                                        | Client and server compute totals independently — they must agree                 |
+| P3       | E2E smoke                                                                       | Integration confidence, slow feedback                                             |
 
 ---
 
@@ -112,15 +111,15 @@ Integration tests carry the weight here, because most of the risk lives in the i
 
 These are the acceptance set for `createInvoice`. All values follow [PRD §8 BR-01/BR-02](./01-product-requirements.md#8-key-business-rules).
 
-| # | Input | Expected |
-|---|---|---|
-| **F1** Single line, no discount | 1 × (₹24.50 × 10 units, 0%, GST 12%) | taxable 245.00 · cgst 14.70 · sgst 14.70 · lineTotal 274.40 · **total 274.40** |
-| **F2** Line discount | 1 × (₹100.00 × 3, 10%, GST 5%) | taxable 270.00 · cgst 6.75 · sgst 6.75 · **total 283.50** |
-| **F3** Zero-rated | 1 × (₹250.00 × 2, 0%, GST 0%) | taxable 500.00 · cgst 0 · sgst 0 · **total 500.00** |
-| **F4** Multi-line + bill discount | F1 line + F2 line, `discountAmt` ₹50 | subtotal 515.00 · cgst 21.45 · sgst 21.45 · **total 507.90** |
-| **F5** Full line discount | 1 × (₹80.00 × 1, 100%, GST 18%) | taxable 0 · gst 0 · **total 0.00** |
-| **F6** Rounding | 1 × (₹33.33 × 3, 0%, GST 18%) | taxable 99.99 · cgst 9.00 · sgst 9.00 · **total 117.99** |
-| **F7** Bill discount exceeds total | F3 with `discountAmt` ₹600 | Currently yields a **negative total** — decide and assert the intended behaviour (reject, or clamp to 0) |
+| #                                        | Input                                   | Expected                                                                                                       |
+| ---------------------------------------- | --------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| **F1** Single line, no discount    | 1 × (₹24.50 × 10 units, 0%, GST 12%) | taxable 245.00 · cgst 14.70 · sgst 14.70 · lineTotal 274.40 ·**total 274.40**                        |
+| **F2** Line discount               | 1 × (₹100.00 × 3, 10%, GST 5%)       | taxable 270.00 · cgst 6.75 · sgst 6.75 ·**total 283.50**                                              |
+| **F3** Zero-rated                  | 1 × (₹250.00 × 2, 0%, GST 0%)        | taxable 500.00 · cgst 0 · sgst 0 ·**total 500.00**                                                    |
+| **F4** Multi-line + bill discount  | F1 line + F2 line,`discountAmt` ₹50  | subtotal 515.00 · cgst 21.45 · sgst 21.45 ·**total 507.90**                                           |
+| **F5** Full line discount          | 1 × (₹80.00 × 1, 100%, GST 18%)      | taxable 0 · gst 0 ·**total 0.00**                                                                      |
+| **F6** Rounding                    | 1 × (₹33.33 × 3, 0%, GST 18%)        | taxable 99.99 · cgst 9.00 · sgst 9.00 ·**total 117.99**                                               |
+| **F7** Bill discount exceeds total | F3 with`discountAmt` ₹600            | Currently yields a**negative total** — decide and assert the intended behaviour (reject, or clamp to 0) |
 
 **Invariants to assert on every fixture:**
 
@@ -136,6 +135,7 @@ These are the acceptance set for `createInvoice`. All values follow [PRD §8 BR-
 ### 5.1 Invoice creation — P0
 
 **Happy path**
+
 - Creates the invoice, the correct number of items, and decrements each batch by exactly its quantity.
 - `invoiceNumber` matches `/^INV\d{6}-\d{4}$/`.
 - `userId` is the caller; `customerId` is null when omitted.
@@ -143,6 +143,7 @@ These are the acceptance set for `createInvoice`. All values follow [PRD §8 BR-
 - Payment mode/status defaults are `CASH`/`PAID` when omitted.
 
 **Rejections**
+
 - `items: []` → 400 `At least one item is required`.
 - Unknown `batchId` → 404 `Batch not found for <name>`.
 - `quantity` > stock → 400 `Insufficient stock for <name>. Available: <n>`.
@@ -152,10 +153,12 @@ These are the acceptance set for `createInvoice`. All values follow [PRD §8 BR-
 - No token → 401.
 
 **Atomicity**
+
 - With two lines where the second is invalid, **no** invoice row exists and **no** batch was decremented.
 - Force a failure inside the transaction (e.g. duplicate invoice number) and assert full rollback of both invoice and stock.
 
 **Concurrency — the tests that matter most**
+
 - Batch with `quantity: 1`. Fire two invoices for 1 unit concurrently → exactly one 201 and one 400; final `quantity` is `0`, never `-1`.
 - Fire 20 concurrent invoices → 20 distinct `invoiceNumber` values, zero 409s.
 - 50 concurrent single-unit sales from a batch of 30 → 30 successes, 20 rejections, final quantity 0.
@@ -277,16 +280,19 @@ jobs:
 Until the automated suite lands, run this before any release. It is ordered so each step sets up the next.
 
 **Setup**
+
 - [ ] `docker compose up -d` from clean; `/health` returns 200
 - [ ] `npm run seed`; admin logs in at http://localhost:5173
 
 **Auth & roles**
+
 - [ ] Wrong password shows an error and does not sign in
 - [ ] Create a `CASHIER`; sign in as them; Settings is absent from the sidebar
 - [ ] As cashier, `GET /api/users` via curl returns 403
 - [ ] Deactivate the cashier while they are signed in — their next action bounces them to login
 
 **Master data & stock**
+
 - [ ] Create a category and a manufacturer; duplicate names are rejected with a clear message
 - [ ] Create a medicine (unit `tablet`, GST 12%, Schedule H on)
 - [ ] Create a supplier
@@ -295,6 +301,7 @@ Until the automated suite lands, run this before any release. It is ordered so e
 - [ ] The batch appears under Reports → Stock Alerts and in the notification tray
 
 **Billing**
+
 - [ ] POS search finds the medicine on 3 characters; batch, expiry, price and stock are shown; the Schedule H badge appears
 - [ ] Add 10 units → line total ₹274.40 (F1)
 - [ ] Apply a 10% line discount → totals update correctly
@@ -305,12 +312,14 @@ Until the automated suite lands, run this before any release. It is ordered so e
 - [ ] The invoice appears in history and reprints identically
 
 **Reports**
+
 - [ ] Daily report shows the sale, correct GST split and payment mode
 - [ ] GST report for the current month includes it
 - [ ] Sales trend renders 7 days
 - [ ] Dashboard tiles match the daily report
 
 **Edge cases**
+
 - [ ] Bill a walk-in with no customer attached
 - [ ] Sell a 0% GST medicine → no tax charged
 - [ ] Soft-delete a medicine → gone from search, its past invoice still prints

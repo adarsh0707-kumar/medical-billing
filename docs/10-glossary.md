@@ -1,4 +1,4 @@
-# 10 — Glossary
+# Glossary
 
 Domain and system vocabulary used across this documentation and in the code.
 
@@ -96,11 +96,11 @@ Domain and system vocabulary used across this documentation and in the code.
 
 ## Roles
 
-| Role | Meaning |
-|---|---|
-| **ADMIN** | Full access: user management, deletes, GST report, everything below |
-| **PHARMACIST** | Manages catalogue, stock, suppliers; reads the GST report; bills |
-| **CASHIER** | Bills and reads inventory and customers. No master-data writes, no user management, no GST report |
+| Role                 | Meaning                                                                                           |
+| -------------------- | ------------------------------------------------------------------------------------------------- |
+| **ADMIN**      | Full access: user management, deletes, GST report, everything below                               |
+| **PHARMACIST** | Manages catalogue, stock, suppliers; reads the GST report; bills                                  |
+| **CASHIER**    | Bills and reads inventory and customers. No master-data writes, no user management, no GST report |
 
 Full matrix: [04 §4](./04-api-reference.md#4-role-matrix).
 
@@ -108,17 +108,17 @@ Full matrix: [04 §4](./04-api-reference.md#4-role-matrix).
 
 ## Status tags used in these docs
 
-| Tag | Meaning |
-|---|---|
-| ✅ Implemented | In the code and reachable from the UI or API |
-| 🟡 Partial | Present but incomplete, unreachable, or unused |
-| ⬜ Planned | Not in the codebase — intent only |
-| 🔴 / 🟠 / 🟡 (in [08](./08-gap-analysis.md)) | Defect severity: data-corrupting or security-exposing / incorrect output / quality |
-| `FR-xx-nn` | Functional requirement id ([01](./01-product-requirements.md)) |
-| `NFR-nn` | Non-functional requirement id ([01](./01-product-requirements.md)) |
-| `BR-nn` | Business rule ([01 §8](./01-product-requirements.md#8-key-business-rules)) |
-| `AD-nn` | Architecture decision ([02 §9](./02-architecture.md#9-architecture-decisions)) |
-| `G-nn` | Gap or defect ([08](./08-gap-analysis.md)) |
-| `I-n` | Data invariant ([03 §5](./03-data-model.md#5-invariants)) |
-| `T-nn` | Threat ([07 §9](./07-security.md#9-threat-model)) |
-| `Q-n` | Open question ([01 §14](./01-product-requirements.md#14-open-questions)) |
+| Tag                                        | Meaning                                                                            |
+| ------------------------------------------ | ---------------------------------------------------------------------------------- |
+| ✅ Implemented                             | In the code and reachable from the UI or API                                       |
+| 🟡 Partial                                 | Present but incomplete, unreachable, or unused                                     |
+| ⬜ Planned                                 | Not in the codebase — intent only                                                 |
+| 🔴 / 🟠 / 🟡 (in[08](./08-gap-analysis.md)) | Defect severity: data-corrupting or security-exposing / incorrect output / quality |
+| `FR-xx-nn`                               | Functional requirement id ([01](./01-product-requirements.md))                      |
+| `NFR-nn`                                 | Non-functional requirement id ([01](./01-product-requirements.md))                  |
+| `BR-nn`                                  | Business rule ([01 §8](./01-product-requirements.md#8-key-business-rules))         |
+| `AD-nn`                                  | Architecture decision ([02 §9](./02-architecture.md#9-architecture-decisions))     |
+| `G-nn`                                   | Gap or defect ([08](./08-gap-analysis.md))                                          |
+| `I-n`                                    | Data invariant ([03 §5](./03-data-model.md#5-invariants))                          |
+| `T-nn`                                   | Threat ([07 §9](./07-security.md#9-threat-model))                                  |
+| `Q-n`                                    | Open question ([01 §14](./01-product-requirements.md#14-open-questions))           |
