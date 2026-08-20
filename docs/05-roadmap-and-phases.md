@@ -1,4 +1,4 @@
-# 05 — Roadmap & Phases
+# Roadmap & Phases
 
 **As of:** 2026-08-17 · **Shipped:** v1.0.0 on 2026-04-28
 
@@ -29,13 +29,13 @@ timeline
 
 **Health snapshot**
 
-| Dimension | State |
-|---|---|
-| Feature completeness for a single store | Strong — the full sell/stock/report loop works |
-| Correctness under concurrency | **Sound** — both races fixed and proven by concurrent tests; stock also has a database `CHECK` backstop |
-| Production deployability | **Ready to trial** — multi-stage images, TLS with HSTS and a CSP, no credential literals, data ports unpublished, structured logging, a readiness probe and a rehearsed restore. A real certificate and a retention decision remain the operator's |
-| Test coverage | 327 backend tests, 87% statements, with a 90% gate on the money and auth paths. 40 frontend tests cover the cart arithmetic; component and browser tests are still open |
-| Documentation accuracy | This `docs/` set is the reference; the component READMEs were trimmed to point at it on 2026-08-20 |
+| Dimension                               | State                                                                                                                                                                                                                                                     |
+| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Feature completeness for a single store | Strong — the full sell/stock/report loop works                                                                                                                                                                                                           |
+| Correctness under concurrency           | **Sound** — both races fixed and proven by concurrent tests; stock also has a database `CHECK` backstop                                                                                                                                          |
+| Production deployability                | **Ready to trial** — multi-stage images, TLS with HSTS and a CSP, no credential literals, data ports unpublished, structured logging, a readiness probe and a rehearsed restore. A real certificate and a retention decision remain the operator's |
+| Test coverage                           | 327 backend tests, 87% statements, with a 90% gate on the money and auth paths. 40 frontend tests cover the cart arithmetic; component and browser tests are still open                                                                                   |
+| Documentation accuracy                  | This`docs/` set is the reference; the component READMEs were trimmed to point at it on 2026-08-20                                                                                                                                                       |
 
 The honest read as of **2026-08-20**: the correctness gaps that made v1.0.0 unsafe for real money are closed and tested. What remains between here and a deployment is Phase 8 — images, TLS, secrets and backups — not the arithmetic.
 
@@ -136,18 +136,18 @@ The honest read as of **2026-08-20**: the correctness gaps that made v1.0.0 unsa
 
 **Why first:** every item here can silently corrupt financial or stock data in normal operation. No new feature is worth building on top of this.
 
-| # | Work | Ref |
-|---|---|---|
-| ~~7.1~~ ✅ | Move stock verification **inside** the transaction; use a conditional update (`updateMany where quantity >= qty`) and abort when zero rows change — **done 2026-08-18** | [G-09](./08-gap-analysis.md#g-09) |
-| ~~7.2~~ ✅ | Replace count-based invoice numbering — **done 2026-08-18** via an atomic per-day `InvoiceCounter` upsert (retry alone proved insufficient) | [G-01](./08-gap-analysis.md#g-01) |
-| ~~7.3~~ ✅ | Migrate all money columns from `Float` to `Decimal(12,2)` — **done 2026-08-19**, with `Prisma.Decimal` arithmetic and a `json replacer` keeping the API on numbers | [G-07](./08-gap-analysis.md#g-07) |
-| ~~7.4~~ ✅ | Add `mfgDate` to `batchSchema` and to the batch form — **done 2026-08-19**, with a mfg-before-expiry rule | [G-04](./08-gap-analysis.md#g-04) |
-| ~~7.5~~ ✅ | Add a Zod schema to `PUT /api/inventory/batches/:id` — **done 2026-08-19**, strict and excluding `quantity` | [G-05](./08-gap-analysis.md#g-05) |
-| ~~7.6~~ ✅ | Fix `totalStock` to aggregate across all batches — **done 2026-08-19** | [G-10](./08-gap-analysis.md#g-10) |
-| ~~7.7~~ ✅ | Add validation to `POST /api/auth/register`, `POST /api/users`, `PUT /api/users/:id` — **done 2026-08-19**, plus profile and change-password | [G-11](./08-gap-analysis.md#g-11) |
-| ~~7.8~~ ✅ | Map FK-violation `P2003` to a clean 409 for category/manufacturer/supplier delete — **done 2026-08-19** | [G-12](./08-gap-analysis.md#g-12) |
-| ~~7.9~~ ✅ | Add `CHECK (quantity >= 0)` on `Batch` — **done 2026-08-20**, hand-written migration (Prisma cannot express CHECK); verified rejecting a direct `UPDATE … = -1` while the concurrency suite passes unchanged | [Data model I-1](./03-data-model.md#5-invariants) |
-| ~~7.10~~ ✅ | Delete the four empty route files — **done 2026-08-20**, along with the empty `frontend/nginx.conf` and the stray literal `frontend/@/` directory | [G-13](./08-gap-analysis.md#g-13) |
+| #            | Work                                                                                                                                                                                                                      | Ref                                              |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| ~~7.1~~ ✅  | Move stock verification**inside** the transaction; use a conditional update (`updateMany where quantity >= qty`) and abort when zero rows change — **done 2026-08-18**                                     | [G-09](./08-gap-analysis.md#g-09)                 |
+| ~~7.2~~ ✅  | Replace count-based invoice numbering —**done 2026-08-18** via an atomic per-day `InvoiceCounter` upsert (retry alone proved insufficient)                                                                       | [G-01](./08-gap-analysis.md#g-01)                 |
+| ~~7.3~~ ✅  | Migrate all money columns from`Float` to `Decimal(12,2)` — **done 2026-08-19**, with `Prisma.Decimal` arithmetic and a `json replacer` keeping the API on numbers                                          | [G-07](./08-gap-analysis.md#g-07)                 |
+| ~~7.4~~ ✅  | Add`mfgDate` to `batchSchema` and to the batch form — **done 2026-08-19**, with a mfg-before-expiry rule                                                                                                       | [G-04](./08-gap-analysis.md#g-04)                 |
+| ~~7.5~~ ✅  | Add a Zod schema to`PUT /api/inventory/batches/:id` — **done 2026-08-19**, strict and excluding `quantity`                                                                                                     | [G-05](./08-gap-analysis.md#g-05)                 |
+| ~~7.6~~ ✅  | Fix`totalStock` to aggregate across all batches — **done 2026-08-19**                                                                                                                                            | [G-10](./08-gap-analysis.md#g-10)                 |
+| ~~7.7~~ ✅  | Add validation to`POST /api/auth/register`, `POST /api/users`, `PUT /api/users/:id` — **done 2026-08-19**, plus profile and change-password                                                                  | [G-11](./08-gap-analysis.md#g-11)                 |
+| ~~7.8~~ ✅  | Map FK-violation`P2003` to a clean 409 for category/manufacturer/supplier delete — **done 2026-08-19**                                                                                                           | [G-12](./08-gap-analysis.md#g-12)                 |
+| ~~7.9~~ ✅  | Add`CHECK (quantity >= 0)` on `Batch` — **done 2026-08-20**, hand-written migration (Prisma cannot express CHECK); verified rejecting a direct `UPDATE … = -1` while the concurrency suite passes unchanged | [Data model I-1](./03-data-model.md#5-invariants) |
+| ~~7.10~~ ✅ | Delete the four empty route files —**done 2026-08-20**, along with the empty `frontend/nginx.conf` and the stray literal `frontend/@/` directory                                                               | [G-13](./08-gap-analysis.md#g-13)                 |
 
 **Exit criteria:** two concurrent invoices for the same last unit produce exactly one success and one clean 400; 1,000 sequential invoices produce 1,000 distinct numbers; a GST report over 10,000 invoices reconciles to the cent.
 
@@ -157,19 +157,19 @@ The honest read as of **2026-08-20**: the correctness gaps that made v1.0.0 unsa
 
 **Why:** there was no safe way to run this outside a laptop.
 
-| # | Work |
-|---|---|
-| ~~8.1~~ ✅ | Multi-stage production Dockerfiles — **done 2026-08-20**. The frontend image builds with Vite and serves the output from `nginx:alpine` (95 MB, no Node at runtime); the backend prunes dev dependencies but keeps the Prisma CLI so migrations are runnable in the deployed container |
-| ~~8.2~~ ✅ | `docker-compose.prod.yml` — **done**. No bind mounts, restart policies, healthcheck-gated startup, and a data volume separate from the development stack's |
-| ~~8.3~~ ✅ | TLS, HSTS, 80 → 443 — **done**, plus a CSP, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`, gzip and the `X-Forwarded-Proto` the dev config omits |
-| ~~8.4~~ ✅ | **Done** — the production stack publishes only 80 and 443. Redis was removed rather than secured ([G-03](./08-gap-analysis.md#g-03)) |
-| ~~8.5~~ ✅ | **Done** — no credential literals in the production compose file, which fails fast with a named error if any is unset. `DATABASE_URL` is composed from the same variables Postgres uses, so the two cannot drift |
-| ~~8.6~~ ✅ | `trust proxy` so rate limiting and logs see real client IPs — **done 2026-08-19** (pulled forward from Phase 8), scoped to private-range peers ([G-06](./08-gap-analysis.md#g-06)) |
-| ~~8.7~~ ✅ | Route the SPA through `/api` and drop cross-origin entirely — **done 2026-08-19** (pulled forward from Phase 8), with a Vite dev-server proxy so `:5173` stays same-origin too ([G-02](./08-gap-analysis.md#g-02)) |
-| ~~8.8~~ ✅ | **Done** — pino. One JSON object per line in production, pretty in development, silent in tests. Every request carries a correlation id echoed as `X-Request-Id`, and credentials are redacted |
-| ~~8.9~~ ✅ | **Done** — `/health` stays a cheap liveness check; `/health/ready` runs `SELECT 1` and answers 503 when the database is unreachable. Verified by stopping Postgres and watching it flip and recover |
-| ~~8.10~~ ✅ | **Done** — `scripts/backup.sh` and `scripts/restore.sh`. Rehearsed against the production stack: the entire schema was dropped, restored from a dump, every row count matched and the app authenticated again |
-| ~~8.11~~ ✅ | **Done** — enforced by the API, not the UI. A flagged account gets `403 PASSWORD_CHANGE_REQUIRED` on every route but reading its own profile and changing its password |
+| #            | Work                                                                                                                                                                                                                                                                                           |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ~~8.1~~ ✅  | Multi-stage production Dockerfiles —**done 2026-08-20**. The frontend image builds with Vite and serves the output from `nginx:alpine` (95 MB, no Node at runtime); the backend prunes dev dependencies but keeps the Prisma CLI so migrations are runnable in the deployed container |
+| ~~8.2~~ ✅  | `docker-compose.prod.yml` — **done**. No bind mounts, restart policies, healthcheck-gated startup, and a data volume separate from the development stack's                                                                                                                            |
+| ~~8.3~~ ✅  | TLS, HSTS, 80 → 443 —**done**, plus a CSP, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`, gzip and the `X-Forwarded-Proto` the dev config omits                                                                                                                   |
+| ~~8.4~~ ✅  | **Done** — the production stack publishes only 80 and 443. Redis was removed rather than secured ([G-03](./08-gap-analysis.md#g-03))                                                                                                                                                     |
+| ~~8.5~~ ✅  | **Done** — no credential literals in the production compose file, which fails fast with a named error if any is unset. `DATABASE_URL` is composed from the same variables Postgres uses, so the two cannot drift                                                                      |
+| ~~8.6~~ ✅  | `trust proxy` so rate limiting and logs see real client IPs — **done 2026-08-19** (pulled forward from Phase 8), scoped to private-range peers ([G-06](./08-gap-analysis.md#g-06))                                                                                                     |
+| ~~8.7~~ ✅  | Route the SPA through`/api` and drop cross-origin entirely — **done 2026-08-19** (pulled forward from Phase 8), with a Vite dev-server proxy so `:5173` stays same-origin too ([G-02](./08-gap-analysis.md#g-02))                                                                    |
+| ~~8.8~~ ✅  | **Done** — pino. One JSON object per line in production, pretty in development, silent in tests. Every request carries a correlation id echoed as `X-Request-Id`, and credentials are redacted                                                                                        |
+| ~~8.9~~ ✅  | **Done** — `/health` stays a cheap liveness check; `/health/ready` runs `SELECT 1` and answers 503 when the database is unreachable. Verified by stopping Postgres and watching it flip and recover                                                                               |
+| ~~8.10~~ ✅ | **Done** — `scripts/backup.sh` and `scripts/restore.sh`. Rehearsed against the production stack: the entire schema was dropped, restored from a dump, every row count matched and the app authenticated again                                                                       |
+| ~~8.11~~ ✅ | **Done** — enforced by the API, not the UI. A flagged account gets `403 PASSWORD_CHANGE_REQUIRED` on every route but reading its own profile and changing its password                                                                                                                |
 
 **Exit criteria:** a clean host runs the stack over HTTPS with no default credentials and a tested restore. **Met 2026-08-20** — the browser smoke's six flows were re-run against the production images over TLS and all passed, the seeded admin cannot use the system until its password is replaced, and a full schema-loss restore was rehearsed.
 
@@ -177,16 +177,16 @@ The honest read as of **2026-08-20**: the correctness gaps that made v1.0.0 unsa
 
 **Why:** phases 7 and 8 change financial logic. Without tests, the fixes are unverifiable.
 
-| # | Work |
-|---|---|
-| ~~9.1~~ ✅ | Vitest + Supertest on the backend, against a disposable `_test` database the harness refuses to run without |
-| ~~9.2~~ ✅ | GST engine — all seven fixtures plus the reconciliation invariants |
-| ~~9.3~~ ✅ | Integration tests per router: auth, the full RBAC matrix, validation boundaries, Prisma error mapping |
-| ~~9.4~~ ✅ | Concurrency tests for stock deduction and invoice numbering |
-| ~~9.5~~ ✅ | Vitest + Testing Library on the frontend — **done 2026-08-20**, 66 tests: cart maths against the §4 fixtures, the POS stock guards driven through the rendered page, ProtectedRoute, the sidebar role filter, the 401 interceptor and notification severity |
-| ~~9.6~~ ✅ | Playwright smoke — **done 2026-08-20**, the six flows in docs/09 §5.7 against the real compose stack, ending with a cashier seeing no Settings link *and* receiving 403 from `/api/users` |
-| ~~9.7~~ ✅ | GitHub Actions: backend tests against a Postgres service, frontend lint and typecheck |
-| ~~9.8~~ ✅ | Coverage gate at 90% on `billing.controller.js` and `auth.middleware.js` |
+| #           | Work                                                                                                                                                                                                                                                               |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| ~~9.1~~ ✅ | Vitest + Supertest on the backend, against a disposable`_test` database the harness refuses to run without                                                                                                                                                       |
+| ~~9.2~~ ✅ | GST engine — all seven fixtures plus the reconciliation invariants                                                                                                                                                                                                |
+| ~~9.3~~ ✅ | Integration tests per router: auth, the full RBAC matrix, validation boundaries, Prisma error mapping                                                                                                                                                              |
+| ~~9.4~~ ✅ | Concurrency tests for stock deduction and invoice numbering                                                                                                                                                                                                        |
+| ~~9.5~~ ✅ | Vitest + Testing Library on the frontend —**done 2026-08-20**, 66 tests: cart maths against the §4 fixtures, the POS stock guards driven through the rendered page, ProtectedRoute, the sidebar role filter, the 401 interceptor and notification severity |
+| ~~9.6~~ ✅ | Playwright smoke —**done 2026-08-20**, the six flows in docs/09 §5.7 against the real compose stack, ending with a cashier seeing no Settings link *and* receiving 403 from `/api/users`                                                               |
+| ~~9.7~~ ✅ | GitHub Actions: backend tests against a Postgres service, frontend lint and typecheck                                                                                                                                                                              |
+| ~~9.8~~ ✅ | Coverage gate at 90% on`billing.controller.js` and `auth.middleware.js`                                                                                                                                                                                        |
 
 **Exit criteria:** CI green on every PR; the Phase 7 concurrency fixes are proven by failing-then-passing tests.
 
@@ -194,45 +194,45 @@ The honest read as of **2026-08-20**: the correctness gaps that made v1.0.0 unsa
 
 **Why:** the schema is already there and half-referenced by the supplier endpoint. Either build it or delete it.
 
-| # | Work |
-|---|---|
-| 10.1 | `purchase.controller.js` + routes; wire up `generatePurchaseNumber()` |
-| 10.2 | Goods receipt: a purchase line creates or tops up a `Batch` in one transaction |
-| 10.3 | Purchases UI under Inventory; supplier detail shows real purchase history |
-| 10.4 | Supplier payables: purchase totals vs payments |
+| #    | Work                                                                                 |
+| ---- | ------------------------------------------------------------------------------------ |
+| 10.1 | `purchase.controller.js` + routes; wire up `generatePurchaseNumber()`            |
+| 10.2 | Goods receipt: a purchase line creates or tops up a`Batch` in one transaction      |
+| 10.3 | Purchases UI under Inventory; supplier detail shows real purchase history            |
+| 10.4 | Supplier payables: purchase totals vs payments                                       |
 | 10.5 | Purchase vs sales margin report (`purchasePrice` vs `sellingPrice`) — FR-RPT-08 |
 
 **Exit criteria:** stock enters the system only through a recorded purchase, and `GET /api/inventory/suppliers/:id` returns real history.
 
-### Phase 11 — Performance & scale 🟢
+### Phase 11 — Performance & scale ✅ *(delivered 2026-08-20, except 11.2)*
 
-| # | Work | Trigger |
-|---|---|---|
-| 11.1 | Redis cache for the per-request user lookup in `protect`, invalidated on user write | Immediate — highest-frequency query |
-| 11.2 | Cache category/manufacturer lists | Low churn, read often |
-| 11.3 | `pg_trgm` GIN index on medicine name/generic | > ~10k medicines |
-| 11.4 | Add the indexes listed in [03 §4](./03-data-model.md#4-indexes-and-constraints) | Before invoice volume reaches ~100k |
-| 11.5 | Server-side `/api/billing/invoices/trend?days=7` replacing 7 client calls | Now — cheap win |
-| 11.6 | Single `/api/dashboard/stats` endpoint replacing the 6-call fan-out | Now |
-| 11.7 | Paginate batches, suppliers and users | > ~500 rows |
-| 11.8 | Frontend route-level code splitting (`Inventory.tsx` alone is 1,557 lines) | Bundle budget |
+| #    | Work                                                                                 | Trigger                              |
+| ---- | ------------------------------------------------------------------------------------ | ------------------------------------ |
+| 11.1 | ~~Redis cache for the per-request user lookup~~ — **not applicable**: Redis was removed in Phase 8 as an unused dependency ([G-03](./08-gap-analysis.md#g-03)). Revisit only with measured evidence, and note it trades against the immediate-deactivation guarantee | — |
+| 11.2 | Cache category/manufacturer lists                                                    | Low churn, read often                |
+| ~~11.3~~ ✅ | `pg_trgm` GIN index on medicine name/generic — **done 2026-08-20**. Pre-emptive: it is used for selective terms, but at 10k medicines the planner still prefers a scan for a common one. 824 kB | > ~10k medicines |
+| ~~11.4~~ ✅ | Add the indexes listed in [03 §4](./03-data-model.md#4-indexes-and-constraints) — **done 2026-08-20**. The schema had none at all; the invoice list went from a Seq Scan at cost 730 to an Index Scan at 36 | Before invoice volume reaches ~100k |
+| ~~11.5~~ ✅ | Server-side `/api/billing/invoices/trend?days=7` — **done 2026-08-20**. 7 calls / 259 KB / 102 ms → 1 / <1 KB / 8 ms on 20k invoices, reproducing all seven daily summaries to the paisa ([G-08](./08-gap-analysis.md#g-08)) | Now — cheap win |
+| ~~11.6~~ ✅ | Single `/api/dashboard/stats` — **done 2026-08-20**. Replaced **thirteen** requests, not six: the seven trend calls plus six panels, two of which fetched one row to read a count. 794 KB / 159 ms → 6 KB / 19 ms | Now |
+| ~~11.7~~ ✅ | Paginate batches — **done 2026-08-20**: 25,022 rows / 8.4 MB / 1651 ms → 20 rows / 6.8 KB / 8 ms. Suppliers and users measured at 11 ms and 7 ms and were left alone; categories, manufacturers and suppliers also feed form dropdowns, where truncation would silently remove options | > ~500 rows |
+| ~~11.8~~ ✅ | Frontend route-level code splitting — **done 2026-08-20**. Entry chunk 987 kB → 378 kB (287 → 122 kB gzip); Reports, the recharts-heavy page, is 81 kB loaded only when visited | Bundle budget |
 
 ### Backlog — candidate features (unsequenced)
 
-| Item | Requirement | Notes |
-|---|---|---|
-| Void / credit-note for invoices | FR-BILL-17 | Needs a policy decision on stock restoration ([Q3](./01-product-requirements.md#14-open-questions)) |
-| Server-side PDF invoices | FR-BILL-18 | Puppeteer or pdfkit; enables emailing bills |
-| Manual batch selection at POS | FR-BILL-19 | Overrides FEFO when the operator needs a specific pack |
-| Block sale of expired batches | FR-BATCH-09 | Small change, real safety value |
-| Prescription capture for Schedule H | FR-MED-12 | Compliance-driven; depends on [Q4](./01-product-requirements.md#14-open-questions) |
-| CSV/Excel export on all reports | FR-RPT-09 | Most-requested reporting gap |
-| Audit log for stock and price changes | NFR-17 | Prisma middleware can capture this centrally |
-| Password reset by email | FR-AUTH-11 | Requires an SMTP dependency the stack does not have |
-| Server-side logout / token revocation | FR-AUTH-09 | Needs a Redis denylist — pairs with 11.1 |
-| Shared API types between client and server | NFR-22 | Zod schemas → inferred TS types in a shared package |
-| IGST / inter-state supply | [Q2](./01-product-requirements.md#14-open-questions) | Schema change; only if the store ships out of state |
-| Multi-store | Non-goal for 1.x | Would restructure every stock query |
+| Item                                       | Requirement                                         | Notes                                                                                              |
+| ------------------------------------------ | --------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| Void / credit-note for invoices            | FR-BILL-17                                          | Needs a policy decision on stock restoration ([Q3](./01-product-requirements.md#14-open-questions)) |
+| Server-side PDF invoices                   | FR-BILL-18                                          | Puppeteer or pdfkit; enables emailing bills                                                        |
+| Manual batch selection at POS              | FR-BILL-19                                          | Overrides FEFO when the operator needs a specific pack                                             |
+| Block sale of expired batches              | FR-BATCH-09                                         | Small change, real safety value                                                                    |
+| Prescription capture for Schedule H        | FR-MED-12                                           | Compliance-driven; depends on[Q4](./01-product-requirements.md#14-open-questions)                   |
+| CSV/Excel export on all reports            | FR-RPT-09                                           | Most-requested reporting gap                                                                       |
+| Audit log for stock and price changes      | NFR-17                                              | Prisma middleware can capture this centrally                                                       |
+| Password reset by email                    | FR-AUTH-11                                          | Requires an SMTP dependency the stack does not have                                                |
+| Server-side logout / token revocation      | FR-AUTH-09                                          | Needs a Redis denylist — pairs with 11.1                                                          |
+| Shared API types between client and server | NFR-22                                              | Zod schemas → inferred TS types in a shared package                                               |
+| IGST / inter-state supply                  | [Q2](./01-product-requirements.md#14-open-questions) | Schema change; only if the store ships out of state                                                |
+| Multi-store                                | Non-goal for 1.x                                    | Would restructure every stock query                                                                |
 
 ---
 
@@ -240,14 +240,14 @@ The honest read as of **2026-08-20**: the correctness gaps that made v1.0.0 unsa
 
 Semantic versioning, per `CHANGELOG.md`.
 
-| Version | Contents | Gate |
-|---|---|---|
-| 1.0.0 | Shipped 2026-04-28 | — |
-| **1.1.0** | Phase 7 | Concurrency and money-precision proofs pass |
-| **1.2.0** | Phase 8 | HTTPS, no default credentials, rehearsed restore |
-| **1.3.0** | Phase 9 | CI green, critical-path coverage |
-| **1.4.0** | Phase 10 | Purchase → batch flow live |
-| **2.0.0** | Phase 11 + breaking API cleanups | Any route re-grouping (e.g. moving customers out of `/api/billing`) is a major version |
+| Version         | Contents                         | Gate                                                                                    |
+| --------------- | -------------------------------- | --------------------------------------------------------------------------------------- |
+| 1.0.0           | Shipped 2026-04-28               | —                                                                                      |
+| **1.1.0** | Phase 7                          | Concurrency and money-precision proofs pass                                             |
+| **1.2.0** | Phase 8                          | HTTPS, no default credentials, rehearsed restore                                        |
+| **1.3.0** | Phase 9                          | CI green, critical-path coverage                                                        |
+| **1.4.0** | Phase 10                         | Purchase → batch flow live                                                             |
+| **2.0.0** | Phase 11 + breaking API cleanups | Any route re-grouping (e.g. moving customers out of`/api/billing`) is a major version |
 
 > Moving customers to `/api/customers`, suppliers to `/api/suppliers` and medicines to `/api/medicines` would make the API match every reader's expectation — but it breaks clients. Bundle it into 2.0.0 rather than dribbling it out.
 

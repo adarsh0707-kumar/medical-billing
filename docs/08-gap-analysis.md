@@ -1,4 +1,4 @@
-# 08 — Gap Analysis
+# Gap Analysis
 
 Two kinds of gap, both found by reading the source on 2026-08-17:
 
@@ -13,23 +13,23 @@ Every `G-nn` is referenced from the other documents in this set.
 
 The root `README.md`, `backend/README.md`, `frontend/README.md` and `nginx/README.md` were written as *intent* and never reconciled with the code. The most consequential mismatches:
 
-| # | Claim | Where | Reality |
-|---|---|---|---|
-| D-1 | `/api/customers`, `/api/medicines`, `/api/suppliers`, `/api/reports` exist | root + backend README | Customers are under `/api/billing/`; medicines and suppliers under `/api/inventory/`; **no `/api/reports` router exists at all** |
-| D-2 | `POST /api/auth/logout`, `/refresh`, `/forgot-password`, `/reset-password` | backend README | None exist. Logout is client-side |
-| D-3 | Error responses are `{ success, error, statusCode }` | root README | Actual shape is `{ success, message }` (+ `errors[]` on validation) |
-| D-4 | JWT is stored in an HTTP-only cookie | backend README | Stored in `localStorage`, sent as a `Bearer` header |
-| D-5 | Frontend runs on port 3000 | root README | Compose maps **5173** |
-| D-6 | `npm test`, `npm run test:coverage`, `npm run test:watch`, `npm run lint`, `npm run format` for the backend | backend + root README | ~~Only `test` exists and it exits 1~~ — the three test scripts are real as of 2026-08-19. There is still no backend lint or format script |
-| D-7 | `express-validator` is a dependency | backend README | The project uses **Zod** |
-| D-8 | Redis caches frequently accessed data | root + backend README | The client connects and is imported by **nothing** ([G-03](#g-03)) |
-| D-9 | Pagination, indexing and connection pooling are performance features | backend README | Pagination exists on 3 of 8 list endpoints; **no custom indexes exist**; pooling is Prisma's default |
-| D-10 | `inventory.controller.js` and a `frontend/src/api/` directory exist | backend + frontend README | Neither exists — inventory is split across 5 controllers; the API client is `frontend/src/lib/api.ts` |
-| D-11 | Nginx provides gzip, security headers, load balancing, SSL | nginx README | `nginx/nginx.conf` is 20 lines: two `proxy_pass` blocks. None of those features are configured |
-| D-12 | `GET /api/billing/:id/invoice` downloads an invoice | backend README | No such route; printing is `window.print()` in the browser |
-| D-13 | Backend `.env.example` exists (`cp .env.example .env`) | backend README | No `.env.example` file in the repository |
-| D-14 | `Architecture.txt` route layout (`/api/invoices`, `/api/batches`, `/api/reports/*`) | Architecture.txt | Superseded — everything moved under `/api/billing` and `/api/inventory` |
-| <a id="d-15"></a>D-15 | "There is no default — the API fails loudly without [`JWT_SECRET`]" | SECURITY.md operator checklist | **Nothing validates it at startup.** `JWT_SECRET` is read only at use, so an unset variable lets the app boot normally and then answers `401 Invalid token.` on every request — the most misleading failure available. Login fails with a 500. A boot-time guard would make the claim true; until then the claim is wrong |
+| #                     | Claim                                                                                                                 | Where                          | Reality                                                                                                                                                                                                                                                                                                                              |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| D-1                   | `/api/customers`, `/api/medicines`, `/api/suppliers`, `/api/reports` exist                                    | root + backend README          | Customers are under`/api/billing/`; medicines and suppliers under `/api/inventory/`; **no `/api/reports` router exists at all**                                                                                                                                                                                          |
+| D-2                   | `POST /api/auth/logout`, `/refresh`, `/forgot-password`, `/reset-password`                                    | backend README                 | None exist. Logout is client-side                                                                                                                                                                                                                                                                                                    |
+| D-3                   | Error responses are`{ success, error, statusCode }`                                                                 | root README                    | Actual shape is`{ success, message }` (+ `errors[]` on validation)                                                                                                                                                                                                                                                               |
+| D-4                   | JWT is stored in an HTTP-only cookie                                                                                  | backend README                 | Stored in`localStorage`, sent as a `Bearer` header                                                                                                                                                                                                                                                                               |
+| D-5                   | Frontend runs on port 3000                                                                                            | root README                    | Compose maps**5173**                                                                                                                                                                                                                                                                                                           |
+| D-6                   | `npm test`, `npm run test:coverage`, `npm run test:watch`, `npm run lint`, `npm run format` for the backend | backend + root README          | ~~Only `test` exists and it exits 1~~ — the three test scripts are real as of 2026-08-19. There is still no backend lint or format script                                                                                                                                                                                        |
+| D-7                   | `express-validator` is a dependency                                                                                 | backend README                 | The project uses**Zod**                                                                                                                                                                                                                                                                                                        |
+| D-8                   | Redis caches frequently accessed data                                                                                 | root + backend README          | The client connects and is imported by**nothing** ([G-03](#g-03))                                                                                                                                                                                                                                                               |
+| D-9                   | Pagination, indexing and connection pooling are performance features                                                  | backend README                 | Pagination exists on 3 of 8 list endpoints;**no custom indexes exist**; pooling is Prisma's default                                                                                                                                                                                                                            |
+| D-10                  | `inventory.controller.js` and a `frontend/src/api/` directory exist                                               | backend + frontend README      | Neither exists — inventory is split across 5 controllers; the API client is`frontend/src/lib/api.ts`                                                                                                                                                                                                                              |
+| D-11                  | Nginx provides gzip, security headers, load balancing, SSL                                                            | nginx README                   | `nginx/nginx.conf` is 20 lines: two `proxy_pass` blocks. None of those features are configured                                                                                                                                                                                                                                   |
+| D-12                  | `GET /api/billing/:id/invoice` downloads an invoice                                                                 | backend README                 | No such route; printing is`window.print()` in the browser                                                                                                                                                                                                                                                                          |
+| D-13                  | Backend`.env.example` exists (`cp .env.example .env`)                                                             | backend README                 | No`.env.example` file in the repository                                                                                                                                                                                                                                                                                            |
+| D-14                  | `Architecture.txt` route layout (`/api/invoices`, `/api/batches`, `/api/reports/*`)                           | Architecture.txt               | Superseded — everything moved under`/api/billing` and `/api/inventory`                                                                                                                                                                                                                                                          |
+| <a id="d-15"></a>D-15 | "There is no default — the API fails loudly without [`JWT_SECRET`]"                                                | SECURITY.md operator checklist | **Nothing validates it at startup.** `JWT_SECRET` is read only at use, so an unset variable lets the app boot normally and then answers `401 Invalid token.` on every request — the most misleading failure available. Login fails with a 500. A boot-time guard would make the claim true; until then the claim is wrong |
 
 **Resolved 2026-08-20.** All four READMEs were trimmed to a short "what this is / how to run it" plus links into `docs/` — the recommendation below, taken. `README.md` went from 287 lines to ~120, `backend/README.md` 447 → ~75, `frontend/README.md` 557 → ~75, `nginx/README.md` 558 → ~55. Every D-nn above is closed by that trim except:
 
@@ -44,25 +44,25 @@ The original recommendation, for the record: rather than rewriting four READMEs,
 
 Severity: 🔴 causes data corruption or a security exposure · 🟠 causes incorrect output or blocks a feature · 🟡 quality and maintenance.
 
-| ID | Severity | Finding |
-|---|---|---|
-| [G-01](#g-01) | ✅ Fixed | Invoice numbers collide under concurrent checkout |
-| [G-09](#g-09) | ✅ Fixed | Stock check happens outside the transaction — oversell race |
-| [G-07](#g-07) | ✅ Fixed | All money stored as `Float` |
-| [G-02](#g-02) | ✅ Fixed | Nginx entry point is unusable — origin missing from the CORS allowlist |
-| [G-05](#g-05) | ✅ Fixed | `PUT /api/inventory/batches/:id` accepts arbitrary fields |
-| [G-06](#g-06) | ✅ Fixed | Rate limiter is global, not per-client, behind the proxy |
-| [G-04](#g-04) | ✅ Fixed | `mfgDate` can never be saved |
-| [G-10](#g-10) | ✅ Fixed | `totalStock` reports one batch, not all |
-| [G-11](#g-11) | ✅ Fixed | User-management routes are unvalidated |
-| [G-12](#g-12) | ✅ Fixed | FK violations surface as 500 |
-| [G-03](#g-03) | 🟡 | Redis is a dead dependency |
-| [G-08](#g-08) | 🟡 | Sales trend costs 7 HTTP round trips |
+| ID           | Severity        | Finding                                                                 |
+| ------------ | --------------- | ----------------------------------------------------------------------- |
+| [G-01](#g-01) | ✅ Fixed        | Invoice numbers collide under concurrent checkout                       |
+| [G-09](#g-09) | ✅ Fixed        | Stock check happens outside the transaction — oversell race            |
+| [G-07](#g-07) | ✅ Fixed        | All money stored as`Float`                                            |
+| [G-02](#g-02) | ✅ Fixed        | Nginx entry point is unusable — origin missing from the CORS allowlist |
+| [G-05](#g-05) | ✅ Fixed        | `PUT /api/inventory/batches/:id` accepts arbitrary fields             |
+| [G-06](#g-06) | ✅ Fixed        | Rate limiter is global, not per-client, behind the proxy                |
+| [G-04](#g-04) | ✅ Fixed        | `mfgDate` can never be saved                                          |
+| [G-10](#g-10) | ✅ Fixed        | `totalStock` reports one batch, not all                               |
+| [G-11](#g-11) | ✅ Fixed        | User-management routes are unvalidated                                  |
+| [G-12](#g-12) | ✅ Fixed        | FK violations surface as 500                                            |
+| [G-03](#g-03) | 🟡              | Redis is a dead dependency                                              |
+| [G-08](#g-08) | ✅ Fixed | Sales trend costs 7 HTTP round trips |
 | [G-13](#g-13) | 🟡 Partly fixed | Dead files deleted 2026-08-20; three artefacts await a product decision |
-| [G-14](#g-14) | ✅ Fixed | No automated tests |
-| [G-15](#g-15) | 🟡 | Invoices are immutable with no correction path |
-| [G-17](#g-17) | ✅ Fixed | Cart total disagreed with the invoice the server wrote |
-| [G-18](#g-18) | ✅ Fixed | A database failure during `protect` was reported as an invalid token |
+| [G-14](#g-14) | ✅ Fixed        | No automated tests                                                      |
+| [G-15](#g-15) | 🟡              | Invoices are immutable with no correction path                          |
+| [G-17](#g-17) | ✅ Fixed        | Cart total disagreed with the invoice the server wrote                  |
+| [G-18](#g-18) | ✅ Fixed        | A database failure during`protect` was reported as an invalid token   |
 
 ---
 
@@ -99,7 +99,6 @@ Stop mutating `today`; derive both values from a single immutable date.
 > A retry-only fix was tried first and **failed**: with 12 simultaneous checkouts, four still returned 409 after five attempts each — a count-based allocation livelocks because every retry re-reads the same count. The counter is the fix; the retry is only a safety net.
 
 **Verified** against a throwaway database: 12 concurrent sales on a batch of 10 → 10 created, 2 clean `400 Insufficient stock`, zero 409s; 40 concurrent sales on a batch of 50 → 40 created with gapless `INV260818-0001`…`-0040`; and a day with pre-existing invoices but no counter row continued at `-0041`.
-
 
 ---
 
@@ -148,7 +147,6 @@ Check-and-decrement is a single atomic statement, so the loser of a race matches
 
 **Verified:** 12 concurrent single-unit sales against a batch of 10 leave the batch at exactly `0`, never negative, with 10 successes and 2 rejections. Still worth adding `CHECK (quantity >= 0)` as a database-level backstop (Phase 7.9).
 
-
 ---
 
 ### <a id="g-07"></a>G-07 ✅ FIXED — Money was stored as `Float`
@@ -175,7 +173,6 @@ Because `Decimal.toJSON()` emits a string and the API contract has always been n
 
 **Verified** against a throwaway database: all six GST fixtures from [09 — Testing Strategy](./09-testing-strategy.md#4-gst-engine-fixtures) produce their documented values; on every one, `cgst === sgst`, the header reconciles exactly, and Σ line totals matches. Across 100 invoices the daily-summary total equals the SQL `SUM` to the paisa. Every money field on the medicines, search, batches, invoice, invoice-detail, GST-report and daily-summary endpoints serialises as a JSON `number`. The [G-09](#g-09)/[G-01](#g-01) concurrency behaviour was re-tested unchanged.
 
-
 ---
 
 ### <a id="g-02"></a>G-02 ✅ FIXED — The Nginx entry point did not work
@@ -185,6 +182,7 @@ Because `Decimal.toJSON()` emits a string and the API contract has always been n
 **Problem.** Nginx serves the app on `:80` and proxies `/api` to the backend. But the SPA is configured with `VITE_API_URL=http://localhost:5000`, so it calls the backend **directly** — and when the page is loaded from `http://localhost`, that origin is not in the CORS allowlist (`3000`, `5173`, `127.0.0.1:5173`, `172.17.0.1:5173`). Every API call fails. The proxy's `/api` block is never exercised, and the documented port-80 entry point is unusable. Everyone works on `:5173` and the proxy is decorative.
 
 **Fix — pick one** (the preferred option was taken; see the resolution below):
+
 - **Preferred:** set `VITE_API_URL=/api` so the SPA uses relative URLs through Nginx. Same origin, no CORS at all, and the deployment gains a single entry point.
 - **Minimal:** add `http://localhost` and the production hostname to the allowlist.
 
@@ -202,7 +200,6 @@ Also note `frontend/nginx.conf` is an **empty file** — a placeholder for the p
 Both entry points are now same-origin, so **CORS never enters the picture for the SPA at all**, and Nginx's `/api` block does real work. Port 5173 keeps Vite's HMR exactly as before, so the development workflow is unchanged. `VITE_API_URL` remains available for a deployment where the API genuinely lives on another host.
 
 **Verified:** the SPA is served with `200` on both `:80` and `:5173`; `POST /api/auth/login` reaches the backend through **both** (401 on bad credentials, not a 404 or a CORS failure); a real sign-in through `:80` returns a token and an authenticated `GET /api/inventory/medicines` returns data — the exact flow that was broken. The served `api.ts` module no longer contains a hardcoded API origin, and `npm run build` (with `tsc -b`) passes.
-
 
 ---
 
@@ -229,7 +226,6 @@ data: { ...req.body, ...(req.body.expiryDate && { expiryDate: new Date(req.body.
 The schema is `.strict()`, so an unrecognised field is a `400` rather than a silent no-op. Silent stripping is exactly how [G-04](#g-04) hid, and this route is where it would be most expensive.
 
 **Verified:** `{ quantity: 99999 }`, `{ initialQty: 1 }` and `{ medicineId: … }` are all rejected with the stock left untouched; `{ sellingPrice: -5 }` is rejected; `{ sellingPrice: 30.5 }` applies and leaves `quantity` alone.
-
 
 ---
 
@@ -259,7 +255,6 @@ A dedicated limiter now guards `POST /api/auth/login` at 10 attempts per 15 minu
 
 **Verified:** ten failed logins from one forwarded IP return `401`, the eleventh returns `429`, a different forwarded IP is unaffected (which is what proves the proxy header is being honoured), and fifteen successful logins in a row do not consume the budget.
 
-
 ---
 
 ### <a id="g-04"></a>G-04 ✅ FIXED — `mfgDate` could never be saved
@@ -277,7 +272,6 @@ This is the canonical example of the [AD-09](./02-architecture.md#9-architecture
 **Resolution (2026-08-19).** `mfgDate` added to `batchSchema` and to `batchUpdateSchema`, the batch update controller now coerces it to a `Date` the way create already did, and the Inventory batch form gained a **Mfg Date** input (optional, capped at the chosen expiry date). A cross-field rule rejects a manufacture date on or after the expiry date, reported against the `mfgDate` field.
 
 **Verified:** a batch created with `mfgDate` persists it instead of storing `null`; `mfgDate` after `expiryDate` is rejected with `400` and a field-level error; and the value is editable through `PUT /batches/:id` and stored as a real `Date`.
-
 
 ---
 
@@ -310,7 +304,6 @@ const stock = await prisma.batch.groupBy({
 
 **Verified:** a medicine with batches of 20, 150 and 300 now reports `totalStock: 470` (previously `20`), while `nearestExpiry` and `sellingPrice` still come from the earliest-expiring batch.
 
-
 ---
 
 ### <a id="g-11"></a>G-11 ✅ FIXED — User-management routes were unvalidated
@@ -325,17 +318,16 @@ const stock = await prisma.batch.groupBy({
 
 **Resolution (2026-08-19).** New `validators/user.validator.js` supplies four schemas, wired into both routers:
 
-| Schema | Route | Notes |
-|---|---|---|
-| `createUserSchema` | `POST /api/users`, `POST /api/auth/register` | name ≥ 2, valid email, password ≥ 8, `role` enum |
-| `updateUserSchema` | `PUT /api/users/:id` | all fields optional; **not** `.strict()` — the active/inactive toggle posts the whole user row back |
-| `updateProfileSchema` | `PUT /api/users/profile` | `.strict()`, so a stray `role` is a 400 rather than something that looks accepted and is silently dropped |
-| `changePasswordSchema` | `PUT /api/auth/change-password` | new password ≥ 8 |
+| Schema                   | Route                                            | Notes                                                                                                         |
+| ------------------------ | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
+| `createUserSchema`     | `POST /api/users`, `POST /api/auth/register` | name ≥ 2, valid email, password ≥ 8,`role` enum                                                           |
+| `updateUserSchema`     | `PUT /api/users/:id`                           | all fields optional;**not** `.strict()` — the active/inactive toggle posts the whole user row back   |
+| `updateProfileSchema`  | `PUT /api/users/profile`                       | `.strict()`, so a stray `role` is a 400 rather than something that looks accepted and is silently dropped |
+| `changePasswordSchema` | `PUT /api/auth/change-password`                | new password ≥ 8                                                                                             |
 
 Password rules are length-only; complexity and breach checks need an external service and stay on the [P1 hardening list](./07-security.md#10-hardening-backlog).
 
 **Verified:** malformed email, short password and an invalid role are each rejected with `400`; a valid create returns `201`; the Settings toggle posting the entire user object still returns `200`; a stray `role` on the profile route is rejected; and a weak new password on change-password is rejected.
-
 
 ---
 
@@ -367,7 +359,6 @@ Consider soft-deleting suppliers the way medicines are soft-deleted, since batch
 
 Soft-deleting suppliers the way medicines are soft-deleted remains worth considering, since batches reference them permanently.
 
-
 ---
 
 ### <a id="g-03"></a>G-03 🟡 Redis is a dead dependency
@@ -380,7 +371,7 @@ Soft-deleting suppliers the way medicines are soft-deleted remains worth conside
 
 ---
 
-### <a id="g-08"></a>G-08 🟡 Sales trend costs 7 HTTP round trips
+### <a id="g-08"></a>G-08 ✅ FIXED — Sales trend cost 7 HTTP round trips
 
 **Where:** [`frontend/src/pages/Reports.tsx`](../frontend/src/pages/Reports.tsx) `SalesTrend`
 
@@ -392,28 +383,35 @@ The dashboard has a milder version of this — six calls, two of which fetch a s
 
 ---
 
+**Resolution (2026-08-20).** `GET /api/billing/invoices/trend?days=7` returns the whole window from one grouped query, and both the dashboard and the reports chart use it. Days with no sales are filled with zeros rather than omitted, or the chart silently shifts left.
+
+Measured on 20,000 invoices: **7 requests / 259 KB / 102 ms → 1 request / under 1 KB / 8 ms.** The old shape fetched every invoice for each day *with the customer joined*, then read two integers off it and discarded the rest. Verified identical: the new endpoint reproduces all seven daily summaries to the paisa.
+
+The dashboard went further — it made **thirteen** requests, the seven above plus six for its panels, two of which fetched a single row purely to read `pagination.total`. `GET /api/dashboard/stats` replaces all thirteen: **794 KB / 159 ms → 6 KB / 19 ms.**
+
+---
 ### <a id="g-13"></a>G-13 🟡 Dead code — files removed, three decisions outstanding
 
 **Deleted 2026-08-20**, each proven unreferenced first:
 
-| Artefact | Status |
-|---|---|
-| `backend/src/routes/customer.routes.js` | ✅ Deleted — 0 bytes, no importer |
-| `backend/src/routes/medicine.routes.js` | ✅ Deleted — 0 bytes, no importer |
-| `backend/src/routes/report.routes.js` | ✅ Deleted — 0 bytes, no importer |
-| `backend/src/routes/supplier.routes.js` | ✅ Deleted — 0 bytes, no importer |
-| `frontend/nginx.conf` | ✅ Deleted — 0 bytes. The mounted config is `nginx/nginx.conf`; the real production static-serving config is Phase 8 work |
-| `frontend/@/components/ui/` | ✅ Deleted — `card.tsx` and `select.tsx` were byte-identical duplicates of the `src/` versions; `label.tsx` was an *older* shadcn output importing `radix-ui` rather than `@radix-ui/react-label`. Both `vite.config.ts` and `tsconfig.app.json` map `@/*` to `./src/*`, so the literal directory was unreachable — proven by building, linting and testing green with it moved aside |
+| Artefact                                  | Status                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `backend/src/routes/customer.routes.js` | ✅ Deleted — 0 bytes, no importer                                                                                                                                                                                                                                                                                                                                                                           |
+| `backend/src/routes/medicine.routes.js` | ✅ Deleted — 0 bytes, no importer                                                                                                                                                                                                                                                                                                                                                                           |
+| `backend/src/routes/report.routes.js`   | ✅ Deleted — 0 bytes, no importer                                                                                                                                                                                                                                                                                                                                                                           |
+| `backend/src/routes/supplier.routes.js` | ✅ Deleted — 0 bytes, no importer                                                                                                                                                                                                                                                                                                                                                                           |
+| `frontend/nginx.conf`                   | ✅ Deleted — 0 bytes. The mounted config is`nginx/nginx.conf`; the real production static-serving config is Phase 8 work                                                                                                                                                                                                                                                                                  |
+| `frontend/@/components/ui/`             | ✅ Deleted —`card.tsx` and `select.tsx` were byte-identical duplicates of the `src/` versions; `label.tsx` was an *older* shadcn output importing `radix-ui` rather than `@radix-ui/react-label`. Both `vite.config.ts` and `tsconfig.app.json` map `@/*` to `./src/*`, so the literal directory was unreachable — proven by building, linting and testing green with it moved aside |
 
 The empty route files were actively misleading: a reader reasonably assumes `report.routes.js` means reports have a router. Re-grouping the URLs remains queued for [2.0.0](./05-roadmap-and-phases.md#release-plan).
 
 **Still open — each is a product decision, not a cleanup:**
 
-| Artefact | Question |
-|---|---|
-| `generateRefreshToken` (`jwt.utils.js`) | Never called. Keep for the Phase 8 refresh-token rotation, or delete? Holds `jwt.utils.js` at 50% function coverage |
-| `generatePurchaseNumber` (`invoice.utils.js`) + `Purchase` / `PurchaseItem` models | No route, controller or UI. [PRD Q7](./01-product-requirements.md#14-open-questions): build the purchases module in Phase 10, or drop the schema? `GET /api/inventory/suppliers/:id` returns a `purchases` array that is always empty because of it |
-| Redis client | See [G-03](#g-03). Either use it (Phase 11.1 would cache the per-request user lookup in `protect`) or remove the service from `docker-compose.yml` — not both |
+| Artefact                                                                                   | Question                                                                                                                                                                                                                                              |
+| ------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `generateRefreshToken` (`jwt.utils.js`)                                                | Never called. Keep for the Phase 8 refresh-token rotation, or delete? Holds`jwt.utils.js` at 50% function coverage                                                                                                                                  |
+| `generatePurchaseNumber` (`invoice.utils.js`) + `Purchase` / `PurchaseItem` models | No route, controller or UI.[PRD Q7](./01-product-requirements.md#14-open-questions): build the purchases module in Phase 10, or drop the schema? `GET /api/inventory/suppliers/:id` returns a `purchases` array that is always empty because of it |
+| Redis client                                                                               | See[G-03](#g-03). Either use it (Phase 11.1 would cache the per-request user lookup in `protect`) or remove the service from `docker-compose.yml` — not both                                                                                      |
 
 ---
 
@@ -433,22 +431,21 @@ Every fix in [Phase 7](./05-roadmap-and-phases.md#phase-7--correctness--data-int
 
 What it covers:
 
-| Area | Notes |
-|---|---|
-| GST engine | All seven fixtures from [09 §4](./09-testing-strategy.md#4-gst-engine-fixtures), plus the reconciliation invariants on four rate/discount combinations |
-| Concurrency | The [G-09](#g-09) and [G-01](#g-01) regressions: last-unit races, a 12-way oversell burst, 20 simultaneous sales taking gapless serials, and serial reuse after a rollback |
-| Auth | Login, identical answers for unknown/wrong/disabled, token rejection cases, immediate revocation on deactivation, password change |
-| RBAC | The whole matrix from [04 §4](./04-api-reference.md#4-role-matrix) — 142 table-driven assertions, plus every route rejecting an anonymous caller |
-| Validation | Boundary cases per schema, and a named regression guard for each of [G-04](#g-04), [G-05](#g-05), [G-10](#g-10), [G-11](#g-11), [G-12](#g-12) |
-| Reports | Daily and monthly boundaries to the second, paid-only filtering, totals reconciling with the rows returned |
-| Rate limiting | [G-06](#g-06): the failed-login budget, per-forwarded-IP isolation, and successful sign-ins not counting |
+| Area          | Notes                                                                                                                                                                   |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GST engine    | All seven fixtures from[09 §4](./09-testing-strategy.md#4-gst-engine-fixtures), plus the reconciliation invariants on four rate/discount combinations                   |
+| Concurrency   | The[G-09](#g-09) and [G-01](#g-01) regressions: last-unit races, a 12-way oversell burst, 20 simultaneous sales taking gapless serials, and serial reuse after a rollback |
+| Auth          | Login, identical answers for unknown/wrong/disabled, token rejection cases, immediate revocation on deactivation, password change                                       |
+| RBAC          | The whole matrix from[04 §4](./04-api-reference.md#4-role-matrix) — 142 table-driven assertions, plus every route rejecting an anonymous caller                        |
+| Validation    | Boundary cases per schema, and a named regression guard for each of[G-04](#g-04), [G-05](#g-05), [G-10](#g-10), [G-11](#g-11), [G-12](#g-12)                                 |
+| Reports       | Daily and monthly boundaries to the second, paid-only filtering, totals reconciling with the rows returned                                                              |
+| Rate limiting | [G-06](#g-06): the failed-login budget, per-forwarded-IP isolation, and successful sign-ins not counting                                                                 |
 
 Two safety properties of the harness are worth knowing. The database is wiped between tests, so `global-setup.js` **refuses to run unless the database name ends in `_test`** — pointing it at a dev database is a hard error, not a data-loss incident. And cleanup uses `DELETE` rather than `TRUNCATE`, which at fixture scale cut the suite from 52s to **21s**.
 
 Coverage is 87% overall, with a CI gate at 90% on `billing.controller.js` (94%) and `auth.middleware.js` (96%) — the two files where a regression is a financial or security incident rather than a bug.
 
 **Still open:** the Playwright browser smoke test (9.6) and frontend unit tests (9.5). The backend, where all the money and stock logic lives, is covered.
-
 
 ---
 
@@ -466,13 +463,13 @@ Immutability is the right *default* for financial records; the missing piece is 
 
 **Problem.** Eleven components fetch on mount by calling `setState` synchronously in an effect body. `eslint-plugin-react-hooks` v7 promotes this to an error (`react-hooks/set-state-in-effect`), and it was the reason **CI failed on every run from the commit that introduced it until 2026-08-20**.
 
-| File | Lines |
-|---|---|
-| `frontend/src/pages/Customers.tsx` | 110, 302 |
+| File                                 | Lines                     |
+| ------------------------------------ | ------------------------- |
+| `frontend/src/pages/Customers.tsx` | 110, 302                  |
 | `frontend/src/pages/Inventory.tsx` | 182, 671, 681, 1102, 1303 |
-| `frontend/src/pages/Reports.tsx` | 163, 353 |
-| `frontend/src/pages/Settings.tsx` | 427 |
-| `frontend/src/pages/Suppliers.tsx` | 76 |
+| `frontend/src/pages/Reports.tsx`   | 163, 353                  |
+| `frontend/src/pages/Settings.tsx`  | 427                       |
+| `frontend/src/pages/Suppliers.tsx` | 76                        |
 
 The pattern causes a guaranteed second render on every mount, and each site hand-rolls its own `loading` / `error` state. Three of them (`Reports.tsx:163`, `Reports.tsx:353`, `useNotifications.ts:73`) also carry `react-hooks/exhaustive-deps` warnings, which is the same root cause seen from a different angle.
 
@@ -490,10 +487,10 @@ Nothing here is *incorrect* today — the screens work. It is a structural probl
 
 The dominant cause was not float drift. The server rounds **CGST and SGST separately** and sums the two rounded halves; the cart applied one rounding to the combined GST. Where half the GST lands on a half-paisa, the server's two halves each round up and the line gains a paisa:
 
-| Input | Cart showed | Invoice stored |
-|---|---|---|
-| ₹1.00 × 1, 0% discount, 5% GST | ₹1.05 | **₹1.06** |
-| ₹1.00 × 1, 0% discount, 12% GST, 5% line discount | ₹1.06 | **₹1.07** |
+| Input                                               | Cart showed | Invoice stored   |
+| --------------------------------------------------- | ----------- | ---------------- |
+| ₹1.00 × 1, 0% discount, 5% GST                    | ₹1.05      | **₹1.06** |
+| ₹1.00 × 1, 0% discount, 12% GST, 5% line discount | ₹1.06      | **₹1.07** |
 
 The cashier quoted one number and the printed bill carried another. On a busy counter that is a customer dispute with no way to tell who was right.
 
@@ -525,18 +522,36 @@ Splitting the catches also exposed that two documented behaviours had never been
 
 ---
 
+### <a id="g-19"></a>G-19 ✅ FIXED — Query validation silently disabled the batch filters
+
+**Where:** [`backend/src/controllers/batch.controller.js`](../backend/src/controllers/batch.controller.js)
+
+**Problem.** Adding `validateQuery` (P1-10) gave `expiringSoon` and `lowStock` a Zod schema that coerces the `"true"`/`"false"` strings `URLSearchParams` sends into **booleans**. The controller still compared them to the string `"true"`:
+
+```js
+...(expiringSoon === "true" && { expiryDate: { lte: thirtyDaysLater, gte: today } }),
+```
+
+`true === "true"` is `false`, so both filters became no-ops and every request returned **every batch in the shop**. Measured on a 25,000-batch dataset: `?expiringSoon=true` returned 25,022 rows instead of 840. The Inventory page's Expiring and Low-stock tabs had been showing the unfiltered list since the validation landed.
+
+The query-validation tests did not catch it because they asserted only status codes — a broken filter returns a perfectly good `200`.
+
+**Fix.** Compare the booleans as booleans. The regression guard now asserts that a filter **filters**: it creates a batch matching neither condition, checks each filtered count is zero, then makes it match both and checks each is one. A filter test that only checks the status code is not a filter test.
+
+---
+
 ## Prioritised remediation order
 
-| Order | Items | Rationale |
-|---|---|---|
-| ~~1~~ | ~~[G-09](#g-09), [G-01](#g-01)~~ | **Done 2026-08-18** — both fixed and verified under concurrency |
-| ~~2~~ | ~~[G-07](#g-07)~~ | **Done 2026-08-19** — money is `DECIMAL(12,2)`, arithmetic is `Prisma.Decimal`, invoices reconcile exactly |
-| ~~3~~ | ~~[G-05](#g-05), [G-11](#g-11), [G-06](#g-06)~~ | **Done 2026-08-19** — write paths validated, limiter per-client with a login-specific budget |
-| ~~4~~ | ~~[G-02](#g-02)~~ | **Done 2026-08-19** — both entry points same-origin through a proxy |
-| ~~5~~ | ~~[G-10](#g-10), [G-04](#g-04), [G-12](#g-12)~~ | **Done 2026-08-19** — stock totals correct, manufacture dates recordable, delete conflicts explained |
-| ~~6~~ | ~~[G-14](#g-14)~~ | **Done 2026-08-19** — 278 tests, CI, and a coverage gate on the money and auth paths |
-| ~~6b~~ | ~~[G-17](#g-17)~~ | **Done 2026-08-20** — cart and invoice round identically, verified over 2.2M combinations and guarded by the first frontend suite |
-| ~~6c~~ | ~~[G-18](#g-18)~~ | **Done 2026-08-20** — infrastructure failures no longer masquerade as bad credentials |
-| 7 | [G-08](#g-08), [G-03](#g-03), [G-13](#g-13), [G-15](#g-15) | Performance, dead weight, operational usability |
-| 8 | Part A (docs) | Trim the READMEs to point at `docs/` |
-| 9 | [G-16](#g-16) | Frontend data-layer refactor. Largest and least urgent — the screens work today. Closing it restores `set-state-in-effect` to `error` |
+| Order   | Items                                                  | Rationale                                                                                                                                 |
+| ------- | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| ~~1~~  | ~~[G-09](#g-09), [G-01](#g-01)~~                        | **Done 2026-08-18** — both fixed and verified under concurrency                                                                    |
+| ~~2~~  | ~~[G-07](#g-07)~~                                      | **Done 2026-08-19** — money is `DECIMAL(12,2)`, arithmetic is `Prisma.Decimal`, invoices reconcile exactly                     |
+| ~~3~~  | ~~[G-05](#g-05), [G-11](#g-11), [G-06](#g-06)~~          | **Done 2026-08-19** — write paths validated, limiter per-client with a login-specific budget                                       |
+| ~~4~~  | ~~[G-02](#g-02)~~                                      | **Done 2026-08-19** — both entry points same-origin through a proxy                                                                |
+| ~~5~~  | ~~[G-10](#g-10), [G-04](#g-04), [G-12](#g-12)~~          | **Done 2026-08-19** — stock totals correct, manufacture dates recordable, delete conflicts explained                               |
+| ~~6~~  | ~~[G-14](#g-14)~~                                      | **Done 2026-08-19** — 278 tests, CI, and a coverage gate on the money and auth paths                                               |
+| ~~6b~~ | ~~[G-17](#g-17)~~                                      | **Done 2026-08-20** — cart and invoice round identically, verified over 2.2M combinations and guarded by the first frontend suite  |
+| ~~6c~~ | ~~[G-18](#g-18)~~                                      | **Done 2026-08-20** — infrastructure failures no longer masquerade as bad credentials                                              |
+| 7       | [G-08](#g-08), [G-03](#g-03), [G-13](#g-13), [G-15](#g-15) | Performance, dead weight, operational usability                                                                                           |
+| 8       | Part A (docs)                                          | Trim the READMEs to point at`docs/`                                                                                                     |
+| 9       | [G-16](#g-16)                                           | Frontend data-layer refactor. Largest and least urgent — the screens work today. Closing it restores`set-state-in-effect` to `error` |
