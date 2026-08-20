@@ -10,6 +10,7 @@ const {
   invoiceListQuerySchema,
   dailySummaryQuerySchema,
   gstReportQuerySchema,
+  trendQuerySchema,
   customerListQuerySchema,
 } = require("../validators/billing.validator");
 
@@ -43,6 +44,9 @@ router.get(
   validateQuery(gstReportQuerySchema),
   billingCtrl.getGstReport,
 );
+// Above /invoices/:id, or "trend" is read as an invoice id.
+router.get("/invoices/trend", validateQuery(trendQuerySchema), billingCtrl.getTrend);
+
 router.get("/invoices/:id", billingCtrl.getOne);
 router.post(
   "/invoices",

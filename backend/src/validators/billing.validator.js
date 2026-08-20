@@ -69,6 +69,17 @@ const gstReportQuerySchema = z.object({
     .max(2100, "year must be between 2000 and 2100"),
 });
 
+const trendQuerySchema = z.object({
+  // The dashboard and the reports chart both draw fixed windows; 90 days is well
+  // past anything either asks for and keeps one query bounded.
+  days: z.coerce
+    .number({ invalid_type_error: "days must be a number" })
+    .int("days must be a whole number")
+    .min(1, "days must be at least 1")
+    .max(90, "days must be at most 90")
+    .default(7),
+});
+
 const customerListQuerySchema = z.object({ page, limit, search: searchTerm });
 
 module.exports = {
@@ -77,5 +88,6 @@ module.exports = {
   invoiceListQuerySchema,
   dailySummaryQuerySchema,
   gstReportQuerySchema,
+  trendQuerySchema,
   customerListQuerySchema,
 };

@@ -343,6 +343,57 @@ const getDailySummary = async (req, res, next) => {
   }
 };
 
+// ─── Sales Trend ───────────────────────────────────────
+// One grouped query instead of the client making a daily-summary request per
+// day. The old shape cost seven round trips, each of which fetched every invoice
+// for its day *with the customer joined* and then discarded all of it to read
+// two integers (G-08).
+//
+// Days with no sales still appear, with zeros. The client charts a fixed window,
+// so a missing day would silently shift every point left.
+const getTrend = async (req, res, next) => {
+  try {
+    const { days } = req.validatedQuery;
+
+    // Local midnight, not UTC: the store's day is what a shopkeeper means by
+    // "yesterday", and the daily summary already draws its boundaries that way.
+    const end = new Date();
+    end.setHours(23, 59, 59, 999);
+    const start = new Date();
+    start.setDate(start.getDate() - (days - 1));
+    start.setHours(0, 0, 0, 0);
+
+    const rows = await prisma.$queryRaw`
+      SELECT to_char(date_trunc('day', "date"), 'YYYY-MM-DD') AS day,
+             COUNT(*)::int                                    AS invoices,
+             COALESCE(SUM("totalAmount"), 0)                  AS sales
+      FROM "Invoice"
+      WHERE "date" >= ${start} AND "date" <= ${end}
+        AND "paymentStatus" = 'PAID'::"PaymentStatus"
+      GROUP BY 1
+      ORDER BY 1`;
+
+    const byDay = new Map(rows.map((r) => [r.day, r]));
+
+    const trend = [];
+    for (let i = days - 1; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      const row = byDay.get(key);
+      trend.push({
+        date: key,
+        sales: row ? Number(row.sales) : 0,
+        invoices: row ? row.invoices : 0,
+      });
+    }
+
+    res.json({ success: true, data: trend });
+  } catch (err) {
+    next(err);
+  }
+};
+
 // ─── GST Report ────────────────────────────────────────
 const getGstReport = async (req, res, next) => {
   try {
@@ -380,5 +431,6 @@ module.exports = {
   getAll,
   getOne,
   getDailySummary,
+  getTrend,
   getGstReport,
 };

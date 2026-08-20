@@ -761,43 +761,30 @@ function SalesTrend() {
 
   useEffect(() => {
     const fetchTrend = async () => {
-      setLoading(true);
       try {
-        const days = Array.from({ length: 7 }, (_, i) => {
-          const d = new Date();
-          d.setDate(d.getDate() - (6 - i));
-          return d.toISOString().split("T")[0];
-        });
-
-        const results = await Promise.all(
-          days.map((d) =>
-            api
-              .get(`/api/billing/invoices/daily-summary?date=${d}`)
-              .then((r) => ({
-                date: new Date(d).toLocaleDateString("en-IN", {
-                  day: "2-digit",
-                  month: "short",
-                }),
-                sales: r.data.data.summary.totalSales || 0,
-                invoices: r.data.data.summary.totalInvoices || 0,
-              }))
-              .catch(() => ({
-                date: new Date(d).toLocaleDateString("en-IN", {
-                  day: "2-digit",
-                  month: "short",
-                }),
-                sales: 0,
-                invoices: 0,
-              })),
+        // One grouped query on the server instead of seven daily-summary
+        // requests, each of which fetched a whole day of invoices with the
+        // customer joined and then read two integers off it (G-08).
+        const res = await api.get("/api/billing/invoices/trend?days=7");
+        setTrendData(
+          res.data.data.map(
+            (t: { date: string; sales: number; invoices: number }) => ({
+              date: new Date(t.date).toLocaleDateString("en-IN", {
+                day: "2-digit",
+                month: "short",
+              }),
+              sales: t.sales,
+              invoices: t.invoices,
+            }),
           ),
         );
-        setTrendData(results);
       } catch {
         toast.error("Failed to fetch trend data");
       } finally {
         setLoading(false);
       }
     };
+
     fetchTrend();
   }, []);
 
