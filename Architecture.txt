@@ -51,11 +51,9 @@ medical-billing/
         ├── config/                  # DB, Redis config
         ├── routes/
         │   ├── auth.routes.js
-        │   ├── medicine.routes.js
         │   ├── billing.routes.js
-        │   ├── customer.routes.js
-        │   ├── supplier.routes.js
-        │   └── report.routes.js
+        │   ├── inventory.routes.js
+        │   └── user.routes.js
         ├── controllers/
         ├── models/                  # Sequelize / Prisma models
         ├── middlewares/             # Auth, error handler

@@ -623,7 +623,7 @@ Documented elsewhere in the repo but absent from the code. Requests to these ret
 | backend README | `DELETE /api/billing/:id`, `PUT /api/billing/:id` | Invoices are immutable |
 | Architecture.txt | `POST /api/batches`, `GET /api/batches/expiring` | Under `/api/inventory/` |
 
-`backend/src/routes/customer.routes.js`, `medicine.routes.js`, `report.routes.js` and `supplier.routes.js` are **empty placeholder files** — nothing imports them.
+There is no `customer.routes.js`, `medicine.routes.js`, `report.routes.js` or `supplier.routes.js`. Four zero-byte placeholders with those names were deleted on 2026-08-20 ([G-13](./08-gap-analysis.md#g-13)); the four routers that exist are `auth`, `inventory`, `billing` and `user`.
 
 ---
 

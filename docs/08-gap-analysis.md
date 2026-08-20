@@ -53,7 +53,7 @@ Severity: 🔴 causes data corruption or a security exposure · 🟠 causes inco
 | [G-12](#g-12) | ✅ Fixed | FK violations surface as 500 |
 | [G-03](#g-03) | 🟡 | Redis is a dead dependency |
 | [G-08](#g-08) | 🟡 | Sales trend costs 7 HTTP round trips |
-| [G-13](#g-13) | 🟡 | Dead code: 4 empty route files, unused utils, empty nginx.conf |
+| [G-13](#g-13) | 🟡 Partly fixed | Dead files deleted 2026-08-20; three artefacts await a product decision |
 | [G-14](#g-14) | ✅ Fixed | No automated tests |
 | [G-15](#g-15) | 🟡 | Invoices are immutable with no correction path |
 | [G-17](#g-17) | ✅ Fixed | Cart total disagreed with the invoice the server wrote |
@@ -387,22 +387,28 @@ The dashboard has a milder version of this — six calls, two of which fetch a s
 
 ---
 
-### <a id="g-13"></a>G-13 🟡 Dead code
+### <a id="g-13"></a>G-13 🟡 Dead code — files removed, three decisions outstanding
+
+**Deleted 2026-08-20**, each proven unreferenced first:
 
 | Artefact | Status |
 |---|---|
-| `backend/src/routes/customer.routes.js` | **Empty file**, not imported |
-| `backend/src/routes/medicine.routes.js` | **Empty file**, not imported |
-| `backend/src/routes/report.routes.js` | **Empty file**, not imported |
-| `backend/src/routes/supplier.routes.js` | **Empty file**, not imported |
-| `frontend/nginx.conf` | **Empty file** |
-| `generateRefreshToken` (`jwt.utils.js`) | Never called |
-| `generatePurchaseNumber` (`invoice.utils.js`) | Never called |
-| `Purchase` / `PurchaseItem` models | No route, controller or UI |
-| `frontend/@/components/ui/` | Stray duplicates of `card.tsx`, `label.tsx`, `select.tsx` — the `@` alias resolved as a literal directory during a `shadcn add` run |
-| Redis client | See [G-03](#g-03) |
+| `backend/src/routes/customer.routes.js` | ✅ Deleted — 0 bytes, no importer |
+| `backend/src/routes/medicine.routes.js` | ✅ Deleted — 0 bytes, no importer |
+| `backend/src/routes/report.routes.js` | ✅ Deleted — 0 bytes, no importer |
+| `backend/src/routes/supplier.routes.js` | ✅ Deleted — 0 bytes, no importer |
+| `frontend/nginx.conf` | ✅ Deleted — 0 bytes. The mounted config is `nginx/nginx.conf`; the real production static-serving config is Phase 8 work |
+| `frontend/@/components/ui/` | ✅ Deleted — `card.tsx` and `select.tsx` were byte-identical duplicates of the `src/` versions; `label.tsx` was an *older* shadcn output importing `radix-ui` rather than `@radix-ui/react-label`. Both `vite.config.ts` and `tsconfig.app.json` map `@/*` to `./src/*`, so the literal directory was unreachable — proven by building, linting and testing green with it moved aside |
 
-The empty route files are actively misleading — a reader reasonably assumes `report.routes.js` means reports have a router. Delete them, or fill them as part of the [2.0.0 route re-grouping](./05-roadmap-and-phases.md#release-plan).
+The empty route files were actively misleading: a reader reasonably assumes `report.routes.js` means reports have a router. Re-grouping the URLs remains queued for [2.0.0](./05-roadmap-and-phases.md#release-plan).
+
+**Still open — each is a product decision, not a cleanup:**
+
+| Artefact | Question |
+|---|---|
+| `generateRefreshToken` (`jwt.utils.js`) | Never called. Keep for the Phase 8 refresh-token rotation, or delete? Holds `jwt.utils.js` at 50% function coverage |
+| `generatePurchaseNumber` (`invoice.utils.js`) + `Purchase` / `PurchaseItem` models | No route, controller or UI. [PRD Q7](./01-product-requirements.md#14-open-questions): build the purchases module in Phase 10, or drop the schema? `GET /api/inventory/suppliers/:id` returns a `purchases` array that is always empty because of it |
+| Redis client | See [G-03](#g-03). Either use it (Phase 11.1 would cache the per-request user lookup in `protect`) or remove the service from `docker-compose.yml` — not both |
 
 ---
 

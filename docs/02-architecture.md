@@ -100,7 +100,7 @@ backend/src/
 │   ├── validate.middleware.js   validate(zodSchema) — parses, replaces req.body, 400 on failure
 │   └── error.middleware.js      notFound() + errorHandler() incl. Prisma P2002/P2003/P2025
 ├── validators/                  Zod schemas — billing.validator.js, inventory.validator.js
-├── routes/                      auth · inventory · billing · user   (4 mounted)
+├── routes/                      auth · inventory · billing · user   (4 files, all mounted)
 │                                customer · medicine · report · supplier  (4 EMPTY FILES)
 ├── controllers/                 auth · user · category · manufacturer · medicine · batch
 │                                · supplier · customer · billing
@@ -133,7 +133,7 @@ Two consequences worth internalising before writing client code:
 
 - **Customers live under `/api/billing/customers`**, not `/api/customers`.
 - **Suppliers and medicines live under `/api/inventory/`**, not at the top level.
-- `customer.routes.js`, `medicine.routes.js`, `report.routes.js` and `supplier.routes.js` are **zero-byte placeholder files**. Nothing imports them.
+- There is no `customer.routes.js`, `medicine.routes.js`, `report.routes.js` or `supplier.routes.js`. Four zero-byte placeholders with those names were deleted on 2026-08-20 ([G-13](./08-gap-analysis.md#g-13)) because they implied routers that never existed. Re-grouping the URLs is queued for 2.0.0.
 
 ### Middleware order (`index.js`)
 

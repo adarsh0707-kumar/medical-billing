@@ -301,7 +301,7 @@ medical-billing/
 ├── docs/                     ← this documentation set
 ├── nginx/nginx.conf          :80 → frontend:5173 and /api → backend:5000
 ├── backend/
-│   ├── prisma/schema.prisma  11 models, 4 enums, 2 migrations
+│   ├── prisma/schema.prisma  11 models, 4 enums, 5 migrations
 │   ├── src/                  index · config · middlewares · validators · routes
 │   │                         · controllers · utils
 │   ├── Dockerfile.dev        node:20-slim + openssl + nodemon
@@ -310,6 +310,5 @@ medical-billing/
     ├── src/                  pages · components/ui · store · hooks · lib · types
     ├── vite.config.ts        React 19 compiler, Tailwind v4, @ alias
     ├── Dockerfile.dev        node:20-slim, npm install --legacy-peer-deps
-    ├── nginx.conf            EMPTY FILE — leftover from a planned prod build
     └── .env                  gitignored
 ```

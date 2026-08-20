@@ -52,11 +52,7 @@ backend/
 │   ├── routes/                  # API route definitions
 │   │   ├── auth.routes.js
 │   │   ├── billing.routes.js
-│   │   ├── customer.routes.js
 │   │   ├── inventory.routes.js
-│   │   ├── medicine.routes.js
-│   │   ├── report.routes.js
-│   │   ├── supplier.routes.js
 │   │   └── user.routes.js
 │   ├── middlewares/             # Custom middleware
 │   │   ├── auth.middleware.js   # JWT verification

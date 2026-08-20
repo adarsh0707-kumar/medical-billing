@@ -147,7 +147,7 @@ The honest read: v1.0.0 is a complete, coherent product built fast, sitting on a
 | ~~7.7~~ ✅ | Add validation to `POST /api/auth/register`, `POST /api/users`, `PUT /api/users/:id` — **done 2026-08-19**, plus profile and change-password | [G-11](./08-gap-analysis.md#g-11) |
 | ~~7.8~~ ✅ | Map FK-violation `P2003` to a clean 409 for category/manufacturer/supplier delete — **done 2026-08-19** | [G-12](./08-gap-analysis.md#g-12) |
 | ~~7.9~~ ✅ | Add `CHECK (quantity >= 0)` on `Batch` — **done 2026-08-20**, hand-written migration (Prisma cannot express CHECK); verified rejecting a direct `UPDATE … = -1` while the concurrency suite passes unchanged | [Data model I-1](./03-data-model.md#5-invariants) |
-| 7.10 | Delete the four empty route files | [G-13](./08-gap-analysis.md#g-13) |
+| ~~7.10~~ ✅ | Delete the four empty route files — **done 2026-08-20**, along with the empty `frontend/nginx.conf` and the stray literal `frontend/@/` directory | [G-13](./08-gap-analysis.md#g-13) |
 
 **Exit criteria:** two concurrent invoices for the same last unit produce exactly one success and one clean 400; 1,000 sequential invoices produce 1,000 distinct numbers; a GST report over 10,000 invoices reconciles to the cent.
 
