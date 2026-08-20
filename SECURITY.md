@@ -115,7 +115,7 @@ These are **already documented** in [`docs/07-security.md`](./docs/07-security.m
 | Password policy is length-only (minimum 8) | No complexity or breach checking yet |
 | Login timing reveals whether an email exists | The response body doesn't, but a missing user skips the bcrypt comparison and returns faster |
 | No audit log for stock or price changes | Only invoice authorship is attributed |
-| Query parameters are unvalidated — e.g. `?limit=999999` is honoured | Planned |
+| ~~Query parameters are unvalidated — e.g. `?limit=999999` is honoured~~ | **Fixed 2026-08-20.** Every query string is validated; `limit` is capped at 100 |
 | Any authenticated role can read every customer's purchase history | Intentional for a single small store; revisit as staff numbers grow |
 | PostgreSQL and Redis publish host ports, and Redis has no password | Development convenience. Must not be exposed in a deployment |
 

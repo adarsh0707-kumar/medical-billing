@@ -2,7 +2,7 @@ const prisma = require("../config/db");
 
 const getAll = async (req, res, next) => {
   try {
-    const { medicineId, expiringSoon, lowStock } = req.query;
+    const { medicineId, expiringSoon, lowStock } = req.validatedQuery;
 
     const today = new Date();
     const thirtyDaysLater = new Date();
@@ -33,7 +33,7 @@ const getAll = async (req, res, next) => {
 
 const getExpiring = async (req, res, next) => {
   try {
-    const days = Number(req.query.days) || 30;
+    const { days } = req.validatedQuery;
     const futureDate = new Date();
     futureDate.setDate(futureDate.getDate() + days);
 
@@ -57,7 +57,7 @@ const getExpiring = async (req, res, next) => {
 
 const getLowStock = async (req, res, next) => {
   try {
-    const threshold = Number(req.query.threshold) || 10;
+    const { threshold } = req.validatedQuery;
 
     const batches = await prisma.batch.findMany({
       where: { quantity: { lte: threshold, gt: 0 } },

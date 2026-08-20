@@ -11,7 +11,7 @@
 | Authentication | **Solid** — bcrypt cost 12, no user enumeration, per-request user revalidation |
 | Authorisation | **Solid** — server-enforced RBAC on every mutating route |
 | Injection | **Solid** — Prisma parameterises everything; the single raw statement uses a bound tagged template |
-| Input validation | **Solid** — Zod on every mutating route; request bodies only. Query parameters are still unvalidated |
+| Input validation | **Solid** — Zod on every mutating route body, and on every query string since 2026-08-20 |
 | Token handling | **Weak** — `localStorage`, no revocation, no refresh, 7-day lifetime |
 | Transport | **Absent** — no TLS configuration exists |
 | Secrets | **Weak** — database password hard-coded in `docker-compose.yml`; seeded admin password in the repo |
@@ -92,7 +92,9 @@ The full permission matrix is in [04 §4](./04-api-reference.md#4-role-matrix).
 
 As of 2026-08-19 every mutating route runs a schema. `PUT /api/users/profile` and the batch update are additionally `.strict()`, so an unexpected field is a `400` rather than something that looks accepted and is silently dropped — the failure mode behind [G-04](./08-gap-analysis.md#g-04).
 
-**Query parameters are not validated anywhere.** `?month=abc` on the GST report produces `Invalid Date` and an empty result rather than a 400. `?limit=999999` on any list endpoint is honoured — a trivial resource-exhaustion vector.
+~~**Query parameters are not validated anywhere.**~~ **Fixed 2026-08-20.** Every query string now passes through `validateQuery(schema)` before its controller. `limit` is capped at 100, `month`/`year` are required and range-checked, and `days`/`threshold` are coerced and bounded instead of falling back through `Number(x) || default` — which used to turn a typo into plausible wrong data.
+
+The rule: **absent means use the default; present but unparseable or out of range is a 400.** An over-large `limit` is rejected rather than silently clamped, because a caller who asks for 999999 and quietly receives 100 will page through the result set believing they have all of it.
 
 ---
 
@@ -178,7 +180,7 @@ Assets: customer PII and purchase history · financial records (invoices, GST li
 | T-7 | Direct database access | Exposed :5432 with a committed password | Med | Critical | None | **Critical** in any exposed deployment |
 | T-8 | Unauthenticated Redis access | Exposed :6379, no auth | Med | Low today (empty) | None | Low now, High once caching lands |
 | T-9 | Insider data exfiltration | Any role can page through all customers | Med | Med | None — no logging or export controls | **Med** |
-| T-10 | Denial of service | `?limit=999999`, shared rate bucket | Med | Med | Global limiter | Med |
+| T-10 | Denial of service | ~~`?limit=999999`~~, shared rate bucket | Med | Med | Per-client limiter; `limit` capped at 100 and every query parameter validated (2026-08-20) | Low — bounded page sizes; volumetric DoS remains out of scope |
 | T-11 | Financial data corruption | Concurrency races ([G-01](./08-gap-analysis.md#g-01), [G-09](./08-gap-analysis.md#g-09)) | Med | High | None | **High** — Phase 7 |
 | T-12 | Repudiation of a sale | No audit trail beyond `Invoice.userId` | Low | Med | Invoice authorship | Med |
 
@@ -200,7 +202,7 @@ Assets: customer PII and purchase history · financial records (invoices, GST li
 7. Invalidate tokens on password change and on deactivation (a Redis denylist keyed by user id + issued-at).
 8. Shorten the access token to 15–60 minutes and implement the refresh rotation the util already anticipates.
 9. Add a CSP header to the SPA.
-10. Clamp `limit` on every paginated endpoint and validate query parameters.
+10. ~~Clamp `limit` on every paginated endpoint and validate query parameters.~~ **Done 2026-08-20** — `validateQuery` on all 10 query surfaces, `MAX_LIMIT` 100, 44 tests.
 11. Add an audit log — a Prisma middleware capturing actor, entity, before/after on every write, is the cheapest complete answer.
 
 **P2 — hardening and hygiene**

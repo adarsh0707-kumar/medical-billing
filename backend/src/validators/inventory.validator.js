@@ -1,4 +1,5 @@
 const { z } = require("zod");
+const { page, limit, searchTerm } = require("./common.validator");
 
 const categorySchema = z.object({
   name: z.string().min(2, "Category name must be at least 2 characters"),
@@ -92,6 +93,56 @@ const supplierSchema = z.object({
   address: z.string().optional(),
 });
 
+// ─── Query schemas ─────────────────────────────────────
+
+// URLSearchParams sends booleans as the strings "true"/"false".
+const booleanFlag = z
+  .enum(["true", "false"], { invalid_type_error: "must be true or false" })
+  .optional()
+  .transform((v) => v === "true");
+
+const medicineListQuerySchema = z.object({
+  page,
+  limit,
+  search: searchTerm,
+  categoryId: z.string().trim().min(1).optional(),
+});
+
+const medicineSearchQuerySchema = z.object({
+  // Shorter than two characters returns an empty list rather than a 400: the POS
+  // search box calls this on every keystroke, and the first character is not a
+  // caller error.
+  q: z.string().trim().max(200, "search term is too long").optional(),
+});
+
+const batchListQuerySchema = z.object({
+  medicineId: z.string().trim().min(1).optional(),
+  expiringSoon: booleanFlag,
+  lowStock: booleanFlag,
+});
+
+const expiringQuerySchema = z.object({
+  // `Number(x) || 30` used to swallow a typo silently, so ?days=abc returned a
+  // 30-day window that looked exactly like a deliberate one.
+  days: z.coerce
+    .number({ invalid_type_error: "days must be a number" })
+    .int("days must be a whole number")
+    .min(1, "days must be at least 1")
+    .max(365, "days must be at most 365")
+    .default(30),
+});
+
+const lowStockQuerySchema = z.object({
+  threshold: z.coerce
+    .number({ invalid_type_error: "threshold must be a number" })
+    .int("threshold must be a whole number")
+    .min(1, "threshold must be at least 1")
+    .max(100000, "threshold must be at most 100000")
+    .default(10),
+});
+
+const supplierListQuerySchema = z.object({ search: searchTerm });
+
 module.exports = {
   categorySchema,
   manufacturerSchema,
@@ -99,4 +150,10 @@ module.exports = {
   batchSchema,
   batchUpdateSchema,
   supplierSchema,
+  medicineListQuerySchema,
+  medicineSearchQuerySchema,
+  batchListQuerySchema,
+  expiringQuerySchema,
+  lowStockQuerySchema,
+  supplierListQuerySchema,
 };

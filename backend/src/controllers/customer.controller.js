@@ -2,8 +2,8 @@ const prisma = require("../config/db");
 
 const getAll = async (req, res, next) => {
   try {
-    const { search, page = 1, limit = 20 } = req.query;
-    const skip = (Number(page) - 1) * Number(limit);
+    const { search, page, limit } = req.validatedQuery;
+    const skip = (page - 1) * limit;
     const where = search
       ? {
           OR: [
@@ -17,7 +17,7 @@ const getAll = async (req, res, next) => {
       prisma.customer.findMany({
         where,
         skip,
-        take: Number(limit),
+        take: limit,
         orderBy: { name: "asc" },
         include: { _count: { select: { invoices: true } } },
       }),

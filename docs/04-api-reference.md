@@ -104,6 +104,39 @@ In `NODE_ENV=development` unhandled errors also carry a `stack` string.
 
 > The root `README.md` documents `{ "success": false, "error": "...", "statusCode": 400 }`. That shape is **not** produced by any code path. The key is `message`.
 
+### Query parameters
+
+Every query string is validated before its controller runs (since 2026-08-20). A rejection is a `400` with the same field-level array as a body failure, under `"message": "Invalid query parameters"`:
+
+```jsonc
+{
+  "success": false,
+  "message": "Invalid query parameters",
+  "errors": [ { "field": "limit", "message": "limit must be at most 100" } ]
+}
+```
+
+The rule is uniform: **absent means use the default; present but unparseable or out of range is a `400`.** A value is never silently corrected — `?days=abc` used to fall through `Number(x) || 30` and return a 30-day window indistinguishable from a deliberate one.
+
+| Parameter | Endpoints | Rule |
+|---|---|---|
+| `page` | medicines, customers, invoices | Integer ≥ 1. Default `1` |
+| `limit` | medicines, customers, invoices | Integer 1–**100**. Default `20`. Over the maximum is **rejected, not clamped** — a caller who asks for 999999 and quietly receives 100 would page through the set believing it complete |
+| `search` | medicines, customers, invoices, suppliers | String, max 200 chars. An empty string means no filter, not a bad request |
+| `categoryId` | medicines | Non-empty string |
+| `q` | medicines/search | String, max 200. Under 2 characters returns `[]` rather than a 400 — the POS box calls this on every keystroke |
+| `startDate`, `endDate` | invoices | Dates. Both must be present for the filter to apply |
+| `paymentMode` | invoices | `CASH` · `UPI` · `CARD` · `CREDIT` |
+| `paymentStatus` | invoices | `PAID` · `PENDING` · `PARTIAL` |
+| `date` | invoices/daily-summary | Date. Default today |
+| `month`, `year` | invoices/gst-report | **Both required.** `month` 1–12, `year` 2000–2100 |
+| `days` | batches/expiring | Integer 1–365. Default `30` |
+| `threshold` | batches/low-stock | Integer 1–100000. Default `10` |
+| `medicineId` | batches | Non-empty string |
+| `expiringSoon`, `lowStock` | batches | `"true"` or `"false"` |
+
+Unknown parameters are **stripped, not rejected**, so a cache-buster does not fail a request. As with body validation, a parameter missing from the schema silently vanishes — add it to the schema in the same commit as the controller that reads it.
+
 ### Money
 
 All currency fields are `DECIMAL(12,2)` in the database and are computed with exact decimal arithmetic. They are serialised as JSON **numbers**, not strings, so the wire format is unchanged. Every invoice satisfies `totalAmount = subtotal + cgst + sgst − discountAmt` exactly, and `cgst = sgst` always. Rates (`gstPercent`, line `discount` %) are `DECIMAL(5,2)`, also serialised as numbers.

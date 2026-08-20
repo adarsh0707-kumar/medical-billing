@@ -2,7 +2,7 @@ const prisma = require("../config/db");
 
 const getAll = async (req, res, next) => {
   try {
-    const { search } = req.query;
+    const { search } = req.validatedQuery;
     const suppliers = await prisma.supplier.findMany({
       where: search
         ? {

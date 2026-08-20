@@ -2,8 +2,9 @@ const prisma = require("../config/db");
 
 const getAll = async (req, res, next) => {
   try {
-    const { search, categoryId, page = 1, limit = 20 } = req.query;
-    const skip = (Number(page) - 1) * Number(limit);
+    // Parsed and bounded by validateQuery — already numbers, already clamped.
+    const { search, categoryId, page, limit } = req.validatedQuery;
+    const skip = (page - 1) * limit;
 
     const where = {
       isActive: true,
@@ -30,7 +31,7 @@ const getAll = async (req, res, next) => {
           },
         },
         skip,
-        take: Number(limit),
+        take: limit,
         orderBy: { name: "asc" },
       }),
       prisma.medicine.count({ where }),
@@ -103,7 +104,7 @@ const getOne = async (req, res, next) => {
 // Search for billing POS — fast lookup
 const search = async (req, res, next) => {
   try {
-    const { q } = req.query;
+    const { q } = req.validatedQuery;
     if (typeof q !== "string" || q.length < 2)
       return res.json({ success: true, data: [] });
 

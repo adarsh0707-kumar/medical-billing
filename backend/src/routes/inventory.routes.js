@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const { protect, authorize } = require("../middlewares/auth.middleware");
 const validate = require("../middlewares/validate.middleware");
+const validateQuery = require("../middlewares/validate-query.middleware");
 const {
   categorySchema,
   manufacturerSchema,
@@ -9,6 +10,12 @@ const {
   batchSchema,
   batchUpdateSchema,
   supplierSchema,
+  medicineListQuerySchema,
+  medicineSearchQuerySchema,
+  batchListQuerySchema,
+  expiringQuerySchema,
+  lowStockQuerySchema,
+  supplierListQuerySchema,
 } = require("../validators/inventory.validator");
 
 const categoryCtrl = require("../controllers/category.controller");
@@ -57,8 +64,16 @@ router.delete(
 );
 
 // ─── Medicines ────────────────────────────────────────
-router.get("/medicines/search", medicineCtrl.search); // for POS billing search
-router.get("/medicines", medicineCtrl.getAll);
+router.get(
+  "/medicines/search",
+  validateQuery(medicineSearchQuerySchema),
+  medicineCtrl.search,
+); // for POS billing search
+router.get(
+  "/medicines",
+  validateQuery(medicineListQuerySchema),
+  medicineCtrl.getAll,
+);
 router.get("/medicines/:id", medicineCtrl.getOne);
 router.post(
   "/medicines",
@@ -75,9 +90,17 @@ router.put(
 router.delete("/medicines/:id", authorize("ADMIN"), medicineCtrl.remove);
 
 // ─── Batches / Stock ──────────────────────────────────
-router.get("/batches", batchCtrl.getAll);
-router.get("/batches/expiring", batchCtrl.getExpiring);
-router.get("/batches/low-stock", batchCtrl.getLowStock);
+router.get("/batches", validateQuery(batchListQuerySchema), batchCtrl.getAll);
+router.get(
+  "/batches/expiring",
+  validateQuery(expiringQuerySchema),
+  batchCtrl.getExpiring,
+);
+router.get(
+  "/batches/low-stock",
+  validateQuery(lowStockQuerySchema),
+  batchCtrl.getLowStock,
+);
 router.post(
   "/batches",
   authorize("ADMIN", "PHARMACIST"),
@@ -92,7 +115,11 @@ router.put(
 );
 
 // ─── Suppliers ────────────────────────────────────────
-router.get("/suppliers", supplierCtrl.getAll);
+router.get(
+  "/suppliers",
+  validateQuery(supplierListQuerySchema),
+  supplierCtrl.getAll,
+);
 router.get("/suppliers/:id", supplierCtrl.getOne);
 router.post(
   "/suppliers",

@@ -1,6 +1,6 @@
 # 09 — Testing Strategy
 
-**Current state (2026-08-20): 278 backend tests, plus 40 frontend cart-maths tests.** The backend suite is implemented. Frontend unit testing is now set up (Vitest + Testing Library) and covers the cart arithmetic; the remaining §5.6 cases and the browser smoke test are still open. Sections 1–4 describe the approach and the acceptance fixtures; §5 lists the cases, most of which now exist.
+**Current state (2026-08-20): 327 backend tests, plus 40 frontend cart-maths tests.** The backend suite is implemented. Frontend unit testing is now set up (Vitest + Testing Library) and covers the cart arithmetic; the remaining §5.6 cases and the browser smoke test are still open. Sections 1–4 describe the approach and the acceptance fixtures; §5 lists the cases, most of which now exist.
 
 ---
 
@@ -67,7 +67,7 @@ Coverage is 87% overall; `billing.controller.js` and `auth.middleware.js` are ga
 - Frontend unit tests — §5.6. **Cart maths done** ([`cart-math.test.ts`](../frontend/src/pages/__tests__/cart-math.test.ts), 40 cases, [G-17](./08-gap-analysis.md#g-17)); the auth-guard, stock-cap and notification-severity cases are still open.
 - Wiring `npm test` into the frontend CI job — the job still runs only lint and build, so the cart-maths suite does not yet gate a merge.
 - A Playwright browser smoke test — §5.7
-- Query-parameter validation cases, once the API validates them
+- ~~Query-parameter validation cases, once the API validates them~~ — **done 2026-08-20**, `tests/api/query-validation.test.js` (44 cases)
 
 
 ## 2. Target shape
@@ -199,7 +199,7 @@ These are the acceptance set for `createInvoice`. All values follow [PRD §8 BR-
 - GST report includes only `PAID` invoices — seed a `PENDING` and a `PARTIAL` and assert exclusion.
 - GST report month boundaries: an invoice on the 1st at 00:00 and one on the last day at 23:59 are both included; the 1st of the next month is not.
 - `totals` reconciles to the sum of the returned invoices.
-- Missing/garbage `month`/`year` → currently an empty result; decide whether it should 400 and assert that.
+- ~~Missing/garbage `month`/`year` → currently an empty result; decide whether it should 400 and assert that.~~ **Decided 2026-08-20: 400.** An empty tax period is indistinguishable from a month with genuinely no sales, and filing from a typo is the worse failure. Asserted in `tests/api/query-validation.test.js`.
 
 ### 5.6 Frontend — P2
 

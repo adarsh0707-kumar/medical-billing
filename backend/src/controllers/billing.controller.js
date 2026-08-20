@@ -200,16 +200,18 @@ const createInvoice = async (req, res, next) => {
 // ─── Get All Invoices ──────────────────────────────────
 const getAll = async (req, res, next) => {
   try {
+    // Parsed, coerced and bounded by validateQuery — the defaults live in the
+    // schema, so nothing here needs a fallback.
     const {
-      page = 1,
-      limit = 20,
+      page,
+      limit,
       search,
       startDate,
       endDate,
       paymentMode,
       paymentStatus,
-    } = req.query;
-    const skip = (Number(page) - 1) * Number(limit);
+    } = req.validatedQuery;
+    const skip = (page - 1) * limit;
 
     const where = {
       ...(search && {
@@ -218,10 +220,7 @@ const getAll = async (req, res, next) => {
           { customer: { name: { contains: search, mode: "insensitive" } } },
         ],
       }),
-      ...(startDate &&
-        endDate && {
-          date: { gte: new Date(startDate), lte: new Date(endDate) },
-        }),
+      ...(startDate && endDate && { date: { gte: startDate, lte: endDate } }),
       ...(paymentMode && { paymentMode }),
       ...(paymentStatus && { paymentStatus }),
     };
@@ -230,7 +229,7 @@ const getAll = async (req, res, next) => {
       prisma.invoice.findMany({
         where,
         skip,
-        take: Number(limit),
+        take: limit,
         orderBy: { date: "desc" },
         include: {
           customer: {
@@ -293,7 +292,9 @@ const getOne = async (req, res, next) => {
 // ─── Daily Summary ─────────────────────────────────────
 const getDailySummary = async (req, res, next) => {
   try {
-    const date = req.query.date ? new Date(req.query.date) : new Date();
+    // Absent means today; a garbage date is a 400 from validateQuery rather than
+    // an Invalid Date that silently matched nothing.
+    const date = req.validatedQuery.date ?? new Date();
     const startOfDay = new Date(date.setHours(0, 0, 0, 0));
     const endOfDay = new Date(date.setHours(23, 59, 59, 999));
 
@@ -345,7 +346,7 @@ const getDailySummary = async (req, res, next) => {
 // ─── GST Report ────────────────────────────────────────
 const getGstReport = async (req, res, next) => {
   try {
-    const { month, year } = req.query;
+    const { month, year } = req.validatedQuery;
     const startDate = new Date(year, month - 1, 1);
     const endDate = new Date(year, month, 0, 23, 59, 59);
 
