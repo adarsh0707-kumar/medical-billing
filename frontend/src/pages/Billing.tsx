@@ -314,6 +314,11 @@ export default function Billing() {
     unknown
   > | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  // Reading the clock during render is impure. The expiry highlight is a 30-day
+  // threshold, which cannot change meaningfully inside one billing session, so a
+  // single mount-time reading is enough — and it keeps every badge in a render
+  // measured against the same instant.
+  const [nowMs] = useState(() => Date.now());
 
   // ─── Medicine Search ──────────────────────────────────
   useEffect(() => {
@@ -461,8 +466,7 @@ export default function Billing() {
 
   const isExpiringSoon = (date: string) => {
     if (!date) return false;
-    const diff =
-      (new Date(date).getTime() - Date.now()) / (1000 * 60 * 60 * 24);
+    const diff = (new Date(date).getTime() - nowMs) / (1000 * 60 * 60 * 24);
     return diff <= 30;
   };
 

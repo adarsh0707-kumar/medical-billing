@@ -579,6 +579,10 @@ function StockAlerts() {
   const [lowStock, setLowStock] = useState<Batch[]>([]);
   const [loading, setLoading] = useState(true);
   const [days, setDays] = useState(30);
+  // Reading the clock during render is impure. Days-left is a day-granularity
+  // figure, so one mount-time reading keeps every row in a render measured against
+  // the same instant.
+  const [nowMs] = useState(() => Date.now());
 
   useEffect(() => {
     const fetch = async () => {
@@ -600,7 +604,7 @@ function StockAlerts() {
   }, [days]);
 
   const getDaysLeft = (date: string) => {
-    const diff = new Date(date).getTime() - Date.now();
+    const diff = new Date(date).getTime() - nowMs;
     return Math.ceil(diff / (1000 * 60 * 60 * 24));
   };
 

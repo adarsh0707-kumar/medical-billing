@@ -448,6 +448,28 @@ Immutability is the right *default* for financial records; the missing piece is 
 
 ---
 
+### <a id="g-16"></a>G-16 🟡 Data fetching sets state synchronously inside effects
+
+**Problem.** Eleven components fetch on mount by calling `setState` synchronously in an effect body. `eslint-plugin-react-hooks` v7 promotes this to an error (`react-hooks/set-state-in-effect`), and it was the reason **CI failed on every run from the commit that introduced it until 2026-08-20**.
+
+| File | Lines |
+|---|---|
+| `frontend/src/pages/Customers.tsx` | 110, 302 |
+| `frontend/src/pages/Inventory.tsx` | 182, 671, 681, 1102, 1303 |
+| `frontend/src/pages/Reports.tsx` | 163, 353 |
+| `frontend/src/pages/Settings.tsx` | 427 |
+| `frontend/src/pages/Suppliers.tsx` | 76 |
+
+The pattern causes a guaranteed second render on every mount, and each site hand-rolls its own `loading` / `error` state. Three of them (`Reports.tsx:163`, `Reports.tsx:353`, `useNotifications.ts:73`) also carry `react-hooks/exhaustive-deps` warnings, which is the same root cause seen from a different angle.
+
+Nothing here is *incorrect* today — the screens work. It is a structural problem: the fetch-then-setState pattern cannot express request cancellation, so a fast route change can land a stale response over a fresh one.
+
+**Fix.** Move data fetching to a query library (TanStack Query is the obvious fit) so caching, cancellation and loading state stop being re-implemented per screen. Until then the rule is set to `warn` in [`frontend/eslint.config.js`](../frontend/eslint.config.js) with a comment pointing here. **Restore it to `error` when this is closed.**
+
+> Deliberately *not* fixed alongside the React Compiler purity errors on 2026-08-20: that change had to stay small enough to verify by eye, and this one is a refactor of every screen's data layer.
+
+---
+
 ## Prioritised remediation order
 
 | Order | Items | Rationale |
@@ -460,3 +482,4 @@ Immutability is the right *default* for financial records; the missing piece is 
 | ~~6~~ | ~~[G-14](#g-14)~~ | **Done 2026-08-19** — 278 tests, CI, and a coverage gate on the money and auth paths |
 | 7 | [G-08](#g-08), [G-03](#g-03), [G-13](#g-13), [G-15](#g-15) | Performance, dead weight, operational usability |
 | 8 | Part A (docs) | Trim the READMEs to point at `docs/` |
+| 9 | [G-16](#g-16) | Frontend data-layer refactor. Largest and least urgent — the screens work today. Closing it restores `set-state-in-effect` to `error` |

@@ -54,8 +54,18 @@ export default function Topbar({ collapsed, onToggle, title }: TopbarProps) {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
+  // Reading the clock during render is impure: two labels in one pass can straddle
+  // a tick and disagree. Seed it in a lazy initialiser (the one place React allows
+  // an impure read) and advance it on an interval, so every label in a render
+  // agrees and relative times stay accurate while the panel is open.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 60000);
+    return () => clearInterval(id);
+  }, []);
+
   const timeAgo = (date: Date) => {
-    const diff = Math.floor((Date.now() - new Date(date).getTime()) / 60000);
+    const diff = Math.floor((now - new Date(date).getTime()) / 60000);
     if (diff < 1) return "Just now";
     if (diff < 60) return `${diff}m ago`;
     return `${Math.floor(diff / 60)}h ago`;
