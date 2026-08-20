@@ -283,4 +283,3 @@ For issues or questions, please contact the development team or refer to the det
 
 ---
 
-**Last Updated**: April 28, 2026
