@@ -95,7 +95,7 @@ npm run dev                      # Vite on :5173
 | Variable         | Required | Default                              | Purpose                                                                                                              |
 | ---------------- | :------: | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
 | `DATABASE_URL` |    ✅    | —                                   | Postgres connection string. Process exits if unreachable                                                             |
-| `JWT_SECRET`   |    ✅    | —                                   | HMAC key for tokens.**No fallback** — signing throws without it                                               |
+| `JWT_SECRET`   |    ✅    | —                                   | HMAC key for tokens.**No fallback** — the process refuses to start without it                                |
 | `REDIS_URL`    |          | `redis://localhost:6379`           | Client connects; nothing reads it yet                                                                                |
 | `PORT`         |          | `5000`                             |                                                                                                                      |
 | `NODE_ENV`     |          | —                                   | `development` enables Prisma query logs and error stacks in responses                                              |
