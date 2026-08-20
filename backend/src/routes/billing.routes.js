@@ -11,6 +11,7 @@ const {
   dailySummaryQuerySchema,
   gstReportQuerySchema,
   trendQuerySchema,
+  voidInvoiceSchema,
   customerListQuerySchema,
 } = require("../validators/billing.validator");
 
@@ -48,6 +49,15 @@ router.get(
 router.get("/invoices/trend", validateQuery(trendQuerySchema), billingCtrl.getTrend);
 
 router.get("/invoices/:id", billingCtrl.getOne);
+
+// ADMIN only: voiding moves money and stock, and is the one billing action with
+// no counterpart a cashier could need mid-shift.
+router.post(
+  "/invoices/:id/void",
+  authorize("ADMIN"),
+  validate(voidInvoiceSchema),
+  billingCtrl.voidInvoice,
+);
 router.post(
   "/invoices",
   validate(createInvoiceSchema),

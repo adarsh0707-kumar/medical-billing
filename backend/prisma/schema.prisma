@@ -152,12 +152,21 @@ model Invoice {
   totalAmount   Decimal       @db.Decimal(12, 2)
   paymentMode   PaymentMode   @default(CASH)
   paymentStatus PaymentStatus @default(PAID)
+  type          InvoiceType   @default(SALE)
+  status        InvoiceStatus @default(ACTIVE)
+  /// Set on a credit note: the sale it reverses. Null on a sale.
+  reversesId    String?       @unique
   notes         String?
   createdAt     DateTime      @default(now())
 
   customer      Customer?     @relation(fields: [customerId], references: [id])
   user          User          @relation(fields: [userId], references: [id])
   items         InvoiceItem[]
+
+  /// One credit note per sale, enforced by the unique constraint on reversesId:
+  /// that is what makes a double-submitted void restore stock exactly once.
+  reverses      Invoice?      @relation("InvoiceReversal", fields: [reversesId], references: [id])
+  reversedBy    Invoice?      @relation("InvoiceReversal")
 
   // The hottest filter in the reporting layer: every report, the invoice list
   // and the trend chart order or range-scan on this.
@@ -194,6 +203,23 @@ enum PaymentStatus {
   PAID
   PENDING
   PARTIAL
+}
+
+/// Whether a document is a sale or the credit note that reverses one.
+/// Kept separate from PaymentStatus: "was it paid" and "is it a reversal" are
+/// orthogonal, and folding CANCELLED into PaymentStatus would have made a voided
+/// invoice silently vanish from the GST report, which filters on PAID.
+enum InvoiceType {
+  SALE
+  CREDIT_NOTE
+}
+
+/// ACTIVE or reversed. A cancelled invoice keeps every figure it was issued with
+/// — only this flag moves — because a filed tax period must not change after the
+/// fact. The correction is a separate dated document, not an edit.
+enum InvoiceStatus {
+  ACTIVE
+  CANCELLED
 }
 
 // ─── Invoice numbering ─────────────────────────────────

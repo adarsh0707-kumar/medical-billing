@@ -80,6 +80,18 @@ const trendQuerySchema = z.object({
     .default(7),
 });
 
+const voidInvoiceSchema = z
+  .object({
+    // Why an invoice was cancelled is the whole value of the audit trail, so it
+    // is required rather than optional.
+    reason: z
+      .string()
+      .trim()
+      .min(3, "Give a reason of at least 3 characters")
+      .max(500, "Reason is too long"),
+  })
+  .strict();
+
 const customerListQuerySchema = z.object({ page, limit, search: searchTerm });
 
 module.exports = {
@@ -89,5 +101,6 @@ module.exports = {
   dailySummaryQuerySchema,
   gstReportQuerySchema,
   trendQuerySchema,
+  voidInvoiceSchema,
   customerListQuerySchema,
 };

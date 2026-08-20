@@ -42,6 +42,30 @@ const generateInvoiceNumber = async (client = prisma, now = new Date()) => {
   return `INV${dayKey(now)}-${String(seq).padStart(4, "0")}`;
 };
 
+// CRNyymmdd-nnnn. Credit notes get their own series so a tax authority — or a
+// shopkeeper — can tell a sale from a reversal at a glance, and so voiding never
+// consumes a sale's serial.
+//
+// Shares InvoiceCounter with the sale series by namespacing the key: the row is
+// "CRN260820" rather than "260820", which keeps the same atomic allocation
+// without a second table. MUST be called with the transaction client.
+const generateCreditNoteNumber = async (client = prisma, now = new Date()) => {
+  const key = `CRN${dayKey(now)}`;
+  const [{ seq }] = await client.$queryRaw`
+    INSERT INTO "InvoiceCounter" ("day", "seq")
+    VALUES (
+      ${key},
+      (SELECT COUNT(*)::int FROM "Invoice"
+        WHERE "type" = 'CREDIT_NOTE'::"InvoiceType"
+          AND "createdAt" >= ${startOfDay(now)}
+          AND "createdAt" < ${startOfNextDay(now)}) + 1
+    )
+    ON CONFLICT ("day") DO UPDATE SET "seq" = "InvoiceCounter"."seq" + 1
+    RETURNING "seq"`;
+
+  return `CRN${dayKey(now)}-${String(seq).padStart(4, "0")}`;
+};
+
 // POyymm-nnnn. Still count-based: no purchase write path exists yet, so there
 // is nothing to race. Give it the same counter treatment when one is built.
 const generatePurchaseNumber = async (client = prisma, now = new Date()) => {
@@ -64,6 +88,7 @@ const isDuplicateNumber = (err, field) =>
 
 module.exports = {
   generateInvoiceNumber,
+  generateCreditNoteNumber,
   generatePurchaseNumber,
   isDuplicateNumber,
 };

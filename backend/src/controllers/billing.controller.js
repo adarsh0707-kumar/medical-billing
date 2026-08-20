@@ -2,6 +2,7 @@ const prisma = require("../config/db");
 const { Prisma } = require("@prisma/client");
 const {
   generateInvoiceNumber,
+  generateCreditNoteNumber,
   isDuplicateNumber,
 } = require("../utils/invoice.utils");
 
@@ -192,6 +193,129 @@ const createInvoice = async (req, res, next) => {
       return res
         .status(err.statusCode)
         .json({ success: false, message: err.message });
+    }
+    next(err);
+  }
+};
+
+// ─── Void an invoice ───────────────────────────────────
+// Issues a credit note reversing a sale, and returns its units to the batches
+// they came from. FR-BILL-17 / G-15; policy settled as PRD Q3 on 2026-08-20.
+//
+// A void is not an edit. The original keeps every figure it was issued with —
+// its number, its date, its totals, its lines — and only its `status` moves to
+// CANCELLED. A tax period that has been filed must still reconcile to what was
+// filed, so the correction is a separate dated document rather than a rewrite.
+// That is also why the GST report is left including the original: the credit
+// note lands in the month the void happened, and the two net to zero across
+// periods. Removing the original from its own month would be the bug.
+const voidInvoice = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
+
+    const original = await prisma.invoice.findUnique({
+      where: { id },
+      include: { items: true },
+    });
+
+    if (!original) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Invoice not found." });
+    }
+    if (original.type === "CREDIT_NOTE") {
+      return res.status(400).json({
+        success: false,
+        message: "A credit note cannot itself be voided.",
+      });
+    }
+    if (original.status === "CANCELLED") {
+      return res.status(409).json({
+        success: false,
+        message: "This invoice has already been voided.",
+      });
+    }
+
+    const creditNote = await prisma.$transaction(async (tx) => {
+      // Flip the original first. Combined with the unique index on reversesId
+      // this is what makes a double-submitted void safe: the second transaction
+      // either sees CANCELLED here or loses the index below, and rolls back
+      // before restoring anything a second time.
+      const { count: flipped } = await tx.invoice.updateMany({
+        where: { id, status: "ACTIVE", type: "SALE" },
+        data: { status: "CANCELLED" },
+      });
+      if (flipped === 0) {
+        throw new StockConflictError("This invoice has already been voided.", 409);
+      }
+
+      // Return the units to the batches they came from, keeping the original
+      // expiry dates and batch numbers (PRD Q3). Unconditional increment: unlike
+      // the deduction there is no ceiling to race against, and the guard above
+      // already ensures this runs once.
+      for (const item of original.items) {
+        await tx.batch.update({
+          where: { id: item.batchId },
+          data: { quantity: { increment: item.quantity } },
+        });
+      }
+
+      const number = await generateCreditNoteNumber(tx);
+
+      // Negative amounts, so any period that sums invoices nets correctly
+      // without every report having to learn about credit notes.
+      return tx.invoice.create({
+        data: {
+          invoiceNumber: number,
+          type: "CREDIT_NOTE",
+          status: "ACTIVE",
+          reversesId: original.id,
+          customerId: original.customerId,
+          userId: req.user.id,
+          subtotal: original.subtotal.negated(),
+          discountAmt: original.discountAmt.negated(),
+          cgst: original.cgst.negated(),
+          sgst: original.sgst.negated(),
+          totalAmount: original.totalAmount.negated(),
+          paymentMode: original.paymentMode,
+          paymentStatus: original.paymentStatus,
+          notes: reason
+            ? `Reverses ${original.invoiceNumber}: ${reason}`
+            : `Reverses ${original.invoiceNumber}`,
+          items: {
+            create: original.items.map((i) => ({
+              batchId: i.batchId,
+              medicineName: i.medicineName,
+              quantity: i.quantity,
+              unitPrice: i.unitPrice,
+              discount: i.discount,
+              gstPercent: i.gstPercent,
+              totalPrice: i.totalPrice.negated(),
+            })),
+          },
+        },
+        include: { items: true, customer: true, user: { select: { name: true } } },
+      });
+    });
+
+    res.status(201).json({
+      success: true,
+      message: `Invoice ${original.invoiceNumber} voided. Credit note ${creditNote.invoiceNumber} issued.`,
+      data: creditNote,
+    });
+  } catch (err) {
+    if (err instanceof StockConflictError) {
+      return res
+        .status(err.statusCode)
+        .json({ success: false, message: err.message });
+    }
+    // Losing the race for the unique index means another void committed first.
+    if (isDuplicateNumber(err, "reversesId")) {
+      return res.status(409).json({
+        success: false,
+        message: "This invoice has already been voided.",
+      });
     }
     next(err);
   }
@@ -433,4 +557,5 @@ module.exports = {
   getDailySummary,
   getTrend,
   getGstReport,
+  voidInvoice,
 };

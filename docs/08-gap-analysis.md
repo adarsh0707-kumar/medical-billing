@@ -60,7 +60,7 @@ Severity: 🔴 causes data corruption or a security exposure · 🟠 causes inco
 | [G-08](#g-08) | ✅ Fixed | Sales trend costs 7 HTTP round trips |
 | [G-13](#g-13) | 🟡 Partly fixed | Dead files deleted 2026-08-20; three artefacts await a product decision |
 | [G-14](#g-14) | ✅ Fixed        | No automated tests                                                      |
-| [G-15](#g-15) | 🟡              | Invoices are immutable with no correction path                          |
+| [G-15](#g-15) | ✅ Fixed | Invoices are immutable with no correction path |
 | [G-17](#g-17) | ✅ Fixed        | Cart total disagreed with the invoice the server wrote                  |
 | [G-18](#g-18) | ✅ Fixed        | A database failure during`protect` was reported as an invalid token   |
 
@@ -449,7 +449,7 @@ Coverage is 87% overall, with a CI gate at 90% on `billing.controller.js` (94%) 
 
 ---
 
-### <a id="g-15"></a>G-15 🟡 Invoices cannot be corrected
+### <a id="g-15"></a>G-15 ✅ FIXED — Invoices could not be corrected
 
 **Problem.** There is no update or delete route for invoices. A wrong quantity, wrong customer or wrong payment mode is permanent. The stock deducted by a mistaken invoice can only be restored by hand-editing a batch through the unvalidated `PUT /batches/:id` ([G-05](#g-05)) — which is exactly the kind of untracked adjustment that makes stock records untrustworthy.
 
@@ -459,6 +459,18 @@ Immutability is the right *default* for financial records; the missing piece is 
 
 ---
 
+
+**Resolution (2026-08-20).** `POST /api/billing/invoices/:id/void`, ADMIN only, after PRD Q3 was answered.
+
+A void is not an edit. The original keeps its number, date, totals and every line, and only its `status` moves to `CANCELLED`; the correction is a separate dated credit note (`CRNyymmdd-nnnn`) carrying the negated amounts and pointing back via `reversesId`. Stock returns to the batches it came from, preserving their expiry dates, inside the same transaction.
+
+**The period rule is the part worth stating twice.** A cancelled invoice stays in the GST report for the month it was issued in, and the credit note appears in the month the void happened — the way a GST credit note works. Dropping the original out of its own month would have been the easy implementation and the wrong one: it rewrites a period that may already have been filed. Folding `CANCELLED` into `PaymentStatus` would have done exactly that silently, since the report filters on `PAID` — which is why `type` and `status` are separate enums.
+
+Restored exactly once, guarded twice: a conditional `updateMany` on `status: ACTIVE` catches the sequential double-submit, and the unique index on `reversesId` catches two concurrent voids. Both are tested, including two simultaneous requests, and the month boundary.
+
+Still out of scope: **partial returns**. Returning 2 of 5 units needs per-line quantities and a cumulative guard, and was deliberately deferred (PRD Q3).
+
+---
 ### <a id="g-16"></a>G-16 🟡 Data fetching sets state synchronously inside effects
 
 **Problem.** Eleven components fetch on mount by calling `setState` synchronously in an effect body. `eslint-plugin-react-hooks` v7 promotes this to an error (`react-hooks/set-state-in-effect`), and it was the reason **CI failed on every run from the commit that introduced it until 2026-08-20**.

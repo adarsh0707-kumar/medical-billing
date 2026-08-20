@@ -182,3 +182,116 @@ describe("GET /api/billing/invoices", () => {
     expect((await get(token, "/api/billing/invoices/nope")).status).toBe(404);
   });
 });
+
+// ─── Sales trend ───────────────────────────────────────
+// Added with the endpoint that replaced seven daily-summary calls (G-08). The
+// coverage gate caught that the endpoint had shipped without any test at all.
+describe("GET /api/billing/invoices/trend", () => {
+  // Takes a token rather than signing in: the factory gives each role one fixed
+  // email, so calling signIn twice in a test collides on the unique constraint.
+  const seedInvoiceOn = async (token, daysAgo, total) => {
+    const { medicine, batch } = await makeSellable({ quantity: 100 });
+    const res = await request(app)
+      .post("/api/billing/invoices")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        items: [
+          {
+            batchId: batch.id,
+            medicineId: medicine.id,
+            medicineName: medicine.name,
+            quantity: 1,
+            unitPrice: total,
+            discount: 0,
+            gstPercent: 0,
+          },
+        ],
+        discountAmt: 0,
+        paymentMode: "CASH",
+        paymentStatus: "PAID",
+      });
+    expect(res.status).toBe(201);
+
+    const when = new Date();
+    when.setDate(when.getDate() - daysAgo);
+    when.setHours(12, 0, 0, 0);
+    await prisma.invoice.update({
+      where: { id: res.body.data.id },
+      data: { date: when },
+    });
+    return res.body.data;
+  };
+
+  it("returns one entry per day, oldest first, defaulting to 7", async () => {
+    const { token } = await signIn(app, "ADMIN");
+    const res = await get(token, "/api/billing/invoices/trend");
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toHaveLength(7);
+    const dates = res.body.data.map((d) => d.date);
+    expect([...dates].sort()).toEqual(dates); // already ascending
+  });
+
+  it("reports zeros for days with no sales rather than omitting them", async () => {
+    // A missing day would silently shift every point on the chart left.
+    const { token } = await signIn(app, "ADMIN");
+    const res = await get(token, "/api/billing/invoices/trend?days=5");
+
+    expect(res.body.data).toHaveLength(5);
+    for (const day of res.body.data) {
+      expect(day).toMatchObject({ sales: 0, invoices: 0 });
+      expect(day.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    }
+  });
+
+  it("totals each day's sales and counts", async () => {
+    const { token } = await signIn(app, "ADMIN");
+    await seedInvoiceOn(token, 2, 100);
+    await seedInvoiceOn(token, 2, 50);
+    await seedInvoiceOn(token, 0, 30);
+
+    const res = await get(token, "/api/billing/invoices/trend?days=7");
+
+    const byDate = Object.fromEntries(res.body.data.map((d) => [d.date, d]));
+    const key = (daysAgo) => {
+      const d = new Date();
+      d.setDate(d.getDate() - daysAgo);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    };
+
+    expect(byDate[key(2)]).toMatchObject({ sales: 150, invoices: 2 });
+    expect(byDate[key(0)]).toMatchObject({ sales: 30, invoices: 1 });
+  });
+
+  it("honours the days parameter", async () => {
+    const { token } = await signIn(app, "ADMIN");
+    expect((await get(token, "/api/billing/invoices/trend?days=1")).body.data).toHaveLength(1);
+    expect((await get(token, "/api/billing/invoices/trend?days=30")).body.data).toHaveLength(30);
+  });
+
+  it("rejects a days value outside the window", async () => {
+    const { token } = await signIn(app, "ADMIN");
+    expect((await get(token, "/api/billing/invoices/trend?days=999")).status).toBe(400);
+    expect((await get(token, "/api/billing/invoices/trend?days=abc")).status).toBe(400);
+  });
+
+  it("is not shadowed by /invoices/:id", async () => {
+    // "trend" would be read as an invoice id if the routes were declared the
+    // other way round, and the failure would be a 404 rather than anything loud.
+    const { token } = await signIn(app, "ADMIN");
+    expect((await get(token, "/api/billing/invoices/trend")).status).toBe(200);
+  });
+
+  it("counts only PAID invoices", async () => {
+    const { token } = await signIn(app, "ADMIN");
+    const inv = await seedInvoiceOn(token, 1, 200);
+    await prisma.invoice.update({
+      where: { id: inv.id },
+      data: { paymentStatus: "PENDING" },
+    });
+
+    const res = await get(token, "/api/billing/invoices/trend?days=7");
+    const total = res.body.data.reduce((s, d) => s + d.sales, 0);
+    expect(total).toBe(0);
+  });
+});

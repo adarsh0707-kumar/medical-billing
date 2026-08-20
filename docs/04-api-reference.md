@@ -580,7 +580,36 @@ invoice:   subtotal    = Σ taxable
 | Quantity exceeds stock      | 400    | `Insufficient stock for <medicineName>. Available: <n>`                                                                                                                          |
 | Invoice number collision    | 409    | `A record with this value already exists.` — unreachable in normal operation since the atomic per-day counter landed ([G-01](./08-gap-analysis.md#g-01)); retained as a backstop |
 
-There is **no update or delete** for invoices.
+There is **no update or delete** for invoices. Since 2026-08-20 there is a **void**, which is neither.
+
+#### `POST /api/billing/invoices/:id/void` — ADMIN only
+
+```json
+{ "reason": "duplicate bill — customer was charged twice" }
+```
+
+`reason` is required, 3–500 characters, and the body is `.strict()`. Why a bill was cancelled is the whole value of the audit trail.
+
+In one transaction this:
+
+- marks the original `status: "CANCELLED"` and changes **nothing else** about it — not its number, date, totals or lines;
+- returns each line's units to the batch they came from, keeping that batch's expiry date and batch number;
+- creates a credit note: `type: "CREDIT_NOTE"`, a `CRNyymmdd-nnnn` serial from its own series, every money field negated, and `reversesId` pointing at the original.
+
+| Outcome | Status |
+|---|---|
+| Voided | `201`, the credit note |
+| Already voided, or lost a concurrent race | `409` |
+| The target is itself a credit note | `400` |
+| Missing or too-short `reason` | `400` |
+| Caller is not an ADMIN | `403` |
+| No such invoice | `404` |
+
+**A voided invoice stays in its own period's GST report.** The credit note lands in the period the void happened, and the two net to zero across periods. This is deliberate and is the point of the whole design: removing the original from its own month would rewrite a tax period that may already have been filed. See [BR-14](./01-product-requirements.md#8-key-business-rules).
+
+Restoration happens exactly once, guarded twice — a conditional update on `status: ACTIVE` catches a repeated submission, and a unique index on `reversesId` catches two simultaneous ones.
+
+Partial returns are not supported: a void reverses a whole invoice.
 
 #### `GET /api/billing/invoices` — any role
 

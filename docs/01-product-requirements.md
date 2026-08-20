@@ -200,7 +200,7 @@ Status legend: `✅` implemented · `🟡` partial · `⬜` planned. "Roles" is 
 | FR-BILL-14 | Print the invoice from the browser                                                                        | All   | ✅`window.print()`                                                                                                                        |
 | FR-BILL-15 | Invoice history, paginated, filterable by search text, date range, payment mode and payment status        | All   | ✅                                                                                                                                          |
 | FR-BILL-16 | Open a single invoice for reprint, including batch number and expiry per line                             | All   | ✅                                                                                                                                          |
-| FR-BILL-17 | Edit or void an invoice with stock restoration                                                            | ADMIN | ⬜ No update/delete route — a mistake cannot be corrected in-system                                                                        |
+| FR-BILL-17 | Edit or void an invoice with stock restoration                                                            | ADMIN | ✅ Void implemented 2026-08-20. A void issues a credit note and returns stock to the original batches; there is deliberately no *edit* — a filed period must still reconcile to what was filed ([G-15](./08-gap-analysis.md#g-15)) |
 | FR-BILL-18 | Server-generated PDF invoice                                                                              | All   | ⬜ Printing is browser-rendered only                                                                                                        |
 | FR-BILL-19 | Choose a specific batch when a medicine has several                                                       | All   | ⬜ POS always takes the nearest-expiry batch                                                                                                |
 
@@ -313,6 +313,8 @@ lineTotal    = taxable + gst          (rounded to 2 dp)
 
 **BR-14 — GST report scope.** Only invoices with `paymentStatus = PAID` are included in the monthly GST report.
 
+A **cancelled invoice stays in the month it was issued in**, and the credit note that reverses it appears in the month the void happened — the way a GST credit note (CDNR) works. The two net to zero across periods and neither period is edited after the fact. Removing a cancelled invoice from its own month would rewrite a period that may already have been filed, which is the failure this rule exists to prevent (PRD Q3, decided 2026-08-20).
+
 **BR-15 — Self-deletion.** An admin cannot delete their own account.
 
 **BR-16 — Deactivated user.** `isActive = false` invalidates access on the very next request even if the JWT is still cryptographically valid.
@@ -399,7 +401,7 @@ lineTotal    = taxable + gst          (rounded to 2 dp)
 | -- | ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------ |
 | Q1 | Should the bill-level discount reduce taxable value (and thus GST) rather than being applied post-tax? | BR-02 correctness for filing                                 |
 | Q2 | Is IGST / inter-state supply ever needed?                                                              | BR-03, data model                                            |
-| Q3 | Must an invoice be voidable, and if so does stock return to the original batch?                        | FR-BILL-17                                                   |
+| ~~Q3~~ | ~~Must an invoice be voidable, and if so does stock return to the original batch?~~ **Answered 2026-08-20:** yes; stock returns to the original batches, keeping their expiry dates; the correction is a credit note in the current period, not an edit; whole invoice only, no partial returns | FR-BILL-17                                                   |
 | Q4 | Is a prescription record required for Schedule H sales in this deployment?                             | FR-MED-12, compliance                                        |
 | Q5 | How many concurrent billing counters must be supported?                                                | Invoice numbering rewrite ([G-01](./08-gap-analysis.md#g-01)) |
 | Q6 | What is the data retention period for customer records?                                                | Privacy posture                                              |

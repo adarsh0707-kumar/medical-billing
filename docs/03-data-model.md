@@ -402,9 +402,13 @@ Idempotent (`upsert` on email). **Change this password immediately on any non-lo
 | Batch                   | Admin, Pharmacist  | same + every sale | Never                                |
 | Supplier                | Admin, Pharmacist  | same              | Hard delete (FK-blocked when in use) |
 | Customer                | Any user           | Any user          | Never — no route                    |
-| Invoice / InvoiceItem   | Any user (on sale) | Never             | Never                                |
+| Invoice / InvoiceItem   | Any user (on sale) | Only `status`, on void (ADMIN) | Never                                |
 
-**Invoices are append-only.** There is no correction path in the system (FR-BILL-17), which is good for auditability and bad for daily operations — a mis-keyed bill can only be handled outside the system today.
+**Invoices are append-only, and a void is not an exception to that.** Since 2026-08-20 an ADMIN can void a sale (FR-BILL-17, [G-15](./08-gap-analysis.md#g-15)), but the original is never rewritten: its number, date, totals and lines are exactly what was issued, and only `status` moves to `CANCELLED`. The correction is a separate dated credit note (`type: CREDIT_NOTE`) carrying negated amounts and a `reversesId` back-reference, with the sold units returned to their original batches in the same transaction.
+
+This is why `type` and `status` are separate enums from `PaymentStatus`. A cancelled invoice stays in the GST report for the month it was issued in and the credit note lands in the month of the void — folding `CANCELLED` into `PaymentStatus` would have dropped it out of a possibly-filed period silently, since that report filters on `PAID`.
+
+Partial returns are not supported: a void reverses a whole invoice.
 
 **Retention.** No purge or archival exists. Customer records — name, phone, age, gender and full purchase history — are retained indefinitely. Decide a retention period before any deployment handling real customers ([PRD Q6](./01-product-requirements.md#14-open-questions), [07 — Security §8](./07-security.md#8-privacy-considerations)).
 
