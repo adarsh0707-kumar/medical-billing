@@ -102,7 +102,7 @@ Validation failures add a field-level array:
 
 In `NODE_ENV=development` unhandled errors also carry a `stack` string.
 
-> The root `README.md` documents `{ "success": false, "error": "...", "statusCode": 400 }`. That shape is **not** produced by any code path. The key is `message`.
+> The root `README.md` documented `{ "success": false, "error": "...", "statusCode": 400 }` until 2026-08-20. That shape was never produced by any code path. The key is `message`.
 
 ### Query parameters
 

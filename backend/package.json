@@ -2,7 +2,7 @@
   "name": "medical-billing-backend",
   "version": "1.0.0",
   "description": "Backend for medical billing systems",
-  "license": "ISC",
+  "license": "MIT",
   "author": "Adarsh Kumar",
   "main": "index.js",
   "scripts": {

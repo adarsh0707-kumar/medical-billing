@@ -31,7 +31,12 @@ The root `README.md`, `backend/README.md`, `frontend/README.md` and `nginx/READM
 | D-14 | `Architecture.txt` route layout (`/api/invoices`, `/api/batches`, `/api/reports/*`) | Architecture.txt | Superseded — everything moved under `/api/billing` and `/api/inventory` |
 | <a id="d-15"></a>D-15 | "There is no default — the API fails loudly without [`JWT_SECRET`]" | SECURITY.md operator checklist | **Nothing validates it at startup.** `JWT_SECRET` is read only at use, so an unset variable lets the app boot normally and then answers `401 Invalid token.` on every request — the most misleading failure available. Login fails with a 500. A boot-time guard would make the claim true; until then the claim is wrong |
 
-**Recommendation:** rather than rewriting four READMEs, trim each to a short "what this is / how to run it" and link to `docs/`. This set is now the reference.
+**Resolved 2026-08-20.** All four READMEs were trimmed to a short "what this is / how to run it" plus links into `docs/` — the recommendation below, taken. `README.md` went from 287 lines to ~120, `backend/README.md` 447 → ~75, `frontend/README.md` 557 → ~75, `nginx/README.md` 558 → ~55. Every D-nn above is closed by that trim except:
+
+- **D-14** — `Architecture.txt` is kept as a historical artefact. It now carries a SUPERSEDED header, and its two outright-false details (frontend port, the `/api/reports` route list) were corrected rather than left to mislead.
+- **D-15** — still open. Nothing validates `JWT_SECRET` at boot, so SECURITY.md's claim that the API "fails loudly without one" remains wrong. A boot guard belongs with the Phase 8 deployment work.
+
+The original recommendation, for the record: rather than rewriting four READMEs, trim each to a short "what this is / how to run it" and link to `docs/`. This set is the reference.
 
 ---
 

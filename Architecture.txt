@@ -1,3 +1,14 @@
+SUPERSEDED — historical planning document, April 2026.
+
+This was the original sketch. It is kept because the reasoning is still
+readable, but it does not describe the system as built and is not
+maintained. Several things below were never built the way they are drawn,
+notably the route layout and the frontend port.
+
+The current reference is docs/ — start with docs/02-architecture.md.
+
+================================================================================
+
 🏗️ Overall Architecture
 
                     ┌─────────────────┐
@@ -8,7 +19,7 @@
               │                             │
      ┌────────▼────────┐         ┌──────────▼──────────┐
      │  React Frontend │         │   Node.js Backend   │
-     │   (port 3000)   │         │   Express (5000)    │
+     │   (port 5173)   │         │   Express (5000)    │
      └─────────────────┘         └──────────┬──────────┘
                                             │
                               ┌─────────────┼─────────────┐
@@ -66,31 +77,17 @@ Auth
   POST   /api/auth/login
   POST   /api/auth/logout
 
-Medicines
-  GET    /api/medicines          → list with stock
-  POST   /api/medicines          → add medicine
-  PUT    /api/medicines/:id
-  GET    /api/medicines/search?q → for billing search
+NOTE: none of the paths sketched here were built as drawn. Routers are
+grouped by MODULE, not by resource, and there is no /api/reports router
+at all. The real layout:
 
-Batches
-  POST   /api/batches            → add stock batch
-  GET    /api/batches/expiring   → expiry alerts
+  /api/auth       login, me, change-password
+  /api/inventory  medicines, batches, suppliers, categories, manufacturers
+  /api/billing    invoices, customers, daily-summary, gst-report
+  /api/users      user management
 
-Billing
-  POST   /api/invoices           → create invoice
-  GET    /api/invoices/:id       → get invoice (for print)
-  GET    /api/invoices           → list
-
-Customers
-  GET/POST/PUT  /api/customers
-
-Reports
-  GET    /api/reports/daily-sales
-  GET    /api/reports/low-stock
-  GET    /api/reports/gst-summary
-
-Suppliers
-  GET/POST/PUT  /api/suppliers
+Full endpoint list, with query parameters and failure modes:
+docs/04-api-reference.md
 
 
 🗄️ Key Database Tables

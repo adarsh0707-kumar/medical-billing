@@ -301,7 +301,7 @@ lineTotal    = taxable + gst          (rounded to 2 dp)
 
 **BR-08 — Atomicity.** Invoice header, line items and every batch decrement commit together or not at all.
 
-**BR-09 — Invoice numbering.** `INV{yy}{mm}{dd}-{0001}`, the serial being today's invoice count + 1.
+**BR-09 — Invoice numbering.** `INV{yy}{mm}{dd}-{0001}`. The serial comes from an atomic per-day counter allocated inside the invoice transaction, **not** from counting the day's invoices — counting is a read-then-write race that retrying cannot fix ([G-01](./08-gap-analysis.md#g-01)). Consistent with FR-BILL-11.
 
 **BR-10 — Purchase numbering.** `PO{yy}{mm}-{0001}`, monthly. Defined but unreachable.
 

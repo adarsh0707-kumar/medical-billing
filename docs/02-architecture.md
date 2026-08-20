@@ -239,7 +239,7 @@ sequenceDiagram
 
     API->>API: per line: taxable, gst, cgst=sgst=gst/2, lineTotal
     API->>API: totalAmount = Σtaxable + Σcgst + Σsgst − discountAmt
-    API->>DB: COUNT invoices today → INVyymmdd-nnnn
+    API->>DB: INSERT … ON CONFLICT on InvoiceCounter → INVyymmdd-nnnn
 
     rect rgb(235,245,235)
     Note over API,DB: prisma.$transaction
@@ -304,7 +304,7 @@ Every controller returns the same shape, which is what makes the client's error 
 { "success": false, "message": "…", "errors": [ { "field": "…", "message": "…" } ] }
 ```
 
-Note `message` — not the `error` / `statusCode` keys claimed in the root README. Full catalogue in [04 — API Reference](./04-api-reference.md#5-error-format).
+Note `message` — not `error` / `statusCode`, which the root README claimed until it was corrected on 2026-08-20. Full catalogue in [04 — API Reference](./04-api-reference.md#5-error-format).
 
 ---
 
@@ -316,7 +316,7 @@ Note `message` — not the `error` / `statusCode` keys claimed in the root READM
 host:80   → nginx  ─┬─ /      → frontend:5173 (Vite HMR, WebSocket upgrade headers set)
                     └─ /api   → backend:5000
 host:5173 → frontend  (direct)
-host:5000 → backend   (direct)   ← what the SPA actually calls
+host:5000 → backend   (direct)   ← for curl and tests; the SPA does not use it
 host:5432 → postgres  (direct, exposed)
 host:6379 → redis     (direct, exposed)
 ```
@@ -336,7 +336,7 @@ Source is bind-mounted (`./backend:/app`, `./frontend:/app`) with anonymous volu
 | `VITE_API_URL` | frontend | *(unset — relative `/api`)* | Baked into the bundle at build time; set only for a cross-host API |
 | `VITE_PROXY_TARGET` | frontend | `http://backend:5000` | Where the Vite dev server forwards `/api` |
 
-`frontend/.env` defines `PORT` and `FRONTEND_URL` but not `VITE_API_URL`, which is correct — the client stays relative and the dev-server proxy defaults to `http://localhost:5000` for a non-Docker run.
+`frontend/.env` exists but is **empty**, which is correct — the client calls `/api` on its own origin, so it needs no variables at all. The dev-server proxy target comes from `VITE_PROXY_TARGET` in compose and defaults to `http://localhost:5000` for a non-Docker run.
 
 ### Production gaps
 
@@ -346,7 +346,7 @@ The stack has no production path today. Minimum required before a real deploymen
 - TLS termination and HSTS.
 - Postgres credentials and `JWT_SECRET` from a secret store, not compose literals.
 - Remove host port exposure for Postgres and Redis.
-- `app.set('trust proxy', 1)` so rate limiting and logging see real client IPs.
+- ~~`app.set('trust proxy', …)`~~ **done** — set to `loopback, linklocal, uniquelocal` (override with `TRUST_PROXY`), so the rate limiter keys on the real client address rather than a spoofable header.
 - Backup/restore for the `pgdata` volume.
 
 ---

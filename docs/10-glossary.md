@@ -48,7 +48,7 @@ Domain and system vocabulary used across this documentation and in the code.
 
 **Invoice** — The immutable record of a sale: header totals plus line items. Once created it cannot be edited or deleted ([G-15](./08-gap-analysis.md#g-15)).
 
-**Invoice number** — Human-readable identifier, `INV{yy}{mm}{dd}-{nnnn}`, e.g. `INV260817-0042`. Unique; the current generation strategy collides under concurrency ([G-01](./08-gap-analysis.md#g-01)).
+**Invoice number** — Human-readable identifier, `INV{yy}{mm}{dd}-{nnnn}`, e.g. `INV260817-0042`. Unique, and allocated from an atomic per-day counter inside the invoice transaction, so concurrent checkouts cannot collide ([G-01](./08-gap-analysis.md#g-01), fixed 2026-08-18).
 
 **Payment mode** — `CASH`, `UPI`, `CARD`, `CREDIT`. `CREDIT` means the customer owes; it is a mode, not a status.
 
@@ -84,7 +84,7 @@ Domain and system vocabulary used across this documentation and in the code.
 
 **`$transaction`** — Prisma's atomic block. Used for invoice creation + stock deduction, the one place in the system where atomicity is non-negotiable.
 
-**Soft delete** — Marking a record inactive instead of removing it. Applied to `Medicine` (`isActive: false`) and to users (via the same flag). Categories, manufacturers and suppliers hard-delete.
+**Soft delete** — Marking a record inactive instead of removing it. Applied to `Medicine` (`isActive: false`). Users are **hard-deleted**; their `isActive` flag is a separate disable switch, checked on every request so a deactivation takes effect immediately. Categories, manufacturers and suppliers also hard-delete.
 
 **Snapshot** — Copying a value onto a transaction record so later master-data changes do not rewrite history. Applied to `InvoiceItem.medicineName`, `unitPrice` and `gstPercent`.
 

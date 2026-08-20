@@ -46,7 +46,7 @@ erDiagram
         string manufacturerId FK
         string hsnCode
         string unit
-        float gstPercent
+        decimal gstPercent
         boolean isScheduledH
         boolean isActive
     }
@@ -56,8 +56,8 @@ erDiagram
         string batchNumber
         datetime expiryDate
         datetime mfgDate
-        float purchasePrice
-        float sellingPrice
+        decimal purchasePrice
+        decimal sellingPrice
         int quantity
         int initialQty
         string supplierId FK
@@ -79,11 +79,11 @@ erDiagram
         string invoiceNumber UK
         string customerId FK
         string userId FK
-        float subtotal
-        float discountAmt
-        float cgst
-        float sgst
-        float totalAmount
+        decimal subtotal
+        decimal discountAmt
+        decimal cgst
+        decimal sgst
+        decimal totalAmount
         PaymentMode paymentMode
         PaymentStatus paymentStatus
     }
@@ -93,23 +93,23 @@ erDiagram
         string batchId FK
         string medicineName
         int quantity
-        float unitPrice
-        float discount
-        float gstPercent
-        float totalPrice
+        decimal unitPrice
+        decimal discount
+        decimal gstPercent
+        decimal totalPrice
     }
     Purchase {
         string id PK
         string purchaseNumber UK
         string supplierId FK
-        float totalAmount
+        decimal totalAmount
     }
     PurchaseItem {
         string id PK
         string purchaseId FK
         string batchId FK
         int quantity
-        float costPrice
+        decimal costPrice
     }
 ```
 

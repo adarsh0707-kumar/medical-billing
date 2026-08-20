@@ -6,9 +6,13 @@ Diversity is one of our huge strengths, but it can also lead to communication is
 
 This isn’t an exhaustive list of things that you can’t do. Rather, take it in the spirit in which it’s intended - a guide to make it easier to enrich all of us and the technical communities in which we participate.
 
-This code of conduct applies to all spaces managed by the Medical Billing project or . This includes IRC, the mailing lists, the issue tracker, DSF events, and any other forums created by the project team which the community uses for communication. In addition, violations of this code outside these spaces may affect a person's ability to participate within them.
+This code of conduct applies to all spaces managed by the Medical Billing project. That means the issue tracker, pull requests, discussions, and any other forum the project team creates for the community. Violations of this code outside those spaces may also affect a person's ability to participate within them.
 
-If you believe someone is violating the code of conduct, we ask that you report it by emailing [](mailto:). For more details please see our 
+If you believe someone is violating the code of conduct, please report it by emailing **[adarshku.official@gmail.com](mailto:adarshku.official@gmail.com)**.
+
+Reports are read only by the project maintainers and handled with discretion. Include what happened, where, and — if you can — links to the messages or commits involved. You will get an acknowledgement, and you will be told what came of it.
+
+Security vulnerabilities are a separate process: see [SECURITY.md](./SECURITY.md), and please do not open a public issue for one.
 
 - **Be friendly and patient.**
 - **Be welcoming.** We strive to be a community that welcomes and supports people of all backgrounds and identities. This includes, but is not limited to members of any race, ethnicity, culture, national origin, colour, immigration status, social and economic class, educational level, sex, sexual orientation, gender identity and expression, age, size, family status, political belief, religion, and mental and physical ability.
@@ -29,4 +33,4 @@ Original text courtesy of the [Speak Up! project](http://web.archive.org/web/201
 
 ## Questions?
 
-If you have questions, please see . If that doesn't answer your questions, feel free to [contact us](mailto:).
+Ask in a [GitHub discussion or issue](https://github.com/adarsh0707-kumar/medical-billing/issues) if the question is general, or email [adarshku.official@gmail.com](mailto:adarshku.official@gmail.com) if it is not one you want to raise in public.

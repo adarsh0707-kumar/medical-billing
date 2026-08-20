@@ -253,6 +253,4 @@ Check [`docs/08-gap-analysis.md`](./docs/08-gap-analysis.md) first — it may al
 
 ## Licence
 
-The repository ships an [MIT licence](./LICENSE), and contributions are accepted under those terms.
-
-> ⚠️ The root `README.md` currently states the project is "proprietary", which contradicts the `LICENSE` file. The licence file is authoritative; the README needs correcting.
+The repository ships an [MIT licence](./LICENSE), and contributions are accepted under those terms. `LICENSE`, both `package.json` files and the root README all agree as of 2026-08-20.

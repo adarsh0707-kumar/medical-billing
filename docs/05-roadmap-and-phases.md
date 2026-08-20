@@ -32,12 +32,12 @@ timeline
 | Dimension | State |
 |---|---|
 | Feature completeness for a single store | Strong — the full sell/stock/report loop works |
-| Correctness under concurrency | **Weak** — invoice numbering and stock deduction both race |
-| Production deployability | **Not ready** — dev-only images, no TLS, secrets in compose |
-| Test coverage | **Zero** |
-| Documentation accuracy | Fixed by this `docs/` set; component READMEs still drift |
+| Correctness under concurrency | **Sound** — both races fixed and proven by concurrent tests; stock also has a database `CHECK` backstop |
+| Production deployability | **Not ready** — dev-only images, no TLS, secrets in compose. Phase 8 is the remaining blocker |
+| Test coverage | 327 backend tests, 87% statements, with a 90% gate on the money and auth paths. 40 frontend tests cover the cart arithmetic; component and browser tests are still open |
+| Documentation accuracy | This `docs/` set is the reference; the component READMEs were trimmed to point at it on 2026-08-20 |
 
-The honest read: v1.0.0 is a complete, coherent product built fast, sitting on a handful of integrity and deployment gaps that must close before real money runs through it. Phase 7 is not optional.
+The honest read as of **2026-08-20**: the correctness gaps that made v1.0.0 unsafe for real money are closed and tested. What remains between here and a deployment is Phase 8 — images, TLS, secrets and backups — not the arithmetic.
 
 ---
 

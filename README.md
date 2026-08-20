@@ -1,285 +1,115 @@
 # Medical Billing System
 
-A comprehensive full-stack medical billing application built with Node.js, Express, Prisma, React, and TypeScript. This system is designed to manage billing operations, inventory, customers, and reporting for medical facilities.
-
-## 🏗️ Project Structure
-
-The project consists of three main components:
-
-```
-medical-billing/
-├── frontend/          # React + TypeScript UI application
-├── backend/           # Node.js + Express API server
-├── nginx/             # Web server configuration
-├── docker-compose.yml # Container orchestration
-└── Architecture.txt   # System architecture documentation
-```
-
-## 🚀 Quick Start
-
-### Prerequisites
-
-- Docker & Docker Compose (recommended)
-- Node.js 16+ (for local development)
-- npm or yarn package manager
-- PostgreSQL (if running without Docker)
-- Redis (for caching)
-
-### Using Docker Compose (Recommended)
-
-```bash
-# Start all services
-docker-compose up -d
-
-# Stop all services
-docker-compose down
-
-# View logs
-docker-compose logs -f
-```
-
-The application will be available at:
-
-- **Frontend**: http://localhost:3000
-- **Backend API**: http://localhost:5000
-- **Nginx**: http://localhost:80
-
-### Local Development Setup
-
-#### Backend Setup
-
-```bash
-cd backend
-npm install
-npx prisma migrate dev
-npm start
-```
-
-Server runs on `http://localhost:5000`
-
-#### Frontend Setup
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-Application runs on `http://localhost:5173`
-
-## 📋 Features
-
-### Frontend
-
-- **Modern UI**: Built with React and TypeScript
-- **Responsive Design**: Works on desktop, tablet, and mobile
-- **Components**: Pre-built UI components for common elements
-- **State Management**: Centralized store for authentication and notifications
-- **API Integration**: Seamless integration with backend services
-
-### Backend
-
-- **RESTful API**: Complete API for all operations
-- **Authentication**: JWT-based user authentication
-- **Database**: Prisma ORM with PostgreSQL
-- **Caching**: Redis for improved performance
-- **Validation**: Input validation and error handling
-- **Modules**:
-  - Authentication
-  - Billing Management
-  - Customer Management
-  - Inventory Management
-  - Medicine Catalog
-  - Supplier Management
-  - User Management
-  - Reports & Analytics
-
-### Nginx
-
-- **Reverse Proxy**: Routes requests to appropriate services
-- **Load Balancing**: Handles multiple backend instances
-- **Static File Serving**: Serves frontend assets efficiently
-- **SSL/TLS**: Ready for HTTPS configuration
-
-## 📁 Detailed Component Documentation
-
-For detailed information about each component, refer to:
-
-- **[Frontend Documentation](./frontend/README.md)** - UI setup, components, and usage
-- **[Backend Documentation](./backend/README.md)** - API endpoints, database schema, and configuration
-- **[Nginx Documentation](./nginx/README.md)** - Web server setup and configuration
-
-## 🔧 Configuration
-
-### Environment Variables
-
-Create a `.env` file in the `backend` directory:
-
-```env
-DATABASE_URL="postgresql://user:password@localhost:5432/medical_billing"
-REDIS_URL="redis://localhost:6379"
-JWT_SECRET="your-secret-key"
-PORT=5000
-NODE_ENV=development
-```
-
-Create a `.env` file in the `frontend` directory:
-
-```env
-VITE_API_BASE_URL="http://localhost:5000"
-```
-
-## 📦 Tech Stack
-
-| Layer            | Technology                               |
-| ---------------- | ---------------------------------------- |
-| Frontend         | React 18, TypeScript, Vite, Tailwind CSS |
-| Backend          | Node.js, Express, Prisma, PostgreSQL     |
-| Caching          | Redis                                    |
-| Containerization | Docker, Docker Compose                   |
-| Web Server       | Nginx                                    |
-
-## 🗄️ Database Schema
-
-Key entities:
-
-- Users (Authentication & Authorization)
-- Customers (Client Management)
-- Medicines (Product Catalog)
-- Suppliers (Vendor Management)
-- Batches (Medicine Batches)
-- Billing (Invoice Management)
-- Categories (Classification)
-- Manufacturers (Medicine Producers)
-
-See [Prisma Schema](./backend/prisma/schema.prisma) for detailed database structure.
-
-## 🔐 Security
-
-- JWT authentication for API endpoints
-- Password hashing and validation
-- Input sanitization and validation
-- CORS configuration
-- Protected routes on frontend
-- Environment variable management
-
-## 📊 API Documentation
-
-The backend provides RESTful APIs for all operations:
-
-### Main Routes
-
-- `/api/auth` - Authentication endpoints
-- `/api/users` - User management
-- `/api/customers` - Customer operations
-- `/api/medicines` - Medicine catalog
-- `/api/billing` - Billing operations
-- `/api/inventory` - Inventory management
-- `/api/suppliers` - Supplier management
-- `/api/reports` - Analytics and reports
-
-## 🧪 Testing
-
-### Backend Testing
-
-```bash
-cd backend
-npm test
-```
-
-### Frontend Testing
-
-```bash
-cd frontend
-npm test
-```
-
-## 📈 Performance Optimization
-
-- Redis caching for frequently accessed data
-- Database query optimization with Prisma
-- Frontend code splitting and lazy loading
-- Image optimization and compression
-- Nginx gzip compression
-
-## 🚨 Error Handling
-
-- Centralized error middleware in backend
-- User-friendly error messages
-- Detailed logging for debugging
-- Graceful error recovery
-
-## 📝 API Response Format
-
-All API responses follow a standard format:
-
-```json
-{
-  "success": true,
-  "data": {},
-  "message": "Operation successful"
-}
-```
-
-Error responses:
-
-```json
-{
-  "success": false,
-  "error": "Error message",
-  "statusCode": 400
-}
-```
-
-## 🐛 Troubleshooting
-
-### Database Connection Issues
-
-- Ensure PostgreSQL is running
-- Check DATABASE_URL in .env
-- Run migrations: `npx prisma migrate dev`
-
-### Redis Connection Issues
-
-- Ensure Redis server is running
-- Check REDIS_URL configuration
-- Verify Redis is accessible on the configured port
-
-### Frontend Build Issues
-
-- Clear node_modules: `rm -rf node_modules && npm install`
-- Clear Vite cache: `rm -rf dist && npm run build`
-
-### Port Already in Use
-
-- Change ports in docker-compose.yml or environment variables
-- Kill process using the port: `lsof -ti:PORT | xargs kill -9`
-
-## 📚 Additional Resources
-
-- [Project Architecture](./Architecture.txt)
-- [Docker Documentation](https://docs.docker.com/)
-- [React Documentation](https://react.dev)
-- [Express Documentation](https://expressjs.com)
-- [Prisma Documentation](https://www.prisma.io/docs)
-
-## 👥 Contributing
-
-See **[CONTRIBUTING.md](./CONTRIBUTING.md)** for setup, conventions, and the
-landmines worth knowing about before your first pull request — how Zod silently
-strips undeclared fields, why money must never meet the `+` operator, and where
-stock is allowed to change.
-
-Found a security problem? **Don't open an issue** — follow
-**[SECURITY.md](./SECURITY.md)**.
-
-## 📄 License
-
-This project is proprietary and intended for medical billing management.
-
-## 📞 Support
-
-For issues or questions, please contact the development team or refer to the detailed component documentation.
+Billing, inventory and GST reporting for a retail pharmacy. A React SPA over a
+Node/Express API, PostgreSQL through Prisma, all of it containerised.
+
+It handles money, stock and tax records, so correctness matters more here than
+delivery speed — the [contributing guide](./CONTRIBUTING.md) is mostly about the
+handful of places where the obvious change is the wrong one.
 
 ---
 
+## Quick start
+
+Requires Docker and Docker Compose. For a non-Docker run you also need Node 20,
+PostgreSQL 15 and Redis.
+
+```bash
+git clone https://github.com/adarsh0707-kumar/medical-billing.git
+cd medical-billing
+
+# JWT_SECRET is interpolated into the backend container by docker compose.
+# There is no default, and the API will not issue tokens without it.
+echo "JWT_SECRET=$(openssl rand -hex 32)" > .env
+
+docker compose up -d
+docker compose exec backend npm run seed     # creates the bootstrap admin
+```
+
+| URL | What |
+|---|---|
+| http://localhost:5173 | The app via the Vite dev server — develop against this, it has HMR |
+| http://localhost | The same app via nginx, closest to a deployment |
+| http://localhost:5000/health | The API directly |
+
+Sign in with `admin@medstore.com` / `admin123`. **Change that password before the
+system is reachable by anyone else** — see [SECURITY.md](./SECURITY.md).
+
+Both entry points serve the SPA and proxy `/api` to the backend on the **same
+origin**, so CORS never applies to the browser.
+
+---
+
+## What it does
+
+Point-of-sale billing with GST, batch-level stock with expiry tracking, customer
+and supplier records, user accounts with three roles (`ADMIN`, `PHARMACIST`,
+`CASHIER`), and daily-sales and GST reports.
+
+Full requirement list, each with a status:
+[`docs/01-product-requirements.md`](./docs/01-product-requirements.md).
+
+## Tech stack
+
+| Layer | Technology |
+|---|---|
+| Frontend | React 19, TypeScript, Vite, Tailwind v4, shadcn/ui |
+| Backend | Node 20, Express 5, Prisma 5 |
+| Database | PostgreSQL 15 |
+| Cache | Redis 7 — running, but not yet used by the application |
+| Web server | nginx |
+
+---
+
+## Documentation
+
+`docs/` is the reference for how the system actually works. It was written by
+reading the source, and it is kept in step with the code.
+
+| Document | Covers |
+|---|---|
+| [01 Product requirements](./docs/01-product-requirements.md) | Every requirement with a build status, and the open product questions |
+| [02 Architecture](./docs/02-architecture.md) | Components, request flow, environment variables, production gaps |
+| [03 Data model](./docs/03-data-model.md) | Schema, relationships, invariants |
+| [04 API reference](./docs/04-api-reference.md) | Every endpoint, its query parameters and its failure modes |
+| [05 Roadmap](./docs/05-roadmap-and-phases.md) | Phased plan with exit criteria |
+| [06 Development guide](./docs/06-development-guide.md) | Setup, environment, troubleshooting |
+| [07 Security](./docs/07-security.md) | Threat model and the prioritised hardening backlog |
+| [08 Gap analysis](./docs/08-gap-analysis.md) | Known defects, each with a diagnosis and a fix |
+| [09 Testing strategy](./docs/09-testing-strategy.md) | What is tested, what is not, and the GST acceptance fixtures |
+| [10 Glossary](./docs/10-glossary.md) | Domain terms |
+
+The URL layout is grouped by module rather than by resource, which is not what
+you would guess — customers live under `/api/billing/`, medicines and suppliers
+under `/api/inventory/`, and there is no `/api/reports`. See
+[04](./docs/04-api-reference.md) before writing a client.
+
+---
+
+## Tests
+
+```bash
+# backend — the database must end in _test; the suite empties every table
+docker compose exec \
+  -e DATABASE_URL='postgresql://medadmin:medpass123@postgres:5432/medicaldb_test' \
+  backend npm test
+
+# frontend
+cd frontend && npm test
+```
+
+---
+
+## Contributing
+
+[CONTRIBUTING.md](./CONTRIBUTING.md) covers setup, conventions, and the landmines
+worth knowing before a first pull request — how Zod silently strips undeclared
+fields, why money must never meet the `+` operator, and where stock is allowed to
+change.
+
+Found a security problem? **Don't open an issue** — follow
+[SECURITY.md](./SECURITY.md).
+
+## Licence
+
+[MIT](./LICENSE).

@@ -41,7 +41,7 @@ docker compose exec backend npm run seed
 
 > **Either entry point works.** `:5173` gives you Vite's HMR and is the one to develop against; `:80` is the nginx path, closest to how a deployment behaves. Both serve the SPA and both forward `/api` to the backend on the same origin, so neither involves CORS ([G-02](./08-gap-analysis.md#g-02)).
 >
-> The root README's claim that the frontend runs on port 3000 is wrong — compose maps 5173.
+> The frontend runs on **5173**, not 3000. The root README claimed 3000 until it was corrected on 2026-08-20; `Architecture.txt` still shows it in its original diagram and is superseded by this set.
 
 ### Daily Docker commands
 
@@ -74,7 +74,6 @@ REDIS_URL="redis://localhost:6379"
 JWT_SECRET="<32+ random bytes>"
 PORT=5000
 NODE_ENV=development
-FRONTEND_URL="http://localhost:5173"
 EOF
 npx prisma migrate dev
 npx prisma generate
