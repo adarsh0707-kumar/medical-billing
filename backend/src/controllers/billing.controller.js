@@ -26,9 +26,11 @@ const D = Prisma.Decimal;
 // binary error into the header, so the two could disagree by a paisa.
 const money = (v) => new D(v).toDecimalPlaces(2, D.ROUND_HALF_UP);
 
-// Concurrent checkouts can derive the same serial; every retry re-reads the
-// count, so a handful of attempts covers far more simultaneous counters than a
-// single store will ever run.
+// Serials come from an atomic per-day counter (see generateInvoiceNumber), so
+// concurrent checkouts cannot derive the same one and this loop should never run
+// twice. It stays as a backstop against a collision from outside that path — a
+// restored backup, a hand-inserted row — where one more attempt is cheaper than
+// failing a sale the customer has already paid for.
 const MAX_INVOICE_NUMBER_ATTEMPTS = 5;
 
 // ─── Create Invoice ────────────────────────────────────
@@ -107,10 +109,10 @@ const createInvoice = async (req, res, next) => {
       .minus(billDiscount);
 
     // Step 3 — Create invoice + deduct stock in a transaction.
-    // The serial is allocated inside the transaction, but two concurrent
-    // transactions can still read the same count and derive the same number.
-    // The unique index lets exactly one of them commit; the loser retries with
-    // a fresh serial instead of failing a sale the customer already paid for.
+    // The serial is allocated inside that transaction from an atomic per-day
+    // counter, so concurrent checkouts each get a distinct number and a rolled
+    // back sale returns its own rather than leaving a gap in a tax document.
+    // The unique index and the retry below are a backstop, not the mechanism.
     let invoice;
     for (let attempt = 1; ; attempt++) {
       try {

@@ -70,7 +70,10 @@ model Batch {
   mfgDate        DateTime?
   purchasePrice  Decimal  @db.Decimal(12, 2)
   sellingPrice   Decimal  @db.Decimal(12, 2)
-  quantity       Int      // current stock
+  /// Current stock. A CHECK constraint (`Batch_quantity_non_negative`) keeps this
+  /// at or above zero — Prisma cannot express CHECK, so it lives in the migration
+  /// `20260820052324_add_batch_quantity_check` and is invisible here otherwise.
+  quantity       Int
   initialQty     Int      // when added
   supplierId     String
   createdAt      DateTime @default(now())
