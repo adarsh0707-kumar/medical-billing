@@ -183,8 +183,8 @@ The honest read as of **2026-08-20**: the correctness gaps that made v1.0.0 unsa
 | ~~9.2~~ ✅ | GST engine — all seven fixtures plus the reconciliation invariants |
 | ~~9.3~~ ✅ | Integration tests per router: auth, the full RBAC matrix, validation boundaries, Prisma error mapping |
 | ~~9.4~~ ✅ | Concurrency tests for stock deduction and invoice numbering |
-| 9.5 | Vitest + Testing Library on the frontend for cart maths and auth guards — **still open** |
-| 9.6 | Playwright smoke: login → search → cart → invoice → verify stock — **still open** |
+| ~~9.5~~ ✅ | Vitest + Testing Library on the frontend — **done 2026-08-20**, 66 tests: cart maths against the §4 fixtures, the POS stock guards driven through the rendered page, ProtectedRoute, the sidebar role filter, the 401 interceptor and notification severity |
+| ~~9.6~~ ✅ | Playwright smoke — **done 2026-08-20**, the six flows in docs/09 §5.7 against the real compose stack, ending with a cashier seeing no Settings link *and* receiving 403 from `/api/users` |
 | ~~9.7~~ ✅ | GitHub Actions: backend tests against a Postgres service, frontend lint and typecheck |
 | ~~9.8~~ ✅ | Coverage gate at 90% on `billing.controller.js` and `auth.middleware.js` |
 

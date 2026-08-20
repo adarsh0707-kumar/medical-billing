@@ -1,6 +1,6 @@
 # 09 — Testing Strategy
 
-**Current state (2026-08-20): 327 backend tests, plus 40 frontend cart-maths tests.** The backend suite is implemented. Frontend unit testing is now set up (Vitest + Testing Library) and covers the cart arithmetic; the remaining §5.6 cases and the browser smoke test are still open. Sections 1–4 describe the approach and the acceptance fixtures; §5 lists the cases, most of which now exist.
+**Current state (2026-08-20): 327 backend tests, 66 frontend unit tests and a 6-flow browser smoke — all three layers on CI.** The backend suite is implemented. Frontend unit testing is now set up (Vitest + Testing Library) and covers the cart arithmetic; the remaining §5.6 cases and the browser smoke test are still open. Sections 1–4 describe the approach and the acceptance fixtures; §5 lists the cases, most of which now exist.
 
 ---
 
@@ -64,9 +64,10 @@ Coverage is 87% overall; `billing.controller.js` and `auth.middleware.js` are ga
 
 ### Still open
 
-- Frontend unit tests — §5.6. **Cart maths done** ([`cart-math.test.ts`](../frontend/src/pages/__tests__/cart-math.test.ts), 40 cases, [G-17](./08-gap-analysis.md#g-17)); the auth-guard, stock-cap and notification-severity cases are still open.
-- Wiring `npm test` into the frontend CI job — the job still runs only lint and build, so the cart-maths suite does not yet gate a merge.
-- A Playwright browser smoke test — §5.7
+- ~~Frontend unit tests — §5.6~~ **done 2026-08-20**: 66 cases across cart maths, the POS stock guards, `ProtectedRoute`, the sidebar role filter, the 401 interceptor and notification severity.
+- ~~Wiring `npm test` into the frontend CI job~~ **done** — it runs before the build, and a broken cart rounding now turns CI red.
+- ~~A Playwright browser smoke test — §5.7~~ **done 2026-08-20**, all six flows, in its own CI job.
+- Component coverage beyond the §5.6 screens, and a second browser besides Chromium.
 - ~~Query-parameter validation cases, once the API validates them~~ — **done 2026-08-20**, `tests/api/query-validation.test.js` (44 cases)
 
 

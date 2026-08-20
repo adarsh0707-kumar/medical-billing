@@ -4,3 +4,9 @@ dist/
 build/
 .DS_Store
 coverage/
+
+# Playwright
+playwright-report/
+test-results/
+blob-report/
+.playwright/

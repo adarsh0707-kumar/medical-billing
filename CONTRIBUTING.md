@@ -190,9 +190,30 @@ docker compose exec \
 - Anything touching money asserts the invariants, not just the total: `cgst === sgst`, `subtotal + cgst + sgst − discountAmt === totalAmount`, and Σ line totals matching the header.
 - Concurrency bugs need concurrent tests. `Promise.all` over a burst of requests is how the stock and numbering races are pinned down.
 
-### What's still missing
+### The frontend suites
 
-Frontend unit tests and a Playwright browser smoke test. [`docs/09-testing-strategy.md`](./docs/09-testing-strategy.md) specifies both, and they're good first contributions. Until they exist, run the [manual QA checklist](./docs/09-testing-strategy.md#7-manual-qa-checklist) for UI changes and say in the PR what you saw.
+```bash
+cd frontend
+npm test          # 66 unit tests, seconds
+npm run test:e2e  # 6 browser flows — needs `docker compose up -d` first
+```
+
+Both run on CI. The browser smoke has its own job because installing Chromium
+costs about a minute, so lint, unit tests and the backend suite stay the fast
+signal.
+
+**What the browser layer is not for.** It catches wiring the other layers cannot
+see — the proxy, the token round trip, the built client reaching the real API.
+Business rules are proven cheaper and more precisely below it: GST arithmetic in
+`invoice-create.test.js` and `cart-math.test.ts`, concurrency in
+`invoice-concurrency.test.js`. Adding an arithmetic assertion to a browser test
+makes the suite slower without making it more truthful.
+
+Still open: component coverage beyond the screens listed in
+[`docs/09` §5.6](./docs/09-testing-strategy.md), and a second browser besides
+Chromium. For UI changes outside those paths, run the
+[manual QA checklist](./docs/09-testing-strategy.md#7-manual-qa-checklist) and
+say in the PR what you saw.
 
 ---
 
