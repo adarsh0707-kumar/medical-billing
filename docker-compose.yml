@@ -28,12 +28,9 @@ services:
       - DATABASE_URL=postgresql://medadmin:medpass123@postgres:5432/medicaldb
       - JWT_SECRET=${JWT_SECRET}
       - NODE_ENV=development
-      - REDIS_URL=redis://redis:6379
     depends_on:
       postgres:
         condition: service_healthy
-      redis:
-        condition: service_started
 
   postgres:
     image: postgres:15-alpine
@@ -50,11 +47,6 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
-
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
 
   nginx:
     image: nginx:alpine

@@ -1,9 +1,10 @@
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
-const morgan = require("morgan");
 const compression = require("compression");
 const rateLimit = require("express-rate-limit");
+const prisma = require("./config/db");
+const { httpLogger } = require("./config/logger");
 const { Prisma } = require("@prisma/client");
 
 const authRoutes = require("./routes/auth.routes");
@@ -29,8 +30,10 @@ const createApp = ({
   // ─── Security Middlewares ──────────────────────────────
   app.use(helmet());
   app.use(compression());
-  // Silent under test — request logs drown the assertion output.
-  if (process.env.NODE_ENV !== "test") app.use(morgan("dev"));
+  // Structured JSON in production, pretty in development, silent under test —
+  // request logs drown the assertion output. Each request carries a correlation
+  // id, echoed back as X-Request-Id.
+  app.use(httpLogger);
 
   // ─── Proxy Awareness ───────────────────────────────────
   // Nginx sets X-Real-IP and X-Forwarded-For. Without this, req.ip is the proxy's
@@ -50,14 +53,24 @@ const createApp = ({
   // Only needed for callers that reach port 5000 directly and cross-origin. The
   // SPA no longer does: it calls /api on its own origin through nginx or the Vite
   // dev-server proxy, so its requests are same-origin and never preflighted.
-  const allowedOrigins = [
-    "http://localhost", // nginx entry point on :80
-    "http://localhost:3000",
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://172.17.0.1:5173", // Docker network IP
-    process.env.FRONTEND_URL,
-  ].filter(Boolean);
+  // In production the allowlist is exactly CORS_ORIGINS and nothing else — the
+  // development origins are not appended, or "restrict CORS to your real origin"
+  // would be impossible to actually do. The SPA is same-origin through nginx and
+  // never appears here; this governs callers reaching the API directly.
+  const allowedOrigins =
+    process.env.NODE_ENV === "production"
+      ? (process.env.CORS_ORIGINS || "")
+          .split(",")
+          .map((o) => o.trim())
+          .filter(Boolean)
+      : [
+          "http://localhost", // nginx entry point on :80
+          "http://localhost:3000",
+          "http://localhost:5173",
+          "http://127.0.0.1:5173",
+          "http://172.17.0.1:5173", // Docker network IP
+          process.env.FRONTEND_URL,
+        ].filter(Boolean);
 
   app.use(
     cors({
@@ -114,10 +127,39 @@ const createApp = ({
   app.use("/api/auth/login", loginLimiter);
 
   // ─── Health Check ──────────────────────────────────────
+  // Liveness: is this process up? Deliberately cheap and dependency-free, so a
+  // database outage does not cause an orchestrator to kill an otherwise healthy
+  // process and turn a recoverable incident into a restart loop.
   app.get("/health", (req, res) => {
     res.json({
       success: true,
       message: "Medical Billing API is running!",
+      timestamp: new Date().toISOString(),
+    });
+  });
+
+  // Readiness: can this process actually serve a request? A 200 from /health
+  // used to mean only that Express was listening — it said nothing about whether
+  // the database was reachable, which is the thing that makes every route work.
+  app.get("/health/ready", async (req, res) => {
+    const checks = {};
+    let ok = true;
+
+    const started = Date.now();
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+      checks.database = { status: "up", latencyMs: Date.now() - started };
+    } catch (err) {
+      ok = false;
+      checks.database = { status: "down", error: err.message };
+    }
+
+    // 503, not 500: this is "not ready to take traffic", which is what a load
+    // balancer needs to hear in order to route around it.
+    res.status(ok ? 200 : 503).json({
+      success: ok,
+      status: ok ? "ready" : "degraded",
+      checks,
       timestamp: new Date().toISOString(),
     });
   });

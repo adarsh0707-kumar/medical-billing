@@ -19,7 +19,7 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       include: ["src/**/*.js"],
-      exclude: ["src/index.js", "src/utils/seed.js", "src/config/redis.js"],
+      exclude: ["src/index.js", "src/utils/seed.js"],
       // A gate on the two files where a regression is a financial or security
       // incident rather than a bug. Deliberately not a whole-repo percentage:
       // that number goes up by testing whatever is easiest, which is not the

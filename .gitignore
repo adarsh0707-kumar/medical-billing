@@ -10,3 +10,8 @@ playwright-report/
 test-results/
 blob-report/
 .playwright/
+
+# Production secrets and certificates
+.env.prod
+certs/
+backups/

@@ -28,6 +28,10 @@ export default defineConfig({
   reporter: process.env.CI ? [["github"], ["list"]] : "list",
   use: {
     baseURL: process.env.E2E_BASE_URL || "http://localhost",
+    // The production stack ships a self-signed certificate by default (see
+    // scripts/gen-cert.sh), which the browser correctly refuses. Accepting it
+    // here is scoped to the test run and does not weaken the deployment.
+    ignoreHTTPSErrors: true,
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     video: "retain-on-failure",

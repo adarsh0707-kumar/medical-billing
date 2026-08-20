@@ -1,0 +1,103 @@
+# Production stack.
+#
+#   ./scripts/gen-cert.sh                  # or drop a real cert into certs/
+#   cp .env.prod.example .env.prod         # then fill every value in
+#   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+#   docker compose -f docker-compose.prod.yml --env-file .env.prod exec backend npm run seed
+#
+# Differences from docker-compose.yml that matter:
+#
+#   - No bind mounts. The images are self-contained, so what runs is what was
+#     built, not whatever happens to be in the working tree.
+#   - Postgres publishes no host port. It is reachable only on the internal
+#     network, which is the difference between a password being a defence and
+#     being the only defence.
+#   - Every credential comes from the environment. Nothing is a literal here.
+#   - restart: unless-stopped, so a host reboot brings the shop back up.
+
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    # No published port: only nginx talks to it.
+    expose:
+      - "80"
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    expose:
+      - "5000"
+    environment:
+      # Built from the same variables Postgres uses, so the two cannot drift.
+      # In the development compose this was a literal string containing the
+      # password, which meant editing .env changed nothing and an operator
+      # following the hardening checklist would believe otherwise.
+      DATABASE_URL: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
+      JWT_SECRET: "${JWT_SECRET:?must be set - generate one with openssl rand -hex 32}"
+      NODE_ENV: production
+      # Which peers may set X-Forwarded-For. The default covers the compose
+      # network; widen it only if another proxy sits in front of nginx.
+      TRUST_PROXY: "${TRUST_PROXY:-loopback, linklocal, uniquelocal}"
+      # The browser is same-origin through nginx, so CORS applies only to callers
+      # reaching the API directly. In production the allowlist is exactly this.
+      CORS_ORIGINS: "${CORS_ORIGINS:?must be set - the origin(s) allowed to call the API directly}"
+      LOG_LEVEL: "${LOG_LEVEL:-info}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:5000/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    # Deliberately no `ports:`. Publishing 5432 puts the database on the host's
+    # network interface, where a weak password is the only thing between it and
+    # anything that can route to the host.
+    environment:
+      POSTGRES_USER: "${POSTGRES_USER:?must be set}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?must be set - generate one with openssl rand -base64 24}"
+      POSTGRES_DB: "${POSTGRES_DB:?must be set}"
+    volumes:
+      # A distinct volume from the development stack's. Postgres only applies
+      # POSTGRES_USER/PASSWORD when it initialises an empty data directory, so
+      # pointing production at a volume the dev stack created would silently keep
+      # the dev credentials and fail authentication with P1000. Sharing state
+      # between the two stacks is a footgun regardless.
+      - pgdata_prod:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.prod.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./certs:/etc/nginx/certs:ro
+    depends_on:
+      - frontend
+      - backend
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "--no-check-certificate", "https://localhost/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  pgdata_prod:
