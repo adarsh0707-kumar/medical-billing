@@ -14,12 +14,15 @@ async function main() {
       email: "admin@medstore.com",
       password: hashedPassword,
       role: "ADMIN",
+      // This password is published in the repository, so the account can sign in
+      // and do exactly one thing: replace it. Enforced by the API, not the UI.
+      mustChangePassword: true,
     },
   });
 
   console.log("✅ Admin user created:", admin.email);
   console.log("🔑 Password: admin123");
-  console.log("⚠️  Change this password after first login!");
+  console.log("⚠️  The API will refuse every other request until it is changed.");
 }
 
 main()

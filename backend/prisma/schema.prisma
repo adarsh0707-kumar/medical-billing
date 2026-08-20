@@ -16,6 +16,10 @@ model User {
   email     String   @unique
   password  String
   role      Role     @default(CASHIER)
+  /// Set on the seeded bootstrap admin, and on any account an administrator
+  /// resets. While true the API refuses every route except signing in, reading
+  /// your own profile and changing your password (threat T-2).
+  mustChangePassword Boolean @default(false)
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

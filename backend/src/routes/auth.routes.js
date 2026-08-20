@@ -7,6 +7,7 @@ const {
   changePassword,
 } = require("../controllers/auth.controller");
 const { protect, authorize } = require("../middlewares/auth.middleware");
+const requirePasswordChange = require("../middlewares/password-change.middleware");
 const validate = require("../middlewares/validate.middleware");
 const {
   createUserSchema,
@@ -16,6 +17,7 @@ const {
 router.post(
   "/register",
   protect,
+  requirePasswordChange,
   authorize("ADMIN"),
   validate(createUserSchema),
   register,

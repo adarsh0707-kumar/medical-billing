@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const { protect, authorize } = require("../middlewares/auth.middleware");
+const requirePasswordChange = require("../middlewares/password-change.middleware");
 const validate = require("../middlewares/validate.middleware");
 const {
   createUserSchema,
@@ -16,6 +17,8 @@ const {
 } = require("../controllers/user.controller");
 
 router.use(protect);
+// Must follow protect: it reads req.user, which protect populates.
+router.use(requirePasswordChange);
 
 // Own profile update (any logged in user)
 router.put("/profile", validate(updateProfileSchema), updateProfile);

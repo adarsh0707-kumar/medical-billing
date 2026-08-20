@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const { protect, authorize } = require("../middlewares/auth.middleware");
+const requirePasswordChange = require("../middlewares/password-change.middleware");
 const validate = require("../middlewares/validate.middleware");
 const validateQuery = require("../middlewares/validate-query.middleware");
 const {
@@ -26,6 +27,8 @@ const supplierCtrl = require("../controllers/supplier.controller");
 
 // All routes require authentication
 router.use(protect);
+// Must follow protect: it reads req.user, which protect populates.
+router.use(requirePasswordChange);
 
 // ─── Categories ───────────────────────────────────────
 router.get("/categories", categoryCtrl.getAll);

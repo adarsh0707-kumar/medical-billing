@@ -43,7 +43,14 @@ const protect = async (req, res, next) => {
     // (FR-AUTH-04, invariant I-7).
     const user = await prisma.user.findUnique({
       where: { id: decoded.id },
-      select: { id: true, name: true, email: true, role: true, isActive: true },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        isActive: true,
+        mustChangePassword: true,
+      },
     });
 
     if (!user || !user.isActive) {

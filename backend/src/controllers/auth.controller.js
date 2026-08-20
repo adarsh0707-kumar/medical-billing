@@ -83,6 +83,10 @@ const login = async (req, res, next) => {
           name: user.name,
           email: user.email,
           role: user.role,
+          // The client routes straight to the change-password screen on this.
+          // The server refuses everything else regardless — see
+          // middlewares/password-change.middleware.js.
+          mustChangePassword: user.mustChangePassword,
         },
       },
     });
@@ -117,7 +121,8 @@ const changePassword = async (req, res, next) => {
     const hashedPassword = await bcrypt.hash(newPassword, 12);
     await prisma.user.update({
       where: { id: req.user.id },
-      data: { password: hashedPassword },
+      // Clearing the flag here is what lets the user back into the system.
+      data: { password: hashedPassword, mustChangePassword: false },
     });
 
     res.json({ success: true, message: "Password changed successfully." });

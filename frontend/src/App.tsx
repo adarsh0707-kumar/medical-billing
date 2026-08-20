@@ -10,12 +10,24 @@ import Inventory from "./pages/Inventory";
 import Customers from "./pages/Customers";
 import Suppliers from "./pages/Suppliers";
 import Settings from "./pages/Settings";
+import ForcePasswordChange from "./pages/ForcePasswordChange";
 
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<Login />} />
+        {/* Outside the Layout: a blocked account has nothing to navigate to,
+            and showing it a sidebar of links that all return 403 would be
+            worse than showing it the one thing it can actually do. */}
+        <Route
+          path="/change-password"
+          element={
+            <ProtectedRoute>
+              <ForcePasswordChange />
+            </ProtectedRoute>
+          }
+        />
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
         <Route
           element={

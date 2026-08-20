@@ -5,6 +5,8 @@ export interface User {
   name: string;
   email: string;
   role: Role;
+  /** While true the API refuses every route but /auth/me and change-password. */
+  mustChangePassword?: boolean;
 }
 
 export interface AuthState {

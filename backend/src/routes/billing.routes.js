@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const { protect, authorize } = require("../middlewares/auth.middleware");
+const requirePasswordChange = require("../middlewares/password-change.middleware");
 const validate = require("../middlewares/validate.middleware");
 const validateQuery = require("../middlewares/validate-query.middleware");
 const {
@@ -16,6 +17,8 @@ const billingCtrl = require("../controllers/billing.controller");
 const customerCtrl = require("../controllers/customer.controller");
 
 router.use(protect);
+// Must follow protect: it reads req.user, which protect populates.
+router.use(requirePasswordChange);
 
 // ─── Customers ────────────────────────────────────────
 router.get(
