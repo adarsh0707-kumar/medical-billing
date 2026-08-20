@@ -12,6 +12,7 @@ const { errorHandler, notFound } = require("./middlewares/error.middleware");
 const inventoryRoutes = require("./routes/inventory.routes");
 const billingRoutes = require("./routes/billing.routes");
 const userRoutes = require("./routes/user.routes");
+const dashboardRoutes = require("./routes/dashboard.routes");
 
 /**
  * Builds the Express application.
@@ -170,6 +171,7 @@ const createApp = ({
   app.use("/api/inventory", inventoryRoutes);
   app.use("/api/billing", billingRoutes); // ← add this
   app.use("/api/users", userRoutes);
+  app.use("/api/dashboard", dashboardRoutes);
 
   // ─── Error Handlers ────────────────────────────────────
   app.use(notFound);

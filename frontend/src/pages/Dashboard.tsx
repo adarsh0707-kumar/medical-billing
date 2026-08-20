@@ -21,6 +21,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import api from "@/lib/api";
+import { toast } from "sonner";
 import { useAuthStore } from "@/store/auth.store";
 
 // ─── Types ─────────────────────────────────────────────
@@ -175,6 +176,10 @@ export default function Dashboard() {
   const [expiringBatches, setExpiringBatches] = useState<Batch[]>([]);
   const [lowStockBatches, setLowStockBatches] = useState<Batch[]>([]);
   const [trendData, setTrendData] = useState<TrendDay[]>([]);
+  // Separate from the row arrays: the panels render at most ten rows but must
+  // still report the real total.
+  const [expiringCount, setExpiringCount] = useState(0);
+  const [lowStockCount, setLowStockCount] = useState(0);
   const [totalMedicines, setTotalMedicines] = useState(0);
   const [totalCustomers, setTotalCustomers] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -183,72 +188,37 @@ export default function Dashboard() {
     const fetchAll = async () => {
       setLoading(true);
       try {
-        const today = new Date().toISOString().split("T")[0];
+        // One request. This used to be thirteen: six for the panels plus one per
+        // day for the trend chart. Two of the six fetched a single row purely to
+        // read pagination.total.
+        const { data } = await api.get("/api/dashboard/stats");
+        const d = data.data;
 
-        const [
-          summaryRes,
-          invoicesRes,
-          expiringRes,
-          lowStockRes,
-          medicinesRes,
-          customersRes,
-        ] = await Promise.allSettled([
-          api.get(`/api/billing/invoices/daily-summary?date=${today}`),
-          api.get("/api/billing/invoices?limit=8&page=1"),
-          api.get("/api/inventory/batches/expiring?days=30"),
-          api.get("/api/inventory/batches/low-stock?threshold=20"),
-          api.get("/api/inventory/medicines?limit=1"),
-          api.get("/api/billing/customers?limit=1"),
-        ]);
+        setSummary(d.summary);
+        setRecentInvoices(d.recentInvoices);
+        // Counts come from the server now. The panels only ever rendered a
+        // handful of rows but downloaded every matching batch to do it.
+        setExpiringBatches(d.expiring.items);
+        setExpiringCount(d.expiring.count);
+        setLowStockBatches(d.lowStock.items);
+        setLowStockCount(d.lowStock.count);
+        setTotalMedicines(d.totals.medicines);
+        setTotalCustomers(d.totals.customers);
 
-        if (summaryRes.status === "fulfilled")
-          setSummary(summaryRes.value.data.data.summary);
-
-        if (invoicesRes.status === "fulfilled")
-          setRecentInvoices(invoicesRes.value.data.data);
-
-        if (expiringRes.status === "fulfilled")
-          setExpiringBatches(expiringRes.value.data.data);
-
-        if (lowStockRes.status === "fulfilled")
-          setLowStockBatches(lowStockRes.value.data.data);
-
-        if (medicinesRes.status === "fulfilled")
-          setTotalMedicines(medicinesRes.value.data.pagination.total);
-
-        if (customersRes.status === "fulfilled")
-          setTotalCustomers(customersRes.value.data.pagination.total);
-
-        // Fetch 7-day trend
-        const days = Array.from({ length: 7 }, (_, i) => {
-          const d = new Date();
-          d.setDate(d.getDate() - (6 - i));
-          return d.toISOString().split("T")[0];
-        });
-
-        const trendResults = await Promise.all(
-          days.map((d) =>
-            api
-              .get(`/api/billing/invoices/daily-summary?date=${d}`)
-              .then((r) => ({
-                date: new Date(d).toLocaleDateString("en-IN", {
-                  day: "2-digit",
-                  month: "short",
-                }),
-                sales: r.data.data.summary.totalSales || 0,
-                invoices: r.data.data.summary.totalInvoices || 0,
-              }))
-              .catch(() => ({
-                date: new Date(d).toLocaleDateString("en-IN", {
-                  day: "2-digit",
-                  month: "short",
-                }),
-                sales: 0,
-                invoices: 0,
-              })),
+        setTrendData(
+          d.trend.map(
+            (t: { date: string; sales: number; invoices: number }) => ({
+              date: new Date(t.date).toLocaleDateString("en-IN", {
+                day: "2-digit",
+                month: "short",
+              }),
+              sales: t.sales,
+              invoices: t.invoices,
+            }),
           ),
         );
-        setTrendData(trendResults);
+      } catch {
+        toast.error("Failed to load the dashboard");
       } finally {
         setLoading(false);
       }
@@ -316,7 +286,7 @@ export default function Dashboard() {
           value={String(totalMedicines)}
           icon={Package}
           iconBg="bg-purple-600"
-          sub={`${lowStockBatches.length} low stock`}
+          sub={`${lowStockCount} low stock`}
           onClick={() => navigate("/inventory")}
         />
         <StatCard
@@ -330,9 +300,9 @@ export default function Dashboard() {
       </div>
 
       {/* ── Alerts Row ── */}
-      {(expiringBatches.length > 0 || lowStockBatches.length > 0) && (
+      {(expiringCount > 0 || lowStockCount > 0) && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {expiringBatches.length > 0 && (
+          {expiringCount > 0 && (
             <div
               onClick={() => navigate("/reports")}
               className="flex items-center gap-3 bg-yellow-900/20 border border-yellow-800/50
@@ -341,22 +311,22 @@ export default function Dashboard() {
               <AlertTriangle className="w-5 h-5 text-yellow-400 shrink-0" />
               <div className="flex-1 min-w-0">
                 <p className="text-yellow-300 text-sm font-medium">
-                  {expiringBatches.length} batches expiring within 30 days
+                  {expiringCount} batches expiring within 30 days
                 </p>
                 <p className="text-yellow-600 text-xs truncate">
                   {expiringBatches
                     .slice(0, 2)
                     .map((b) => b.medicine.name)
                     .join(", ")}
-                  {expiringBatches.length > 2
-                    ? ` +${expiringBatches.length - 2} more`
+                  {expiringCount > 2
+                    ? ` +${expiringCount - 2} more`
                     : ""}
                 </p>
               </div>
               <ArrowRight className="w-4 h-4 text-yellow-600 shrink-0" />
             </div>
           )}
-          {lowStockBatches.length > 0 && (
+          {lowStockCount > 0 && (
             <div
               onClick={() => navigate("/reports")}
               className="flex items-center gap-3 bg-red-900/20 border border-red-800/50
@@ -365,15 +335,15 @@ export default function Dashboard() {
               <Package className="w-5 h-5 text-red-400 shrink-0" />
               <div className="flex-1 min-w-0">
                 <p className="text-red-300 text-sm font-medium">
-                  {lowStockBatches.length} items running low on stock
+                  {lowStockCount} items running low on stock
                 </p>
                 <p className="text-red-600 text-xs truncate">
                   {lowStockBatches
                     .slice(0, 2)
                     .map((b) => b.medicine.name)
                     .join(", ")}
-                  {lowStockBatches.length > 2
-                    ? ` +${lowStockBatches.length - 2} more`
+                  {lowStockCount > 2
+                    ? ` +${lowStockCount - 2} more`
                     : ""}
                 </p>
               </div>
@@ -588,15 +558,15 @@ export default function Dashboard() {
                 <AlertTriangle className="w-4 h-4 text-yellow-400" />
                 Expiring Soon
               </CardTitle>
-              {expiringBatches.length > 0 && (
+              {expiringCount > 0 && (
                 <Badge className="bg-yellow-900 text-yellow-400 text-xs">
-                  {expiringBatches.length}
+                  {expiringCount}
                 </Badge>
               )}
             </div>
           </CardHeader>
           <CardContent className="p-0">
-            {expiringBatches.length === 0 ? (
+            {expiringCount === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-slate-600">
                 <CheckCircle2 className="w-10 h-10 mb-2 opacity-20" />
                 <p className="text-sm">All stock is fresh!</p>
