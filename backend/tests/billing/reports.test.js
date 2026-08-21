@@ -71,6 +71,27 @@ describe("GET /api/billing/invoices/daily-summary", () => {
     expect(res.body.data.summary.totalSales).toBe(30);
   });
 
+  it("includes the first and last millisecond of the day, and neither neighbour", async () => {
+    const { token } = await signIn(app);
+
+    await Promise.all([
+      invoiceAt(new Date("2026-07-15T00:00:00.000"), { total: 10 }),
+      invoiceAt(new Date("2026-07-15T23:59:59.999"), { total: 20 }),
+      invoiceAt(new Date("2026-07-14T23:59:59.999"), { total: 999 }),
+      invoiceAt(new Date("2026-07-16T00:00:00.000"), { total: 999 }),
+    ]);
+
+    const res = await get(token, "/api/billing/invoices/daily-summary?date=2026-07-15");
+
+    // docs/09 section 5.5 asks for the boundaries at exactly 00:00:00.000 and
+    // 23:59:59.999. The test above brackets the day only to the nearest second,
+    // which leaves 999ms unasserted at each edge — room enough for an endOfDay
+    // built without milliseconds to drop the last sale of a trading day, and for
+    // the first millisecond of the next day to be counted twice.
+    expect(res.body.data.summary.totalInvoices).toBe(2);
+    expect(res.body.data.summary.totalSales).toBe(30);
+  });
+
   it("reports zeros for a day with no trade", async () => {
     const { token } = await signIn(app);
     const res = await get(token, "/api/billing/invoices/daily-summary?date=2020-01-01");

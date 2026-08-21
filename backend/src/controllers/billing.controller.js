@@ -419,8 +419,18 @@ const getDailySummary = async (req, res, next) => {
     // Absent means today; a garbage date is a 400 from validateQuery rather than
     // an Invalid Date that silently matched nothing.
     const date = req.validatedQuery.date ?? new Date();
-    const startOfDay = new Date(date.setHours(0, 0, 0, 0));
-    const endOfDay = new Date(date.setHours(23, 59, 59, 999));
+
+    // Each boundary is set on its own copy. `date` is the object validateQuery
+    // parsed onto the request, and calling setHours on it directly rewrote it in
+    // place — leaving req.validatedQuery.date at 23:59:59.999 for anything that
+    // read it afterwards. Nothing does today, which is the only reason that was
+    // survivable: G-01 was this same shape, and became a real bug precisely when
+    // a second consumer read the mutated value. A controller should not be
+    // rewriting what the validation layer put on the request.
+    const startOfDay = new Date(date);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(date);
+    endOfDay.setHours(23, 59, 59, 999);
 
     const [invoices, totalStats] = await Promise.all([
       prisma.invoice.findMany({
