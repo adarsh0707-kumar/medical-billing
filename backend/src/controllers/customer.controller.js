@@ -26,7 +26,12 @@ const getAll = async (req, res, next) => {
     res.json({
       success: true,
       data: customers,
-      pagination: { total, page: Number(page), limit: Number(limit) },
+      pagination: {
+        total,
+        page: Number(page),
+        limit: Number(limit),
+        pages: Math.ceil(total / Number(limit)),
+      },
     });
   } catch (err) {
     next(err);
