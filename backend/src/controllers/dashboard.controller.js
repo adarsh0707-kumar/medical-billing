@@ -1,4 +1,7 @@
 const prisma = require("../config/db");
+const { Prisma } = require("@prisma/client");
+
+const D = Prisma.Decimal;
 
 /**
  * Everything the dashboard needs, in one request.
@@ -58,7 +61,7 @@ const getStats = async (req, res, next) => {
     // connection pool rather than across six HTTP requests.
     const [
       todayAggregate,
-      byPaymentMode,
+      byModeAndType,
       recentInvoices,
       expiringCount,
       expiringItems,
@@ -68,16 +71,20 @@ const getStats = async (req, res, next) => {
       customerCount,
       trendRows,
     ] = await Promise.all([
+      // Money only, across every document in the day — sales and the credit
+      // notes reversing them — so the takings are net. Counts come from the
+      // grouping below, which can tell the two apart.
       prisma.invoice.aggregate({
         where: { date: { gte: startOfDay, lte: endOfDay } },
         _sum: { totalAmount: true, cgst: true, sgst: true },
-        _count: true,
       }),
+      // Grouped by type as well as mode: the same query yields net money per
+      // mode, the number of sales raised, and the number reversed.
       prisma.invoice.groupBy({
-        by: ["paymentMode"],
+        by: ["paymentMode", "type"],
         where: { date: { gte: startOfDay, lte: endOfDay } },
         _sum: { totalAmount: true },
-        _count: true,
+        _count: { id: true },
       }),
       prisma.invoice.findMany({
         take: RECENT_INVOICES,
@@ -108,16 +115,45 @@ const getStats = async (req, res, next) => {
       }),
       prisma.medicine.count({ where: { isActive: true } }),
       prisma.customer.count(),
+      // `sales` sums every document so a reversal nets out; `invoices` counts
+      // only sales, so a bar reading "1 invoice, ₹0" cannot happen. Kept
+      // identical to getTrend in billing.controller.js — the two must agree.
       prisma.$queryRaw`
-        SELECT to_char(date_trunc('day', "date"), 'YYYY-MM-DD') AS day,
-               COUNT(*)::int                                    AS invoices,
-               COALESCE(SUM("totalAmount"), 0)                  AS sales
+        SELECT to_char(date_trunc('day', "date"), 'YYYY-MM-DD')   AS day,
+               COUNT(*) FILTER (WHERE "type" = 'SALE')::int       AS invoices,
+               COALESCE(SUM("totalAmount"), 0)                    AS sales
         FROM "Invoice"
         WHERE "date" >= ${trendStart} AND "date" <= ${endOfDay}
           AND "paymentStatus" = 'PAID'::"PaymentStatus"
         GROUP BY 1
         ORDER BY 1`,
     ]);
+
+    const countOf = (type) =>
+      byModeAndType.reduce((n, r) => (r.type === type ? n + r._count.id : n), 0);
+
+    // Folded back to one row per mode, the shape the client reads: net money,
+    // sales-only count. `_count` is an object here, matching the daily summary —
+    // it was a bare number, so the panel's `pm._count.id` rendered "undefined
+    // bills" on any day with trade.
+    const byPaymentMode = [
+      ...new Set(byModeAndType.map((r) => r.paymentMode)),
+    ].map((paymentMode) => {
+      const rows = byModeAndType.filter((r) => r.paymentMode === paymentMode);
+      return {
+        paymentMode,
+        _sum: {
+          // .plus, never +: these are Decimals and + concatenates them.
+          totalAmount: rows.reduce(
+            (sum, r) => sum.plus(r._sum.totalAmount ?? 0),
+            new D(0),
+          ),
+        },
+        _count: {
+          id: rows.reduce((n, r) => (r.type === "SALE" ? n + r._count.id : n), 0),
+        },
+      };
+    });
 
     // Days with no sales still appear, or the chart silently shifts left.
     const byDay = new Map(trendRows.map((r) => [r.day, r]));
@@ -139,14 +175,15 @@ const getStats = async (req, res, next) => {
       data: {
         summary: {
           totalSales: todayAggregate._sum.totalAmount ?? 0,
-          totalInvoices: todayAggregate._count,
+          // Sales raised today, whatever became of them since; and the
+          // reversals issued today, which the money above is already net of.
+          // See docs/03 section 8 for why a voided sale still counts in the
+          // period it was raised in.
+          totalInvoices: countOf("SALE"),
+          creditNotes: countOf("CREDIT_NOTE"),
           totalCgst: todayAggregate._sum.cgst ?? 0,
           totalSgst: todayAggregate._sum.sgst ?? 0,
-          byPaymentMode: byPaymentMode.map((m) => ({
-            paymentMode: m.paymentMode,
-            _sum: { totalAmount: m._sum.totalAmount ?? 0 },
-            _count: m._count,
-          })),
+          byPaymentMode,
         },
         recentInvoices,
         // count is every matching batch; items is only what the panel renders.

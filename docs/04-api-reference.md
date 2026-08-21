@@ -633,6 +633,7 @@ Defaults to today. Returns every invoice for the day plus aggregates:
     "invoices": [ /* full invoices with customer.name */ ],
     "summary": {
       "totalInvoices": 42,
+      "creditNotes": 1,
       "totalSales": 18450.75,
       "totalCgst": 987.5,
       "totalSgst": 987.5,
@@ -647,6 +648,8 @@ Defaults to today. Returns every invoice for the day plus aggregates:
 ```
 
 Powers the dashboard, the Daily report, and — called seven times — the Sales Trend chart.
+
+`totalInvoices` counts **sales** raised that day, cancelled ones included; `creditNotes` counts the reversals issued that day; and every money figure sums **both**, so the takings are net. A sale voided the same day therefore reads `totalInvoices: 1, creditNotes: 1, totalSales: 0` — not `2`. The per-mode `_count.id` is likewise sales-only, so the mode counts add up to `totalInvoices`. The reasoning, and why a cancelled sale still counts in its own period, is in [03 §8](./03-data-model.md#8-data-lifecycle--retention).
 
 #### `GET /api/billing/invoices/gst-report?month=<1-12>&year=<yyyy>` — ADMIN, PHARMACIST
 
