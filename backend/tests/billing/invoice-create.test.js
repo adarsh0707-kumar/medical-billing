@@ -89,10 +89,10 @@ describe("GST engine fixtures", () => {
     expect(res.body.data).toMatchObject({ subtotal: 99.99, cgst: 9, sgst: 9, totalAmount: 117.99 });
   });
 
-  // Documents current behaviour rather than endorsing it — see open question Q1
-  // in docs/01-product-requirements.md. If the rule changes, this test should
-  // change with it deliberately.
-  it("F7 — a bill discount larger than the bill currently yields a negative total", async () => {
+  // Settled 2026-08-21: refused, not clamped. Clamping the total would break
+  // invariant I-4, and clamping the discount would store a figure the operator
+  // never typed. Money going back to a customer is a credit note.
+  it("F7 — a bill discount larger than the bill is refused", async () => {
     const { token } = await signIn(app);
     const { medicine, batch } = await makeSellable({ gstPercent: 0, sellingPrice: 250 });
 
@@ -101,8 +101,41 @@ describe("GST engine fixtures", () => {
       discountAmt: 600,
     });
 
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/more than the bill total/i);
+    expect(res.body.errors[0].field).toBe("discountAmt");
+    expect(res.body.errors[0].message).toMatch(/500\.00/);
+  });
+
+  it("F7 — nothing is written when the discount is refused", async () => {
+    const { token } = await signIn(app);
+    const { medicine, batch } = await makeSellable({ gstPercent: 0, sellingPrice: 250, quantity: 10 });
+
+    const before = await prisma.invoice.count();
+    await post(token, {
+      items: [line(medicine, batch, { quantity: 2 })],
+      discountAmt: 600,
+    });
+
+    // The guard runs before the transaction, so a refused bill must leave no
+    // invoice behind and no stock deducted.
+    expect(await prisma.invoice.count()).toBe(before);
+    expect((await prisma.batch.findUnique({ where: { id: batch.id } })).quantity).toBe(10);
+  });
+
+  it("F7 — a discount equal to the bill is allowed and totals zero", async () => {
+    const { token } = await signIn(app);
+    const { medicine, batch } = await makeSellable({ gstPercent: 0, sellingPrice: 250 });
+
+    const res = await post(token, {
+      items: [line(medicine, batch, { quantity: 2 })],
+      discountAmt: 500,
+    });
+
+    // The boundary is inclusive: a bill given away entirely is a real thing, a
+    // bill that owes the customer money is not.
     expect(res.status).toBe(201);
-    expect(res.body.data.totalAmount).toBe(-100);
+    expect(res.body.data.totalAmount).toBe(0);
   });
 });
 

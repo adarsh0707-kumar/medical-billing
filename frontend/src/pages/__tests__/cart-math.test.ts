@@ -76,13 +76,23 @@ describe("cart maths — docs/09 §4 GST fixtures", () => {
     expect(t.grandTotal).toBe(117.99);
   });
 
-  it("F7 bill discount exceeding the total goes negative, as the server does", () => {
-    // Deliberately asserts today's behaviour rather than a preferred one: whether
-    // this should reject or clamp to zero is undecided (docs/09 §4 F7, PRD Q1).
-    // The cart's job is to show what the invoice will store, so if the server
-    // starts clamping, this test should be updated alongside it — not before.
+  it("F7 bill discount exceeding the total still goes negative, so the UI can catch it", () => {
+    // Settled 2026-08-21: the server REJECTS such a bill with a 400 rather than
+    // clamping (docs/09 §4 F7). Neither side clamps, so the arithmetic here is
+    // unchanged — and it must stay unchanged, because the negative number is
+    // precisely what Billing.tsx tests to disable the button and explain why.
+    // Clamping to zero here would hide the condition and submit the request.
     const t = calcCartTotals([line(250.0, 2, 0, 0)], 600);
     expect(t.grandTotal).toBe(-100.0);
+    expect(t.grandTotal).toBeLessThan(0);
+  });
+
+  it("F7 a discount equal to the bill lands exactly on zero, which is allowed", () => {
+    // The boundary the server accepts. One paisa more is a 400, so the cart must
+    // agree on where that line falls or the button disables a valid sale.
+    const t = calcCartTotals([line(250.0, 2, 0, 0)], 500);
+    expect(t.grandTotal).toBe(0);
+    expect(t.grandTotal).not.toBeLessThan(0);
   });
 });
 

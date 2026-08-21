@@ -424,6 +424,15 @@ export default function Billing() {
       toast.error("Cart is empty!");
       return;
     }
+    // The server refuses a bill discount larger than the bill (F7, docs/09
+    // section 4) rather than clamping it. Caught here too so the cashier sees
+    // what is wrong at the counter instead of a 400 after pressing the button.
+    if (grandTotal < 0) {
+      toast.error(
+        `Discount is more than the bill. Reduce it to ${formatINR(subtotal + totalGst)} or less.`,
+      );
+      return;
+    }
     setSubmitting(true);
     try {
       const payload = {
@@ -862,7 +871,7 @@ export default function Billing() {
             <div className="space-y-2 pt-2">
               <Button
                 onClick={handleSubmit}
-                disabled={submitting || cart.length === 0}
+                disabled={submitting || cart.length === 0 || grandTotal < 0}
                 className="w-full bg-teal-600 hover:bg-teal-500 text-white font-bold h-11"
               >
                 {submitting ? (
