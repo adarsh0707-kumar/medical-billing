@@ -432,25 +432,54 @@ const getDailySummary = async (req, res, next) => {
     const endOfDay = new Date(date);
     endOfDay.setHours(23, 59, 59, 999);
 
+    const period = { date: { gte: startOfDay, lte: endOfDay } };
+
     const [invoices, totalStats] = await Promise.all([
       prisma.invoice.findMany({
-        where: { date: { gte: startOfDay, lte: endOfDay } },
+        where: period,
         include: { customer: { select: { name: true } } },
         orderBy: { date: "desc" },
       }),
+      // Money only. Summed across every document in the period, sales and credit
+      // notes alike, so a day's takings are net of anything reversed that day.
       prisma.invoice.aggregate({
-        where: { date: { gte: startOfDay, lte: endOfDay } },
+        where: period,
         _sum: { totalAmount: true, cgst: true, sgst: true },
-        _count: { id: true },
       }),
     ]);
 
-    // Group by payment mode
-    const byPaymentMode = await prisma.invoice.groupBy({
-      by: ["paymentMode"],
-      where: { date: { gte: startOfDay, lte: endOfDay } },
+    // Grouped by type as well as mode, so one query answers three questions: the
+    // net money per mode, how many sales were raised, and how many were reversed.
+    const byModeAndType = await prisma.invoice.groupBy({
+      by: ["paymentMode", "type"],
+      where: period,
       _sum: { totalAmount: true },
       _count: { id: true },
+    });
+
+    const countOf = (type) =>
+      byModeAndType.reduce((n, r) => (r.type === type ? n + r._count.id : n), 0);
+
+    // One row per mode, in the shape clients already read: the money is the net,
+    // the count is sales only — so the "N bills" under each mode adds up to the
+    // headline count instead of exceeding it by the number of voids.
+    const byPaymentMode = [
+      ...new Set(byModeAndType.map((r) => r.paymentMode)),
+    ].map((paymentMode) => {
+      const rows = byModeAndType.filter((r) => r.paymentMode === paymentMode);
+      return {
+        paymentMode,
+        _sum: {
+          // .plus, never +: these are Decimals and + concatenates them.
+          totalAmount: rows.reduce(
+            (sum, r) => sum.plus(r._sum.totalAmount ?? 0),
+            new D(0),
+          ),
+        },
+        _count: {
+          id: rows.reduce((n, r) => (r.type === "SALE" ? n + r._count.id : n), 0),
+        },
+      };
     });
 
     // Prisma returns Decimal (or null on an empty day) — add with Decimal
