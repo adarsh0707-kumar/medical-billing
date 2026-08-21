@@ -109,6 +109,33 @@ const createInvoice = async (req, res, next) => {
       .plus(totalSgst)
       .minus(billDiscount);
 
+    // F7 (docs/09 section 4): a bill discount larger than the bill is refused,
+    // not clamped.
+    //
+    // Clamping was the other candidate and is worse in every direction. Clamping
+    // the total breaks invariant I-4 — subtotal + cgst + sgst - discountAmt would
+    // no longer equal totalAmount, and that reconciliation is the guarantee every
+    // fixture asserts. Clamping the discount instead stores a figure the operator
+    // never typed. And a negative sale would be a second, undocumented way to
+    // move money back to a customer, when the credit note already is one.
+    //
+    // Checked here rather than in Zod: the limit is the computed bill, so a
+    // validator would need its own copy of the tax arithmetic. Two
+    // implementations of that is what G-17 cost us.
+    if (totalAmount.isNegative()) {
+      const billTotal = subtotal.plus(totalCgst).plus(totalSgst);
+      return res.status(400).json({
+        success: false,
+        message: `Discount of ${billDiscount.toFixed(2)} is more than the bill total of ${billTotal.toFixed(2)}.`,
+        errors: [
+          {
+            field: "discountAmt",
+            message: `discountAmt must be at most ${billTotal.toFixed(2)}`,
+          },
+        ],
+      });
+    }
+
     // Step 3 — Create invoice + deduct stock in a transaction.
     // The serial is allocated inside that transaction from an atomic per-day
     // counter, so concurrent checkouts each get a distinct number and a rolled
@@ -492,7 +519,7 @@ const getDailySummary = async (req, res, next) => {
       data: {
         invoices,
         summary: {
-          totalInvoices: totalStats._count.id,
+          totalInvoices: countOf("SALE"),
           totalSales: totalStats._sum.totalAmount ?? new D(0),
           totalCgst,
           totalSgst,
