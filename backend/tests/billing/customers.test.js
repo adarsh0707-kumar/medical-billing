@@ -67,6 +67,21 @@ describe("customers", () => {
     expect((await as(token, "get", "/api/billing/customers?search=p@x")).body.data).toHaveLength(1);
   });
 
+  it("reports a page count, the way the medicine and invoice lists do", async () => {
+    const { token } = await signIn(app);
+    for (const name of ["Page One", "Page Two", "Page Three"]) {
+      await as(token, "post", "/api/billing/customers", { name });
+    }
+
+    const res = await as(token, "get", "/api/billing/customers?limit=2");
+
+    // `pages` was the one field this endpoint left out while both other
+    // paginated endpoints returned it, so a client paging all three had to
+    // special-case this one. Asserted with toEqual rather than toMatchObject:
+    // the point is that the shape matches exactly, extra keys included.
+    expect(res.body.pagination).toEqual({ total: 3, page: 1, limit: 2, pages: 2 });
+  });
+
   it("returns a customer with their recent invoices", async () => {
     const { token, user } = await signIn(app);
     const created = await as(token, "post", "/api/billing/customers", customer);

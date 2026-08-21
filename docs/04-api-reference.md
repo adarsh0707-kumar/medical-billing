@@ -480,11 +480,9 @@ All routes require authentication.
   "data": [ { "id": "clc…", "name": "Ramesh Gupta", "phone": "9876543210",
               "email": null, "address": "…", "age": 54, "gender": "MALE",
               "createdAt": "…", "_count": { "invoices": 12 } } ],
-  "pagination": { "total": 340, "page": 1, "limit": 20 }
+  "pagination": { "total": 340, "page": 1, "limit": 20, "pages": 17 }
 }
 ```
-
-Note: this endpoint's `pagination` omits `pages` (the invoice and medicine endpoints include it).
 
 #### `GET /api/billing/customers/:id` — any role
 

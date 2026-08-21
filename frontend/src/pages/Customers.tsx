@@ -289,7 +289,7 @@ export default function Customers() {
       });
       const res = await api.get(`/api/billing/customers?${params}`);
       setCustomers(res.data.data);
-      setTotalPages(Math.ceil(res.data.pagination.total / 12));
+      setTotalPages(res.data.pagination.pages);
       setTotal(res.data.pagination.total);
     } catch {
       toast.error("Failed to fetch customers");
