@@ -90,10 +90,14 @@ export const calcItemTotal = (item: CartLine): LineTotals => {
  * Whole cart. Summed from the rounded line components exactly as the invoice header
  * is, so `subtotal + cgst + sgst - discount === grandTotal` holds by construction.
  *
- * A bill discount larger than the cart yields a negative total, which is what the
- * server does today. That is an open policy question (F7 in docs/09 section 4,
- * PRD Q1) and is deliberately not clamped here — the cart must show what the
- * invoice will store.
+ * A bill discount larger than the cart yields a negative total, and that is still
+ * exactly what the server computes — F7 (docs/09 section 4) was settled as *reject*
+ * rather than *clamp*, so neither side clamps. `POST /api/billing/invoices` refuses
+ * such a bill with a 400 naming the maximum.
+ *
+ * So the honest negative stays here on purpose: it is what the UI needs in order to
+ * recognise the state and refuse to submit, which is how the cart mirrors a server
+ * that rejects. Clamping to zero here would hide it and send the request anyway.
  */
 export const calcCartTotals = (
   cart: CartLine[],

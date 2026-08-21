@@ -119,7 +119,7 @@ These are the acceptance set for `createInvoice`. All values follow [PRD §8 BR-
 | **F4** Multi-line + bill discount  | F1 line + F2 line,`discountAmt` ₹50  | subtotal 515.00 · cgst 21.45 · sgst 21.45 ·**total 507.90**                                           |
 | **F5** Full line discount          | 1 × (₹80.00 × 1, 100%, GST 18%)      | taxable 0 · gst 0 ·**total 0.00**                                                                      |
 | **F6** Rounding                    | 1 × (₹33.33 × 3, 0%, GST 18%)        | taxable 99.99 · cgst 9.00 · sgst 9.00 ·**total 117.99**                                               |
-| **F7** Bill discount exceeds total | F3 with`discountAmt` ₹600            | Currently yields a**negative total** — decide and assert the intended behaviour (reject, or clamp to 0) |
+| **F7** Bill discount exceeds total | F3 with`discountAmt` ₹600            | **`400`**, field error on `discountAmt` naming the maximum. Settled 2026-08-21: refused, never clamped |
 
 **Invariants to assert on every fixture:**
 

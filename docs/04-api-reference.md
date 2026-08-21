@@ -546,7 +546,7 @@ The central write path of the product.
 | `items[].unitPrice`                                 | positive number                                                 |
 | `items[].discount`                                  | 0–100,**percentage**, default 0                          |
 | `items[].gstPercent`                                | number, default 0                                               |
-| `discountAmt`                                       | ≥ 0,**flat currency amount** on the bill, default 0      |
+| `discountAmt`                                       | ≥ 0,**flat currency amount** on the bill, default 0. May not exceed the bill — see below |
 | `paymentMode`                                       | `CASH` \| `UPI` \| `CARD` \| `CREDIT`, default `CASH` |
 | `paymentStatus`                                     | `PAID` \| `PENDING` \| `PARTIAL`, default `PAID`        |
 | `notes`                                             | optional string                                                 |
@@ -576,6 +576,7 @@ invoice:   subtotal    = Σ taxable
 | Body fails schema           | 400    | `Validation failed` + `errors[]`                                                                                                                                               |
 | A`batchId` does not exist | 404    | `Batch not found for <medicineName>`                                                                                                                                             |
 | Quantity exceeds stock      | 400    | `Insufficient stock for <medicineName>. Available: <n>`                                                                                                                          |
+| `discountAmt` exceeds the bill | 400 | `Discount of <x> is more than the bill total of <y>.`, with a field error on `discountAmt` naming the maximum. **Refused, never clamped** — clamping the total would break `subtotal + cgst + sgst − discountAmt = totalAmount`, and clamping the discount would store a figure nobody typed. Money moving back to a customer is a credit note (§9.2, void), not a negative sale ([F7](./09-testing-strategy.md#4-gst-engine-fixtures)) |
 | Invoice number collision    | 409    | `A record with this value already exists.` — unreachable in normal operation since the atomic per-day counter landed ([G-01](./08-gap-analysis.md#g-01)); retained as a backstop |
 
 There is **no update or delete** for invoices. Since 2026-08-20 there is a **void**, which is neither.
