@@ -492,7 +492,15 @@ const getDailySummary = async (req, res, next) => {
       data: {
         invoices,
         summary: {
-          totalInvoices: totalStats._count.id,
+          // Sales raised in the period, whatever became of them since. A sale
+          // voided next week was still raised today, and dropping it from
+          // today's count later would rewrite a period after the fact — the one
+          // thing the void design exists to prevent (docs/03 section 8).
+          totalInvoices: countOf("SALE"),
+          // Reversals issued in the period. The money above is already net of
+          // them; this is what makes that netting legible rather than a day
+          // that mysteriously took less than its invoices add up to.
+          creditNotes: countOf("CREDIT_NOTE"),
           totalSales: totalStats._sum.totalAmount ?? new D(0),
           totalCgst,
           totalSgst,
@@ -527,9 +535,9 @@ const getTrend = async (req, res, next) => {
     start.setHours(0, 0, 0, 0);
 
     const rows = await prisma.$queryRaw`
-      SELECT to_char(date_trunc('day', "date"), 'YYYY-MM-DD') AS day,
-             COUNT(*)::int                                    AS invoices,
-             COALESCE(SUM("totalAmount"), 0)                  AS sales
+      SELECT to_char(date_trunc('day', "date"), 'YYYY-MM-DD')   AS day,
+             COUNT(*) FILTER (WHERE "type" = 'SALE')::int       AS invoices,
+             COALESCE(SUM("totalAmount"), 0)                    AS sales
       FROM "Invoice"
       WHERE "date" >= ${start} AND "date" <= ${end}
         AND "paymentStatus" = 'PAID'::"PaymentStatus"

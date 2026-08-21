@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import request from "supertest";
 import prisma from "../../src/config/db.js";
-import { buildApp, signIn, makeSellable, makeUser } from "../helpers/factory.js";
+import { buildApp, signIn, makeSellable, makeUser, line } from "../helpers/factory.js";
 
 let app;
 beforeAll(() => {
@@ -90,6 +90,77 @@ describe("GET /api/billing/invoices/daily-summary", () => {
     // the first millisecond of the next day to be counted twice.
     expect(res.body.data.summary.totalInvoices).toBe(2);
     expect(res.body.data.summary.totalSales).toBe(30);
+  });
+
+  // A sale and its void on the same day. The money nets to zero either way; what
+  // is asserted here is the counting rule in docs/03 section 8 — the sale still
+  // counts in the period it was raised in, the reversal is reported separately,
+  // and the two are never conflated into "2 invoices".
+  it("counts a same-day void as one sale and one credit note, netting to zero", async () => {
+    const { token } = await signIn(app, "ADMIN");
+    const { medicine, batch } = await makeSellable({ quantity: 10 });
+
+    const sale = await request(app)
+      .post("/api/billing/invoices")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ items: [line(medicine, batch, { quantity: 2 })], paymentMode: "CASH" });
+    expect(sale.status).toBe(201);
+
+    const voided = await request(app)
+      .post(`/api/billing/invoices/${sale.body.data.id}/void`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ reason: "counted the wrong pack" });
+    expect(voided.status).toBe(201);
+
+    const s = (await get(token, "/api/billing/invoices/daily-summary")).body.data.summary;
+
+    expect(s.totalInvoices).toBe(1);
+    expect(s.creditNotes).toBe(1);
+    expect(s.totalSales).toBe(0);
+    expect(s.totalGst).toBe(0);
+
+    // The per-mode count must reconcile with the headline, or the dashboard
+    // shows "1 invoice" above "2 bills" on the same screen.
+    const cash = s.byPaymentMode.find((r) => r.paymentMode === "CASH");
+    expect(cash._count.id).toBe(1);
+    expect(cash._sum.totalAmount).toBe(0);
+  });
+
+  it("keeps counting a sale in its own day after a later void", async () => {
+    const { token } = await signIn(app, "ADMIN");
+    const { medicine, batch } = await makeSellable({ quantity: 10 });
+
+    const sale = await request(app)
+      .post("/api/billing/invoices")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ items: [line(medicine, batch, { quantity: 1 })], paymentMode: "CASH" });
+
+    // Move the sale into the past, leaving the credit note in today — the shape
+    // of a void raised days after the sale.
+    const past = new Date("2026-06-10T11:00:00.000");
+    await prisma.invoice.update({
+      where: { id: sale.body.data.id },
+      data: { date: past, createdAt: past },
+    });
+
+    await request(app)
+      .post(`/api/billing/invoices/${sale.body.data.id}/void`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ reason: "returned a week later" });
+
+    // The sale's own day is untouched by a void that happened later: it still
+    // reports one sale at full value. Rewriting it would edit a period that may
+    // already have been filed.
+    const then = (await get(token, "/api/billing/invoices/daily-summary?date=2026-06-10")).body.data.summary;
+    expect(then.totalInvoices).toBe(1);
+    expect(then.creditNotes).toBe(0);
+    expect(then.totalSales).toBeGreaterThan(0);
+
+    // Today carries the reversal, and no sale.
+    const today = (await get(token, "/api/billing/invoices/daily-summary")).body.data.summary;
+    expect(today.totalInvoices).toBe(0);
+    expect(today.creditNotes).toBe(1);
+    expect(today.totalSales).toBeLessThan(0);
   });
 
   it("reports zeros for a day with no trade", async () => {
@@ -242,6 +313,29 @@ describe("GET /api/billing/invoices/trend", () => {
     });
     return res.body.data;
   };
+
+  // Same counting rule as the daily summary (docs/03 section 8): the money nets,
+  // the count is sales only. Without the split a voided day charts as "1
+  // invoice, zero rupees", which reads as a bug in the chart rather than a void.
+  it("nets the money but counts only the sale when a day contains a void", async () => {
+    const { token } = await signIn(app, "ADMIN");
+    const { medicine, batch } = await makeSellable({ quantity: 10 });
+
+    const sale = await request(app)
+      .post("/api/billing/invoices")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ items: [line(medicine, batch, { quantity: 2 })], paymentMode: "CASH" });
+
+    await request(app)
+      .post(`/api/billing/invoices/${sale.body.data.id}/void`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ reason: "wrong customer" });
+
+    const today = (await get(token, "/api/billing/invoices/trend")).body.data.at(-1);
+
+    expect(today.invoices).toBe(1);
+    expect(today.sales).toBe(0);
+  });
 
   it("returns one entry per day, oldest first, defaulting to 7", async () => {
     const { token } = await signIn(app, "ADMIN");
