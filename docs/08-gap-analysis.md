@@ -22,7 +22,7 @@ The root `README.md`, `backend/README.md`, `frontend/README.md` and `nginx/READM
 | D-5                   | Frontend runs on port 3000                                                                                            | root README                    | Compose maps**5173**                                                                                                                                                                                                                                                                                                           |
 | D-6                   | `npm test`, `npm run test:coverage`, `npm run test:watch`, `npm run lint`, `npm run format` for the backend | backend + root README          | ~~Only `test` exists and it exits 1~~ — the three test scripts are real as of 2026-08-19. There is still no backend lint or format script                                                                                                                                                                                        |
 | D-7                   | `express-validator` is a dependency                                                                                 | backend README                 | The project uses**Zod**                                                                                                                                                                                                                                                                                                        |
-| D-8                   | Redis caches frequently accessed data                                                                                 | root + backend README          | The client connects and is imported by**nothing** ([G-03](#g-03))                                                                                                                                                                                                                                                               |
+| D-8                   | Redis caches frequently accessed data                                                                                 | root + backend README          | Nothing was ever cached. The client connected and was imported by**nothing**, and the service has since been removed outright ([G-03](#g-03))                                                                                                                                                                       |
 | D-9                   | Pagination, indexing and connection pooling are performance features                                                  | backend README                 | Pagination exists on 3 of 8 list endpoints;**no custom indexes exist**; pooling is Prisma's default                                                                                                                                                                                                                            |
 | D-10                  | `inventory.controller.js` and a `frontend/src/api/` directory exist                                               | backend + frontend README      | Neither exists — inventory is split across 5 controllers; the API client is`frontend/src/lib/api.ts`                                                                                                                                                                                                                              |
 | D-11                  | Nginx provides gzip, security headers, load balancing, SSL                                                            | nginx README                   | `nginx/nginx.conf` is 20 lines: two `proxy_pass` blocks. None of those features are configured                                                                                                                                                                                                                                   |
@@ -61,7 +61,7 @@ Severity: 🔴 causes data corruption or a security exposure · 🟠 causes inco
 | [G-10](#g-10) | ✅ Fixed        | `totalStock` reports one batch, not all                               |
 | [G-11](#g-11) | ✅ Fixed        | User-management routes are unvalidated                                  |
 | [G-12](#g-12) | ✅ Fixed        | FK violations surface as 500                                            |
-| [G-03](#g-03) | 🟡              | Redis is a dead dependency                                              |
+| [G-03](#g-03) | ✅ Fixed        | Redis was a dead dependency                                             |
 | [G-08](#g-08) | ✅ Fixed | Sales trend costs 7 HTTP round trips |
 | [G-13](#g-13) | 🟡 Partly fixed | Dead files deleted 2026-08-20; three artefacts await a product decision |
 | [G-14](#g-14) | ✅ Fixed        | No automated tests                                                      |
@@ -366,13 +366,23 @@ Soft-deleting suppliers the way medicines are soft-deleted remains worth conside
 
 ---
 
-### <a id="g-03"></a>G-03 🟡 Redis is a dead dependency
+### <a id="g-03"></a>G-03 ✅ FIXED — Redis was a dead dependency
 
-**Where:** [`backend/src/config/redis.js`](../backend/src/config/redis.js)
+**Where:** `backend/src/config/redis.js` (deleted)
 
-**Problem.** The client is created, connects, and logs success. **No module imports it.** The compose file runs a Redis container and publishes port 6379 with no password. Two READMEs claim caching is a live performance feature. Nothing is cached.
+**Problem.** The client was created, connected, and logged success. **No module imported it.** The compose file ran a Redis container and published port 6379 with no password. Two READMEs claimed caching was a live performance feature. Nothing was cached.
 
-**Fix.** Either use it or drop it. The highest-value first use is the per-request user lookup in `protect` — the single most frequent query in the system — with a short TTL and invalidation on user update ([Phase 11.1](./05-roadmap-and-phases.md#phase-11--performance--scale)). Category and manufacturer lists are the next candidates. If caching is deferred, remove the service from compose so the dependency surface matches reality.
+**Fix proposed at review time.** Either use it or drop it. The highest-value first use would have been the per-request user lookup in `protect` — the single most frequent query in the system — with a short TTL and invalidation on user update. Category and manufacturer lists were the next candidates. If caching were deferred, remove the service from compose so the dependency surface matches reality.
+
+---
+
+**Resolution (2026-08-20).** Dropped, not used. `config/redis.js`, the `REDIS_URL` variable and the compose service are all gone; [Phase 8.4](./05-roadmap-and-phases.md#phase-8--production-readiness) removed it rather than securing it, and [roadmap 11.1](./05-roadmap-and-phases.md#phase-11--performance--scale) records the caching plan as **not applicable** for the same reason.
+
+The deciding argument was that the cache had no measured problem to solve. Caching the `protect` lookup would also have traded directly against the immediate-deactivation guarantee (invariant I-7) — deactivating a user would stop taking effect until the TTL expired — which is a real security property being spent on an unmeasured performance gain. A dependency that is running, unused, unauthenticated and published on a host port is a liability with no offsetting benefit.
+
+**Documentation lagged the removal by a day.** The service was deleted on 2026-08-20 but nine documents still described Redis as a live component into 2026-08-21 — including an operator prerequisite in `README.md`, a `REDIS_URL` line in the non-Docker `.env` recipe in `docs/06`, and this entry, which was still open and still telling readers to secure a port nothing binds. All corrected 2026-08-21. `CHANGELOG.md` 1.0.0 and `Architecture.txt` keep their mentions: both are dated records of what was true when written.
+
+**Verified:** `grep -ril redis --exclude-dir=node_modules .` returns only those two historical files and the entries — this one included — that describe the removal itself.
 
 ---
 
@@ -416,7 +426,7 @@ The empty route files were actively misleading: a reader reasonably assumes `rep
 | ------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `generateRefreshToken` (`jwt.utils.js`)                                                | Never called. Keep for the Phase 8 refresh-token rotation, or delete? Holds`jwt.utils.js` at 50% function coverage                                                                                                                                  |
 | `generatePurchaseNumber` (`invoice.utils.js`) + `Purchase` / `PurchaseItem` models | No route, controller or UI.[PRD Q7](./01-product-requirements.md#14-open-questions): build the purchases module in Phase 10, or drop the schema? `GET /api/inventory/suppliers/:id` returns a `purchases` array that is always empty because of it |
-| Redis client                                                                               | See[G-03](#g-03). Either use it (Phase 11.1 would cache the per-request user lookup in `protect`) or remove the service from `docker-compose.yml` — not both                                                                                      |
+| ~~Redis client~~                                                                          | ✅**Decided and done** — removed rather than used ([G-03](#g-03)). Caching the `protect` lookup would have traded the immediate-deactivation guarantee for an unmeasured gain                                                              |
 
 ---
 
@@ -569,6 +579,6 @@ The query-validation tests did not catch it because they asserted only status co
 | ~~6~~  | ~~[G-14](#g-14)~~                                      | **Done 2026-08-19** — 278 tests, CI, and a coverage gate on the money and auth paths                                               |
 | ~~6b~~ | ~~[G-17](#g-17)~~                                      | **Done 2026-08-20** — cart and invoice round identically, verified over 2.2M combinations and guarded by the first frontend suite  |
 | ~~6c~~ | ~~[G-18](#g-18)~~                                      | **Done 2026-08-20** — infrastructure failures no longer masquerade as bad credentials                                              |
-| 7       | [G-08](#g-08), [G-03](#g-03), [G-13](#g-13), [G-15](#g-15) | Performance, dead weight, operational usability                                                                                           |
+| ~~7~~   | ~~[G-08](#g-08), [G-03](#g-03), [G-13](#g-13), [G-15](#g-15)~~ | **Done** — the trend query, the void path and the Redis removal all landed 2026-08-20; G-13 keeps two open product decisions                                     |
 | 8       | Part A (docs)                                          | Trim the READMEs to point at`docs/`                                                                                                     |
 | 9       | [G-16](#g-16)                                           | Frontend data-layer refactor. Largest and least urgent — the screens work today. Closing it restores`set-state-in-effect` to `error` |

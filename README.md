@@ -11,8 +11,8 @@ handful of places where the obvious change is the wrong one.
 
 ## Quick start
 
-Requires Docker and Docker Compose. For a non-Docker run you also need Node 20,
-PostgreSQL 15 and Redis.
+Requires Docker and Docker Compose. For a non-Docker run you also need Node 20
+and PostgreSQL 15.
 
 ```bash
 git clone https://github.com/adarsh0707-kumar/medical-billing.git
@@ -56,7 +56,6 @@ Full requirement list, each with a status:
 | Frontend | React 19, TypeScript, Vite, Tailwind v4, shadcn/ui |
 | Backend | Node 20, Express 5, Prisma 5 |
 | Database | PostgreSQL 15 |
-| Cache | Redis 7 — running, but not yet used by the application |
 | Web server | nginx |
 
 ---

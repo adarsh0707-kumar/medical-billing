@@ -71,7 +71,7 @@ Authentication & RBAC · User management · Category & manufacturer masters · M
 
 ### In scope — planned (not built)
 
-Purchase orders & goods receipt (schema exists, no API) · Redis caching (client connects, unused) · Automated tests · Server-side PDF invoices · Audit log.
+Purchase orders & goods receipt (schema exists, no API) · Server-side PDF invoices · Audit log.
 
 ### Out of scope
 
@@ -246,8 +246,8 @@ Status legend: `✅` implemented · `🟡` partial · `⬜` planned. "Roles" is 
 | NFR-01 | Performance     | POS search returns in < 300 ms on a catalogue of 5,000 medicines | 🟡 Unmeasured. Search is`LIMIT 10` with `contains` — no trigram index, so it degrades linearly                                                                           |       |
 | NFR-02 | Performance     | List endpoints are paginated                                     | ✅ Paginated where volume warrants it. `batches` was the outlier — 25,000 rows and 8 MB per page load before 2026-08-20, now 20 rows and 7 KB. Categories, manufacturers and suppliers stay unpaginated deliberately: they populate form dropdowns, and truncating them would silently remove options |       |
 | NFR-03 | Performance     | Response compression                                             | ✅`compression()` middleware                                                                                                                                                |       |
-| NFR-04 | Performance     | Hot reads served from cache                                      | 🟡 Redis connects but**no code reads or writes it** — [G-03](./08-gap-analysis.md#g-03)                                                                                 |       |
-| NFR-05 | Availability    | The API stays up if Redis is down                                | ✅ Redis failure is explicitly non-fatal                                                                                                                                      |       |
+| NFR-04 | Performance     | Hot reads served from cache                                      | ⬜**No cache layer exists.** Redis was provisioned before it had a consumer and removed in Phase 8 without ever acquiring one ([G-03](./08-gap-analysis.md#g-03)). Revisit only with measured evidence — the obvious candidate, the per-request user reload, trades against instant deactivation |       |
+| ~~NFR-05~~ | Availability | ~~The API stays up if Redis is down~~                        | **Retired** — vacuously true once there is no Redis. Kept as a row because other documents cite NFR numbers                                                             |       |
 | NFR-06 | Availability    | The API refuses to start without a database                      | ✅`process.exit(1)` on connect failure                                                                                                                                      |       |
 | NFR-07 | Availability    | Postgres readiness gates backend start                           | ✅ Compose healthcheck                                                                                                                                                        |       |
 | NFR-08 | Security        | All mutating routes require a valid JWT                          | ✅ Except`POST /api/auth/login`                                                                                                                                             |       |
@@ -391,7 +391,6 @@ A **cancelled invoice stays in the month it was issued in**, and the credit note
 | Dependency       | Purpose                          | Failure impact                                |
 | ---------------- | -------------------------------- | --------------------------------------------- |
 | PostgreSQL 15    | System of record                 | Total outage — API exits on start-up failure |
-| Redis 7          | Intended cache                   | None today — nothing reads it                |
 | Nginx            | Single entry point on :80        | Direct ports 5173/5000 still work             |
 | Docker / Compose | Local and single-host deployment | Manual`npm` runs remain possible            |
 

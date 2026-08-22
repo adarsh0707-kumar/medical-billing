@@ -130,7 +130,7 @@ Since 2026-08-19 the SPA is **same-origin** on both entry points (nginx on `:80`
 
 **TLS.** None. Nginx listens on `:80` only. Credentials and tokens cross the network in cleartext. On a switched LAN this is a moderate risk; on anything else it is disqualifying.
 
-**Exposed data ports.** `docker-compose.yml` publishes Postgres (5432) and Redis (6379) to the host. Redis has no password. If the host has a public interface, both are directly reachable.
+**Exposed data ports.** `docker-compose.yml` publishes Postgres (5432) to the host. If the host has a public interface it is directly reachable, with only the committed development password in front of it. `docker-compose.prod.yml` publishes 80 and 443 and nothing else. Redis used to be published here too, unauthenticated; it was removed outright in Phase 8 rather than secured ([G-03](./08-gap-analysis.md#g-03)).
 
 ---
 
@@ -178,7 +178,7 @@ Assets: customer PII and purchase history · financial records (invoices, GST li
 | T-5  | Privilege escalation                       | Guessing admin routes                                                                  | Low        | High              | `authorize()` on every route                                                              | Low                                                                  |
 | T-6  | Stock/price tampering                      | `PUT /batches/:id`                                                                   | Low        | High              | ADMIN/PHARMACIST only; strict schema, stock not editable                                    | Low — price edits are still untracked, pending an audit log (P1-11) |
 | T-7  | Direct database access                     | Exposed :5432 with a committed password                                                | Med        | Critical          | None                                                                                        | **Critical** in any exposed deployment                         |
-| T-8  | Unauthenticated Redis access               | Exposed :6379, no auth                                                                 | Med        | Low today (empty) | None                                                                                        | Low now, High once caching lands                                     |
+| ~~T-8~~ | ~~Unauthenticated Redis access~~        | ~~Exposed :6379, no auth~~                                                             | —         | —                | **Eliminated** — the service was removed, not secured ([G-03](./08-gap-analysis.md#g-03))                                                                       | None. Reintroducing a cache reopens this threat                      |
 | T-9  | Insider data exfiltration                  | Any role can page through all customers                                                | Med        | Med               | None — no logging or export controls                                                       | **Med**                                                        |
 | T-10 | Denial of service                          | ~~`?limit=999999`~~, shared rate bucket                                             | Med        | Med               | Per-client limiter;`limit` capped at 100 and every query parameter validated (2026-08-20) | Low — bounded page sizes; volumetric DoS remains out of scope       |
 | T-11 | Financial data corruption                  | Concurrency races ([G-01](./08-gap-analysis.md#g-01), [G-09](./08-gap-analysis.md#g-09)) | Med        | High              | None                                                                                        | **High** — Phase 7                                            |
@@ -199,7 +199,7 @@ Assets: customer PII and purchase history · financial records (invoices, GST li
 **P1 — next**
 
 6. Password policy: ~~minimum length~~ (done — 8 chars), breach check, and a forced reset flow.
-7. Invalidate tokens on password change and on deactivation (a Redis denylist keyed by user id + issued-at).
+7. Invalidate tokens on password change and on deactivation. A denylist keyed by user id + issued-at is the usual shape, but note there is **no cache store in the stack** since Redis was removed ([G-03](./08-gap-analysis.md#g-03)) — a `tokenVersion` column on `User`, compared against the token's `iat`, needs no new dependency and rides on the user reload `protect` already performs.
 8. Shorten the access token to 15–60 minutes and implement the refresh rotation the util already anticipates.
 9. Add a CSP header to the SPA.
 10. ~~Clamp `limit` on every paginated endpoint and validate query parameters.~~ **Done 2026-08-20** — `validateQuery` on all 10 query surfaces, `MAX_LIMIT` 100, 44 tests.
@@ -208,7 +208,7 @@ Assets: customer PII and purchase history · financial records (invoices, GST li
 **P2 — hardening and hygiene**
 
 12. Equalise login timing with a dummy bcrypt comparison on the user-miss path.
-13. Redis `requirepass` before caching goes live.
+13. ~~Redis `requirepass` before caching goes live.~~ **Not applicable** — there is no Redis ([G-03](./08-gap-analysis.md#g-03)). Reinstate this item if a cache store is ever reintroduced.
 14. Dependency scanning (`npm audit` / Dependabot) in CI.
 15. Restrict customer-history reads by role if staff counts grow.
 16. Document key rotation for `JWT_SECRET` and database credentials.

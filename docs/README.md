@@ -37,7 +37,6 @@ A single-store **retail pharmacy billing and inventory system** for the Indian m
 ```
 React 19 + Vite SPA  →  Express 5 REST API  →  PostgreSQL 15 (via Prisma 5)
        (5173)                  (5000)                    (5432)
-                                  ↘ Redis 7 (6379) — connected, not yet used
        All fronted by Nginx on :80 in Docker Compose
 ```
 
