@@ -519,9 +519,6 @@ const getDailySummary = async (req, res, next) => {
       data: {
         invoices,
         summary: {
-
-          totalInvoices: countOf("SALE"),
-=======
           // Sales raised in the period, whatever became of them since. A sale
           // voided next week was still raised today, and dropping it from
           // today's count later would rewrite a period after the fact — the one
