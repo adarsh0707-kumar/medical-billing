@@ -1,5 +1,6 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, vi } from "vitest";
 import request from "supertest";
+import bcrypt from "bcryptjs";
 import prisma from "../../src/config/db.js";
 import { buildApp, makeUser, signIn, tokenFor, PASSWORD } from "../helpers/factory.js";
 import { generateToken } from "../../src/utils/jwt.utils.js";
@@ -53,6 +54,58 @@ describe("POST /api/auth/login", () => {
     for (const res of [unknown, wrong, disabled]) {
       expect(res.status).toBe(401);
       expect(res.body).toEqual({ success: false, message: "Invalid credentials." });
+      // A failed sign-in must not open a session either.
+      expect(res.headers["set-cookie"]).toBeUndefined();
+    }
+  });
+
+  // Guards docs/07 P2-12. The bodies above were always identical; what gave the
+  // answer away was how fast they arrived. bcrypt at cost 12 is the expensive
+  // part of a login, so skipping it on a miss is measurable from outside.
+  //
+  // Asserted as a call count rather than a stopwatch: a wall-clock threshold
+  // would be flaky on a loaded CI box, and "did it do the work" is the actual
+  // property — the timing is only its consequence.
+  it.each([
+    ["an unknown email", { email: "nobody@test.local", password: PASSWORD }],
+    ["a wrong password", { email: "timing@test.local", password: "not-the-password" }],
+    ["a deactivated account", { email: "timing-off@test.local", password: PASSWORD }],
+  ])("spends a bcrypt comparison on %s", async (_label, credentials) => {
+    await makeUser({ email: "timing@test.local" });
+    await makeUser({
+      email: "timing-off@test.local",
+      isActive: false,
+      role: "CASHIER",
+    });
+
+    const spy = vi.spyOn(bcrypt, "compare");
+    try {
+      const res = await request(app).post("/api/auth/login").send(credentials);
+
+      expect(res.status).toBe(401);
+      // Exactly one, on every path. Zero means the miss short-circuited and the
+      // timing leak is back; more than one would mean the work is no longer
+      // uniform either.
+      expect(spy).toHaveBeenCalledTimes(1);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("compares against a decoy that nothing can match on the miss path", async () => {
+    const spy = vi.spyOn(bcrypt, "compare");
+    try {
+      await request(app)
+        .post("/api/auth/login")
+        .send({ email: "nobody-at-all@test.local", password: PASSWORD });
+
+      const [, hash] = spy.mock.calls[0];
+      // Cost 12, like a real stored password — a cheaper decoy would restore
+      // the difference it exists to hide.
+      expect(hash).toMatch(/^\$2[aby]\$12\$/);
+      expect(await bcrypt.compare(PASSWORD, hash)).toBe(false);
+    } finally {
+      spy.mockRestore();
     }
   });
 
