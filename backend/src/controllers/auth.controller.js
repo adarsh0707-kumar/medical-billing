@@ -29,7 +29,10 @@ const register = async (req, res, next) => {
       },
     });
 
-    const token = generateToken(user.id);
+    // A brand-new account is at revocation version 0. Passed explicitly rather
+    // than left to the default, and not added to the `select` above, because
+    // the counter is internal state and this select is the response shape.
+    const token = generateToken(user.id, 0);
 
     res.status(201).json({
       success: true,
@@ -71,7 +74,7 @@ const login = async (req, res, next) => {
       });
     }
 
-    const token = generateToken(user.id);
+    const token = generateToken(user.id, user.tokenVersion);
 
     res.json({
       success: true,
@@ -131,4 +134,37 @@ const changePassword = async (req, res, next) => {
   }
 };
 
-module.exports = { register, login, getMe, changePassword };
+// ─── Logout ────────────────────────────────────────────
+// Ends every session this user has open, not just the one that called
+// (FR-AUTH-09). Until this existed, logout was a client-side localStorage
+// clear: the token stayed valid for the rest of its seven days, and anyone
+// holding a copy kept full access. The only lever was rotating JWT_SECRET,
+// which signs out the entire shop.
+//
+// Increment rather than set, so two concurrent logouts cannot race to the same
+// value — and so this composes with any future bump (a password change, an
+// admin-forced sign-out) without either needing to know about the other.
+//
+// Deliberately mounted with `protect` alone. A user carrying
+// mustChangePassword must still be able to end their session; trapping them in
+// a state they can only leave by choosing a new password would be a worse
+// outcome than the one the flag exists to prevent.
+const logout = async (req, res, next) => {
+  try {
+    await prisma.user.update({
+      where: { id: req.user.id },
+      data: { tokenVersion: { increment: 1 } },
+    });
+
+    // 200 with no data: the client's job is to discard its copy, and there is
+    // nothing to hand back. Calling it twice is harmless.
+    res.json({
+      success: true,
+      message: "Signed out. All sessions for this account have ended.",
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+module.exports = { register, login, getMe, changePassword, logout };

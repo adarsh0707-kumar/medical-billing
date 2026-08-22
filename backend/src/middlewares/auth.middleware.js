@@ -50,6 +50,7 @@ const protect = async (req, res, next) => {
         role: true,
         isActive: true,
         mustChangePassword: true,
+        tokenVersion: true,
       },
     });
 
@@ -57,6 +58,20 @@ const protect = async (req, res, next) => {
       return res.status(401).json({
         success: false,
         message: "User not found or deactivated.",
+      });
+    }
+
+    // Revocation (FR-AUTH-09). The token carries the counter as it stood when
+    // it was signed; logout increments the column, so every token issued before
+    // it stops verifying here. Free, because the row is already loaded.
+    //
+    // A missing claim reads as 0, which is the column's default — tokens issued
+    // before this control existed keep working until that user logs out once,
+    // so shipping it did not sign everybody out.
+    if ((decoded.tokenVersion ?? 0) !== user.tokenVersion) {
+      return res.status(401).json({
+        success: false,
+        message: "Session ended. Please sign in again.",
       });
     }
 

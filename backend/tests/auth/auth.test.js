@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import request from "supertest";
 import prisma from "../../src/config/db.js";
-import { buildApp, makeUser, signIn, PASSWORD } from "../helpers/factory.js";
+import { buildApp, makeUser, signIn, tokenFor, PASSWORD } from "../helpers/factory.js";
 import { generateToken } from "../../src/utils/jwt.utils.js";
 import jwt from "jsonwebtoken";
 
@@ -183,6 +183,93 @@ describe("token handling", () => {
     } finally {
       process.env.JWT_SECRET = real;
     }
+  });
+});
+
+// Guards FR-AUTH-09 / docs/07 A-2. Before this, logout was a client-side
+// localStorage clear and a leaked token stayed valid for its full seven days.
+describe("POST /api/auth/logout", () => {
+  const me = (token) =>
+    request(app).get("/api/auth/me").set("Authorization", `Bearer ${token}`);
+  const logout = (token) =>
+    request(app).post("/api/auth/logout").set("Authorization", `Bearer ${token}`);
+
+  it("ends the session it was called with", async () => {
+    const { token } = await signIn(app, "CASHIER");
+    expect((await me(token)).status).toBe(200);
+
+    expect((await logout(token)).status).toBe(200);
+
+    const res = await me(token);
+    expect(res.status).toBe(401);
+    expect(res.body.message).toBe("Session ended. Please sign in again.");
+  });
+
+  it("ends every other session for the same user, not just the caller's", async () => {
+    const { token: first, user } = await signIn(app, "CASHIER");
+    const second = await tokenFor(user.id);
+    expect((await me(second)).status).toBe(200);
+
+    await logout(first);
+
+    // The point of the whole feature: a stolen copy of the token dies with the
+    // session the user actually ended, which a client-side clear cannot do.
+    expect((await me(second)).status).toBe(401);
+  });
+
+  it("leaves other users signed in", async () => {
+    const { token: cashier } = await signIn(app, "CASHIER");
+    const { token: admin } = await signIn(app, "ADMIN");
+
+    await logout(cashier);
+
+    expect((await me(admin)).status).toBe(200);
+  });
+
+  it("issues a working token again on the next sign-in", async () => {
+    const { token, user } = await signIn(app, "CASHIER");
+    await logout(token);
+
+    const res = await request(app)
+      .post("/api/auth/login")
+      .send({ email: user.email, password: PASSWORD });
+
+    expect(res.status).toBe(200);
+    expect((await me(res.body.data.token)).status).toBe(200);
+  });
+
+  it("is available to an account that must change its password", async () => {
+    const user = await makeUser({ role: "CASHIER", email: "blocked@test.local" });
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { mustChangePassword: true },
+    });
+    const token = await tokenFor(user.id);
+
+    // Every other route answers 403 PASSWORD_CHANGE_REQUIRED. Being unable to
+    // sign out of an account you cannot otherwise use would be a worse trap
+    // than the one the flag exists to set.
+    expect((await request(app).get("/api/inventory/categories").set("Authorization", `Bearer ${token}`)).status).toBe(403);
+    expect((await logout(token)).status).toBe(200);
+  });
+
+  it("refuses an anonymous caller", async () => {
+    expect((await request(app).post("/api/auth/logout")).status).toBe(401);
+  });
+
+  it("still accepts a token minted before the revocation counter existed", async () => {
+    const { user } = await signIn(app, "CASHIER");
+    // No tokenVersion claim at all, as tokens issued before this shipped.
+    const legacy = jwt.sign({ id: user.id }, process.env.JWT_SECRET, {
+      expiresIn: "7d",
+    });
+
+    // Reads as version 0, which is the column default — so deploying the
+    // feature did not sign every existing user out.
+    expect((await me(legacy)).status).toBe(200);
+
+    await logout(legacy);
+    expect((await me(legacy)).status).toBe(401);
   });
 });
 

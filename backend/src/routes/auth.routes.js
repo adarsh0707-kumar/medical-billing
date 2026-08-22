@@ -5,6 +5,7 @@ const {
   login,
   getMe,
   changePassword,
+  logout,
 } = require("../controllers/auth.controller");
 const { protect, authorize } = require("../middlewares/auth.middleware");
 const requirePasswordChange = require("../middlewares/password-change.middleware");
@@ -30,5 +31,8 @@ router.put(
   validate(changePasswordSchema),
   changePassword,
 ); // any logged in user
+// No requirePasswordChange, for the same reason /me and /change-password omit
+// it: a blocked account must still be able to end its own session.
+router.post("/logout", protect, logout); // any logged in user
 
 module.exports = router;

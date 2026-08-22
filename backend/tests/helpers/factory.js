@@ -39,7 +39,17 @@ export async function makeUser({
 // an end for most tests, and tests/auth/auth.test.js covers the route itself.
 export async function signIn(_app, role = "ADMIN") {
   const user = await makeUser({ role });
-  return { user, token: generateToken(user.id) };
+  // Carry the revocation counter, so a token minted here verifies the same way
+  // one from the login route does (FR-AUTH-09).
+  return { user, token: generateToken(user.id, user.tokenVersion) };
+}
+
+// A second token for a user who already exists — for asserting that logout ends
+// *every* session, not only the one that called it. Reads the counter fresh, so
+// calling it after a logout produces a token that works.
+export async function tokenFor(userId) {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  return generateToken(user.id, user.tokenVersion);
 }
 
 // For tests that need the real sign-in path.
