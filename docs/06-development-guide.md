@@ -288,24 +288,34 @@ Before opening a PR:
 
 ```
 medical-billing/
-├── docker-compose.yml        5 services; JWT_SECRET from host env
+├── docker-compose.yml        4 services (frontend, backend, postgres, nginx)
+├── docker-compose.prod.yml   the deployable stack — no bind mounts, no literals
 ├── .env                      gitignored — JWT_SECRET lives here
+├── .env.prod.example         copy to .env.prod and fill in every value
 ├── Architecture.txt          historical plan; superseded by docs/02
-├── README.md                 partly aspirational — see docs/08
-├── CHANGELOG.md              v1.0.0 release notes
+├── README.md                 what this is and how to run it; links into docs/
+├── CHANGELOG.md              1.0.0, plus 1.1.0 unreleased on main
 ├── docs/                     ← this documentation set
-├── nginx/nginx.conf          :80 → frontend:5173 and /api → backend:5000
+├── scripts/                  backup.sh · restore.sh · gen-cert.sh
+├── nginx/
+│   ├── nginx.conf            dev: :80 → frontend:5173 and /api → backend:5000
+│   └── nginx.prod.conf       prod: TLS, HSTS, CSP, 80 → 443
 ├── backend/
-│   ├── prisma/schema.prisma  11 models, 4 enums, 5 migrations
-│   ├── src/                  index · config · middlewares · validators · routes
+│   ├── prisma/schema.prisma  12 models, 6 enums, 8 migrations
+│   ├── src/                  index (boot guard + listen) · app (createApp factory)
+│   │                         · config · middlewares · validators · routes
 │   │                         · controllers · utils
+│   ├── tests/                368 tests; needs a DATABASE_URL ending in _test
+│   ├── Dockerfile            multi-stage production image, runs as USER node
 │   ├── Dockerfile.dev        node:20-slim + openssl + nodemon
 │   └── .env                  gitignored
 └── frontend/
     ├── src/                  pages · components/ui · store · hooks · lib · types
-    ├── vite.config.ts        React 19 compiler, Tailwind v4, @ alias
+    ├── e2e/                  Playwright browser smoke, 6 flows
+    ├── vite.config.ts        React 19 compiler, Tailwind v4, @ alias, /api proxy
+    ├── Dockerfile            builds with Vite, serves from nginx:alpine
     ├── Dockerfile.dev        node:20-slim, npm install --legacy-peer-deps
-    └── .env                  gitignored
+    └── .env                  gitignored (empty — the SPA needs no variables)
 ```
 
 ---

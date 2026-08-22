@@ -267,7 +267,7 @@ Status legend: `✅` implemented · `🟡` partial · `⬜` planned. "Roles" is 
 | NFR-22 | Maintainability | Type safety on the client                                        | 🟡 TypeScript throughout, but API responses are typed ad-hoc per page, not from a shared contract                                                                             |       |
 | NFR-23 | Maintainability | Automated test coverage                                          | ✅ 368 backend tests (Vitest + Supertest), 67 frontend unit tests (Vitest + Testing Library) and a 6-flow Playwright smoke, all on CI. ~85% of statements overall, with a 90% gate on the invoice and auth paths |       |
 | NFR-24 | Portability     | One-command local bring-up                                       | ✅`docker compose up`                                                                                                                                                       |       |
-| NFR-25 | Observability   | Request logging                                                  | 🟡`morgan("dev")` only; no structured logs, no request IDs, no error aggregation                                                                                            |       |
+| NFR-25 | Observability   | Request logging                                                  | ✅**pino** since Phase 8.8 — one JSON object per line in production, pretty in development, silent under test. Every request carries a correlation id echoed as `X-Request-Id`, and tokens and password fields are redacted. No external error aggregation (no Sentry or equivalent), which is a deployment choice rather than a gap in the code |       |
 | NFR-26 | Backup          | Documented restore procedure                                     | ⬜`pgdata` volume only                                                                                                                                                      |       |
 
 ---
@@ -370,7 +370,7 @@ A **cancelled invoice stays in the month it was issued in**, and the credit note
 | Oversell incidents      | Invoices whose stock deduction drove a batch below zero | 0                                                  |
 | Expiry write-off rate   | Value expiring unsold ÷ value purchased                | Falling month over month                           |
 | GST prep time           | Hours to produce monthly filing figures                 | < 15 min                                           |
-| Invoice correction rate | Invoices needing manual correction outside the system   | Tracked — currently unfixable in-app (FR-BILL-17) |
+| Invoice correction rate | Invoices needing correction after issue                  | Tracked. Correctable in-app since 2026-08-20 — an ADMIN voids and the system issues a credit note (FR-BILL-17). Partial returns still need a workaround |
 
 ## 11. Assumptions
 
