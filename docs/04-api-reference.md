@@ -18,14 +18,15 @@ All paths below are absolute from the host root, e.g. `POST http://localhost:500
 
 ## 2. Router map
 
-Four routers are mounted. **Resource paths do not follow the obvious REST grouping** — read this table before writing a client.
+Five routers are mounted. **Resource paths do not follow the obvious REST grouping** — read this table before writing a client.
 
 | Prefix             | Resources                                                                           |
 | ------------------ | ----------------------------------------------------------------------------------- |
 | `/api/auth`      | login · register · me · change-password                                          |
 | `/api/users`     | user CRUD · own profile                                                            |
 | `/api/inventory` | categories · manufacturers ·**medicines** · batches · **suppliers** |
-| `/api/billing`   | **customers** · invoices · daily-summary · gst-report                      |
+| `/api/billing`   | **customers** · invoices · void · daily-summary · trend · gst-report   |
+| `/api/dashboard` | `stats` — every dashboard panel in one request                                    |
 
 > Customers are under **`/api/billing/customers`**. Suppliers and medicines are under **`/api/inventory/`**. There is no `/api/customers`, `/api/medicines`, `/api/suppliers` or `/api/reports`.
 
@@ -66,7 +67,9 @@ The 500 row matters to clients. Token verification and the user reload are check
 | Create / update categories, manufacturers, medicines, batches, suppliers |  ✅  |     ✅     |        |
 | Delete categories, manufacturers, medicines, suppliers                   |  ✅  |            |        |
 | Read customers, create / update customers                                |  ✅  |     ✅     |   ✅   |
-| Read invoices, create invoices, daily summary                            |  ✅  |     ✅     |   ✅   |
+| Read invoices, create invoices, daily summary, sales trend               |  ✅  |     ✅     |   ✅   |
+| Dashboard stats                                                          |  ✅  |     ✅     |   ✅   |
+| Void an invoice                                                          |  ✅  |            |        |
 | GST report                                                               |  ✅  |     ✅     |        |
 
 ## 5. Conventions
@@ -184,7 +187,26 @@ Public, outside `/api` and therefore outside the rate limiter.
 { "success": true, "message": "Medical Billing API is running!", "timestamp": "2026-08-17T09:12:44.101Z" }
 ```
 
-It does **not** check database connectivity — a `200` here does not mean the system can serve requests.
+**Liveness.** It does **not** check database connectivity — a `200` here does not mean the system can serve requests. That is deliberate: if a database outage made this fail, an orchestrator would kill an otherwise healthy process and turn a recoverable incident into a restart loop.
+
+### `GET /health/ready`
+
+Readiness. Runs `SELECT 1` and reports what it found.
+
+```json
+{
+  "success": true,
+  "status": "ready",
+  "checks": { "database": { "status": "up", "latencyMs": 4 } },
+  "timestamp": "2026-08-22T13:18:44.741Z"
+}
+```
+
+**503** with `"status": "degraded"` and `checks.database.status: "down"` when the database is unreachable — 503 rather than 500, because "not ready to take traffic" is what a load balancer needs to hear in order to route around an instance.
+
+> **Reachable on port 5000 only.** Neither nginx config proxies it: `nginx/nginx.conf` has just `location /` and `location /api`, and `nginx/nginx.prod.conf` has `location = /health`, an *exact* match. So `GET /health/ready` through nginx falls through to the SPA and returns `200 text/html` — a check that would look like it passes while testing nothing.
+>
+> The compose healthchecks are unaffected because they bypass the proxy: the backend's runs `fetch('http://localhost:5000/health/ready')` inside its own container, and nginx's requests `/health`, which does match. An **external** load balancer pointed at nginx cannot currently reach the readiness probe; that needs a `location = /health/ready` block in the nginx config.
 
 ---
 
@@ -257,7 +279,7 @@ Returns all users ordered by newest first: `id, name, email, role, isActive, cre
 
 ### `DELETE /api/users/:id` — ADMIN
 
-**200** on success. **400** `You can't delete your own account` when `:id` equals the caller. Deleting a user who has raised invoices fails on the foreign key (surfaces as 500) — deactivate instead.
+**200** on success. **400** `You can't delete your own account` when `:id` equals the caller. **409** `This record is still in use by other data and cannot be deleted.` for a user who has raised invoices — the foreign key holds, and the honest answer is to deactivate them instead ([G-12](./08-gap-analysis.md#g-12)).
 
 ### `PUT /api/users/profile` — any authenticated role
 
@@ -284,7 +306,7 @@ All routes below require authentication (`router.use(protect)`).
 { "success": true, "data": [ { "id": "clx…", "name": "Analgesic", "_count": { "medicines": 14 } } ] }
 ```
 
-Deleting a category still referenced by a medicine violates the FK and returns **500** rather than a clean 409.
+Deleting a category still referenced by a medicine returns **409** `This record is still in use by other data and cannot be deleted.`, with a `field` key naming the constraint ([G-12](./08-gap-analysis.md#g-12)).
 
 ### 8.2 Manufacturers
 
@@ -456,7 +478,7 @@ Accepts only `batchNumber`, `expiryDate`, `purchasePrice` and `sellingPrice`, al
 
 `GET /:id` includes the 10 most recent `purchases` — always an empty array, because no purchase-creation path exists. **404** `Supplier not found`.
 
-Deleting a supplier that has batches violates the FK and surfaces as **500**.
+Deleting a supplier that still has batches returns **409** `This record is still in use by other data and cannot be deleted.` ([G-12](./08-gap-analysis.md#g-12)). Suppliers are hard-deleted, and batches reference them permanently, so in practice a supplier you have ever received stock from cannot be removed.
 
 ---
 
@@ -651,6 +673,33 @@ Powers the dashboard, the Daily report, and — called seven times — the Sales
 
 `totalInvoices` counts **sales** raised that day, cancelled ones included; `creditNotes` counts the reversals issued that day; and every money figure sums **both**, so the takings are net. A sale voided the same day therefore reads `totalInvoices: 1, creditNotes: 1, totalSales: 0` — not `2`. The per-mode `_count.id` is likewise sales-only, so the mode counts add up to `totalInvoices`. The reasoning, and why a cancelled sale still counts in its own period, is in [03 §8](./03-data-model.md#8-data-lifecycle--retention).
 
+#### `GET /api/billing/invoices/trend?days=<1-90>` — any role
+
+Daily sales totals for the last `days` days, ending today. `days` defaults to **7** and is validated by `trendQuerySchema`; out of range is a `400`.
+
+```json
+{
+  "success": true,
+  "data": [
+    { "date": "2026-08-20", "sales": 34913.72, "invoices": 97 },
+    { "date": "2026-08-21", "sales": 0,        "invoices": 2  },
+    { "date": "2026-08-22", "sales": 0,        "invoices": 0  }
+  ]
+}
+```
+
+Three things to know before charting it:
+
+- **Days with no trade are returned with zeros, not omitted.** The client draws a fixed window, so a missing day would silently shift every point left.
+- **Only `PAID` invoices are counted.** `PENDING` and `PARTIAL` are excluded, which is why this can disagree with `daily-summary` — that endpoint sums every payment status.
+- **`invoices` counts sales; `sales` sums sales and credit notes.** So a day whose sales were all voided reads `invoices: 2, sales: 0`, exactly as the second row above. Same rule as the daily summary ([03 §8](./03-data-model.md#8-data-lifecycle--retention)).
+
+Days are bounded at the **store's local midnight**, not UTC — "yesterday" means what a shopkeeper means by it.
+
+This replaced seven `daily-summary` calls, one per day, each of which fetched every invoice for its day with the customer joined and then read two integers off it ([G-08](./08-gap-analysis.md#g-08)). On 20,000 invoices: 7 requests / 259 KB / 102 ms → 1 request / under 1 KB / 8 ms.
+
+> Declared **above** `/invoices/:id` in `billing.routes.js`, or `trend` would be read as an invoice id. Same rule as `daily-summary` and `gst-report`.
+
 #### `GET /api/billing/invoices/gst-report?month=<1-12>&year=<yyyy>` — ADMIN, PHARMACIST
 
 Every **`PAID`** invoice in the month, ascending by date, with items, plus period totals:
@@ -659,13 +708,58 @@ Every **`PAID`** invoice in the month, ascending by date, with items, plus perio
 { "success": true, "data": { "invoices": [ … ], "totals": { "taxable": 412300.0, "cgst": 24738.0, "sgst": 24738.0, "total": 461776.0 } } }
 ```
 
-`month` is 1-based. Both parameters are required and unvalidated — a missing or non-numeric value produces an `Invalid Date` range and an empty result rather than a 400.
+`month` is 1-based. **Both parameters are required and validated** by `gstReportQuerySchema` — `month` 1–12, `year` 2000–2100. A missing or non-numeric value is a `400`, not an empty report.
+
+That distinction is the whole reason the validation was added: an empty tax period and a period that failed to parse look identical in the response, and only one of them means the shop had no sales. Before 2026-08-20 a typo in `month` produced an `Invalid Date` range and a plausible-looking empty result.
 
 #### `GET /api/billing/invoices/:id` — any role
 
 The full invoice for printing: items (each with `batch.batchNumber` and `batch.expiryDate`), the complete customer record, and `user.name`. **404** `Invoice not found`.
 
-> Route ordering matters here: `daily-summary` and `gst-report` are declared **before** `/:id`, so they are matched correctly. Keep any new literal sub-path above `/:id`.
+> Route ordering matters here: `daily-summary`, `gst-report` and `trend` are declared **before** `/:id`, so they are matched correctly. Keep any new literal sub-path above `/:id`.
+
+---
+
+## 9a. Dashboard — `/api/dashboard`
+
+Its own router, mounted at `/api/dashboard`. One endpoint.
+
+### `GET /api/dashboard/stats` — any role
+
+Everything the dashboard renders, in one request. No query parameters; the windows are fixed in the controller (30-day expiry horizon, low-stock threshold 20, 8 recent invoices, 10 rows per panel, 7-day trend).
+
+```jsonc
+{
+  "success": true,
+  "data": {
+    "summary": {
+      "totalSales": 34913.72,      // today, net of any credit notes
+      "totalInvoices": 97,         // sales raised today, cancelled ones included
+      "creditNotes": 0,            // reversals issued today
+      "totalCgst": 1870.2,
+      "totalSgst": 1870.2,
+      "byPaymentMode": [ { "paymentMode": "CASH", "_sum": { "totalAmount": 9100 }, "_count": { "id": 22 } } ]
+    },
+    "recentInvoices": [ { "id": "…", "invoiceNumber": "INV260822-0097", "date": "…",
+                          "totalAmount": 274.4, "paymentMode": "CASH",
+                          "paymentStatus": "PAID", "customer": { "id": "…", "name": "…" } } ],
+    "expiring": { "count": 840, "items": [ /* ≤10 batches, nearest expiry first */ ] },
+    "lowStock": { "count": 63,  "items": [ /* ≤10 batches, lowest quantity first */ ] },
+    "totals":   { "medicines": 10056, "customers": 5003 },
+    "trend":    [ { "date": "2026-08-16", "sales": 0, "invoices": 0 }, /* … 7 entries … */ ]
+  }
+}
+```
+
+**`count` and `items` are deliberately separate.** `count` is an exact database count of every matching batch; `items` is only the handful the panel renders. The panels previously fetched *every* matching batch with its medicine and supplier joined — 281 KB and 481 KB at 25,000 batches — to show eight rows and a number.
+
+Each batch in `expiring.items` / `lowStock.items` carries `id`, `batchNumber`, `expiryDate`, `quantity`, `sellingPrice`, `medicine { id, name, unit }` and `supplier { name }`.
+
+The `summary` and `trend` blocks follow the same counting rules as `GET /api/billing/invoices/daily-summary` and `GET /api/billing/invoices/trend` in §9.2 above; `trend` here is always 7 days.
+
+**This endpoint replaced thirteen requests**, not six: the six panel calls plus seven `daily-summary` calls for the chart. Two of the six existed only to read a number — `?limit=1` on medicines and customers, fetching a row to throw it away and keep `pagination.total`. Measured: **794 KB / 159 ms → 6 KB / 19 ms** ([G-08](./08-gap-analysis.md#g-08)).
+
+> Open to every authenticated role, matching the panels it replaced — which means a cashier can see whole-day store revenue. That was already true of `daily-summary` and is flagged as an open question in [07 §3](./07-security.md#3-authorisation).
 
 ---
 
