@@ -34,6 +34,29 @@ model User {
   updatedAt DateTime @updatedAt
 
   invoices  Invoice[]
+  refreshTokens RefreshToken[]
+}
+
+/// One row per signed-in device (FR-AUTH-10). The refresh token's `jti` is this
+/// row's id, so the server holds authoritative state for a credential the client
+/// only carries a copy of.
+///
+/// Rotation: every use revokes the presented row and issues a new one. That is
+/// what makes a stolen refresh token detectable — replaying an already-revoked
+/// row is something a legitimate client never does, so it means two parties hold
+/// the same credential, and the answer is to end every session for that user.
+model RefreshToken {
+  id        String    @id @default(cuid())
+  userId    String
+  expiresAt DateTime
+  /// Set the moment the token is rotated or the session ends. A presented token
+  /// whose row is already revoked is the reuse signal.
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 enum Role {
