@@ -76,9 +76,20 @@ describe("an account that must change its password", () => {
     ).send({ currentPassword: PASSWORD, newPassword: "a-properly-long-one" });
     expect(change.status).toBe(200);
 
-    // The same token keeps working — the account was never invalid, only
-    // restricted, so forcing a re-login here would be noise.
-    const after = await auth(request(app).get("/api/inventory/medicines"));
+    // The change revokes every token for the account — that is A-6, and it has
+    // to include this one, or "change your password" would not end a session an
+    // attacker is holding. The old token is therefore dead:
+    const withOld = await auth(request(app).get("/api/inventory/medicines"));
+    expect(withOld.status).toBe(401);
+
+    // ...but the response carries a replacement, so the user is still not made
+    // to sign in again. The original intent of this case — no re-login noise
+    // after clearing the block — survives; only the mechanics changed.
+    const fresh = change.body.data.token;
+    expect(fresh).toBeTruthy();
+    const after = await request(app)
+      .get("/api/inventory/medicines")
+      .set("Authorization", `Bearer ${fresh}`);
     expect(after.status).toBe(200);
   });
 

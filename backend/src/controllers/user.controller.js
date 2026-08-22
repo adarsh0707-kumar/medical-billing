@@ -63,7 +63,22 @@ const update = async (req, res, next) => {
     const { name, email, role, isActive } = req.body;
     const user = await prisma.user.update({
       where: { id: req.params.id },
-      data: { name, email, role, isActive },
+      data: {
+        name,
+        email,
+        role,
+        isActive,
+        // Deactivating has to be a revocation, not a pause. `protect` already
+        // rejects an inactive user, but that check is only in force while the
+        // flag is set — reactivating the account brought every token that was
+        // outstanding at deactivation back to life, including a stolen one.
+        // Deactivate-then-reactivate is exactly what an administrator does to a
+        // compromised account, so it must not hand the session back.
+        //
+        // Only on an explicit `false`: `isActive` is undefined on a partial
+        // update, and renaming somebody should not sign them out.
+        ...(isActive === false && { tokenVersion: { increment: 1 } }),
+      },
       select: { id: true, name: true, email: true, role: true, isActive: true },
     });
     res.json({

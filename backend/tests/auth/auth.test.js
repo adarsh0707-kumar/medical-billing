@@ -294,6 +294,40 @@ describe("PUT /api/auth/change-password", () => {
     expect(old.status).toBe(401);
   });
 
+  // Guards docs/07 A-6. A password change is how someone responds to a
+  // compromise; before this it ended nothing.
+  it("revokes every other session for the account", async () => {
+    const { token, user } = await signIn(app, "CASHIER");
+    const otherDevice = await tokenFor(user.id);
+    expect((await request(app).get("/api/auth/me").set("Authorization", `Bearer ${otherDevice}`)).status).toBe(200);
+
+    await request(app)
+      .put("/api/auth/change-password")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ currentPassword: PASSWORD, newPassword: "a-brand-new-one" });
+
+    const res = await request(app).get("/api/auth/me").set("Authorization", `Bearer ${otherDevice}`);
+    expect(res.status).toBe(401);
+    expect(res.body.message).toBe("Session ended. Please sign in again.");
+  });
+
+  it("hands the caller a replacement token so they stay signed in", async () => {
+    const { token } = await signIn(app, "CASHIER");
+
+    const change = await request(app)
+      .put("/api/auth/change-password")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ currentPassword: PASSWORD, newPassword: "a-brand-new-one" });
+
+    expect(change.status).toBe(200);
+    // The old token is gone — the caller's own session was revoked with the
+    // rest — but the replacement works, so a successful password change does
+    // not sign the user out of the device they changed it on.
+    expect((await request(app).get("/api/auth/me").set("Authorization", `Bearer ${token}`)).status).toBe(401);
+    expect(change.body.data.token).toBeTruthy();
+    expect((await request(app).get("/api/auth/me").set("Authorization", `Bearer ${change.body.data.token}`)).status).toBe(200);
+  });
+
   it("refuses when the current password is wrong", async () => {
     const { token } = await signIn(app);
     const res = await request(app)

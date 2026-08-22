@@ -41,15 +41,24 @@ export default function ForcePasswordChange() {
 
     setSaving(true);
     try {
-      await api.put("/api/auth/change-password", {
+      const res = await api.put("/api/auth/change-password", {
         currentPassword,
         newPassword,
       });
 
+      // Changing the password revokes every token for the account, this one
+      // included, and the response carries a replacement. Store it before the
+      // next request: calling /me with the old token would 401, and the axios
+      // interceptor would clear the session and bounce to /login — turning a
+      // successful password change into an apparent failure.
+      const fresh: string | undefined = res.data?.data?.token;
+      if (fresh) localStorage.setItem("token", fresh);
+
       // The server cleared the flag, so the cached user is now stale. Refresh it
       // rather than guessing, so the app's idea of the account matches the API's.
       const me = await api.get("/api/auth/me");
-      if (token) login(me.data.data.user, token);
+      const active = fresh ?? token;
+      if (active) login(me.data.data.user, active);
 
       toast.success("Password changed. You can use the system now.");
       navigate("/dashboard", { replace: true });

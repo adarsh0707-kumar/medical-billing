@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import request from "supertest";
 import prisma from "../../src/config/db.js";
-import { buildApp, signIn, makeUser } from "../helpers/factory.js";
+import { buildApp, signIn, makeUser, tokenFor } from "../helpers/factory.js";
 
 let app;
 beforeAll(() => {
@@ -138,5 +138,52 @@ describe("GET /api/users", () => {
 
     expect(res.body.data.length).toBeGreaterThanOrEqual(2);
     expect(JSON.stringify(res.body)).not.toContain("$2");
+  });
+});
+
+// Guards docs/07 A-6 / T-13. Deactivation used to be a pause: `protect` rejects
+// an inactive user, but only while the flag is set, so reactivating an account
+// brought every token outstanding at deactivation back to life. Deactivating
+// and reactivating is exactly what an administrator does to a compromised
+// account, and it handed the attacker their session back.
+describe("deactivation revokes tokens permanently", () => {
+  it("does not resurrect old tokens when the account is reactivated", async () => {
+    const { token: adminToken } = await signIn(app, "ADMIN");
+    const victim = await makeUser({ role: "CASHIER", email: "victim@test.local" });
+    const stolen = await tokenFor(victim.id);
+
+    const me = () =>
+      request(app).get("/api/auth/me").set("Authorization", `Bearer ${stolen}`);
+
+    expect((await me()).status).toBe(200);
+
+    await request(app)
+      .put(`/api/users/${victim.id}`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ isActive: false });
+    expect((await me()).status).toBe(401);
+
+    await request(app)
+      .put(`/api/users/${victim.id}`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ isActive: true });
+
+    // The account works again; the token that was live when it was suspended
+    // does not.
+    expect((await me()).status).toBe(401);
+  });
+
+  it("leaves sessions alone when an unrelated field changes", async () => {
+    const { token: adminToken } = await signIn(app, "ADMIN");
+    const staff = await makeUser({ role: "CASHIER", email: "renamed@test.local" });
+    const session = await tokenFor(staff.id);
+
+    await request(app)
+      .put(`/api/users/${staff.id}`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ name: "New Name" });
+
+    // Renaming somebody must not sign them out.
+    expect((await request(app).get("/api/auth/me").set("Authorization", `Bearer ${session}`)).status).toBe(200);
   });
 });
