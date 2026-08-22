@@ -3,6 +3,12 @@ import prisma from "../../src/config/db.js";
 
 // Children before parents, so foreign keys never block the wipe.
 const TABLES = [
+  // Carries no foreign key — attribution has to survive the actor being
+  // deleted — so nothing cascades it away and it must be listed explicitly.
+  "AuditLog",
+  // Cascade-deleted with its User today; listed anyway, so a change to that
+  // FK cannot quietly start leaking sessions between tests.
+  "RefreshToken",
   "InvoiceItem",
   "Invoice",
   "PurchaseItem",

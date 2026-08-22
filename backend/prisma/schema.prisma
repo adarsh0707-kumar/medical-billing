@@ -45,6 +45,39 @@ model User {
 /// what makes a stolen refresh token detectable — replaying an already-revoked
 /// row is something a legitimate client never does, so it means two parties hold
 /// the same credential, and the answer is to end every session for that user.
+/// Who changed what, and to what (NFR-17, threat T-12).
+///
+/// Written by a Prisma middleware rather than by controllers, so a new write
+/// path cannot forget to record itself — that is the whole reason it lives at
+/// the data layer.
+///
+/// The actor is a snapshot, not a relation: `actorId` deliberately has no
+/// foreign key and `actorEmail` is copied in. An audit trail that loses its
+/// attribution when the account is deleted is not an audit trail, and a FK
+/// would either block the delete or null the column.
+model AuditLog {
+  id         String   @id @default(cuid())
+  at         DateTime @default(now())
+  /// Null for writes with no signed-in user — the seed script, a migration.
+  actorId    String?
+  actorEmail String?
+  action     String
+  /// The Prisma model written to, e.g. "Batch".
+  model      String
+  recordId   String?
+  /// State before and after. Null on create and delete respectively. Password
+  /// hashes and token counters are stripped before either is stored.
+  before     Json?
+  after      Json?
+  /// The X-Request-Id of the request that caused it, so an audit row can be
+  /// joined back to the log lines for the same request.
+  requestId  String?
+
+  @@index([at])
+  @@index([model, recordId])
+  @@index([actorId])
+}
+
 model RefreshToken {
   id        String    @id @default(cuid())
   userId    String

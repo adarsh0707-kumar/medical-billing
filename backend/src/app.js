@@ -13,6 +13,7 @@ const inventoryRoutes = require("./routes/inventory.routes");
 const billingRoutes = require("./routes/billing.routes");
 const userRoutes = require("./routes/user.routes");
 const dashboardRoutes = require("./routes/dashboard.routes");
+const auditContextMiddleware = require("./middlewares/audit-context.middleware");
 
 /**
  * Builds the Express application.
@@ -164,6 +165,12 @@ const createApp = ({
       timestamp: new Date().toISOString(),
     });
   });
+
+  // ─── Audit context ─────────────────────────────────────
+  // Opens the per-request store the Prisma audit middleware reads. Mounted here,
+  // before the routers, because it has to wrap everything that might write;
+  // `protect` fills in who the caller is once it knows (NFR-17).
+  app.use(auditContextMiddleware);
 
   // ─── Routes ────────────────────────────────────────────
   app.use("/api/auth", authRoutes);

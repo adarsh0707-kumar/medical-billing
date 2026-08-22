@@ -7,6 +7,12 @@ const prisma = new PrismaClient({
       : ["error"],
 });
 
+// Attribution for every write to master data, installed here rather than in the
+// controllers so a new write path records itself without being asked (NFR-17).
+// Must be registered before any query runs.
+const { auditMiddleware } = require("./audit");
+prisma.$use(auditMiddleware(prisma));
+
 // Test connection
 prisma
   .$connect()
