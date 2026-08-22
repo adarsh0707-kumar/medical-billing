@@ -1,5 +1,6 @@
 const jwt = require("jsonwebtoken");
 const prisma = require("../config/db");
+const { setActor } = require("../config/audit-context");
 
 // The two halves of this middleware fail for completely different reasons, so
 // they get separate catches. Verifying the token is a statement about the
@@ -76,6 +77,9 @@ const protect = async (req, res, next) => {
     }
 
     req.user = user;
+    // Tells the audit middleware who is writing, without any controller having
+    // to pass an actor down to the data layer (NFR-17).
+    setActor(user);
     next();
   } catch (err) {
     next(err);

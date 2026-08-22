@@ -114,7 +114,7 @@ These are **already documented** in [`docs/07-security.md`](./docs/07-security.m
 | ~~Changing a password doesn't invalidate existing sessions~~ | **Fixed 2026-08-22.** A password change signs out every other session; the device you changed it on stays signed in. Deactivating an account now does the same, so reactivating it no longer restores tokens that were live when it was suspended |
 | Password policy is length-only (minimum 8) | No complexity or breach checking yet |
 | Login timing reveals whether an email exists | The response body doesn't, but a missing user skips the bcrypt comparison and returns faster |
-| No audit log for stock or price changes | Only invoice authorship is attributed |
+| ~~No audit log for stock or price changes~~ | **Fixed 2026-08-22.** Every write to medicines, batches, suppliers, categories, manufacturers, customers and users records who did it and the before/after state. Reads are not logged — deliberately; see `docs/03` §3.11 |
 | ~~Query parameters are unvalidated — e.g. `?limit=999999` is honoured~~ | **Fixed 2026-08-20.** Every query string is validated; `limit` is capped at 100 |
 | Any authenticated role can read every customer's purchase history | Intentional for a single small store; revisit as staff numbers grow |
 | PostgreSQL and Redis publish host ports, and Redis has no password | **Fixed 2026-08-20**: the production stack publishes only 80 and 443, and Redis was removed as an unused dependency |

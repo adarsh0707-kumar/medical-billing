@@ -116,7 +116,25 @@ erDiagram
         int quantity
         decimal costPrice
     }
+    RefreshToken {
+        string id PK
+        string userId FK
+        datetime expiresAt
+        datetime revokedAt
+    }
+    AuditLog {
+        string id PK
+        datetime at
+        string actorId
+        string action
+        string model
+        string recordId
+        json before
+        json after
+    }
 ```
+
+`AuditLog` stands apart on purpose: it has **no relation to `User`**, so attribution survives the actor being deleted. `RefreshToken` cascades with its user.
 
 **Reading the cardinalities:** an `Invoice` must have at least one `InvoiceItem` in practice (the validator requires it) though the database does not enforce it. `Invoice.customerId` is nullable — walk-in sales carry no customer. Everything else marked FK is mandatory.
 
@@ -305,7 +323,58 @@ When the row is first created for a day it seeds itself from the invoices alread
 
 This is the only raw SQL in the codebase; the atomicity guarantee is the reason.
 
-### 3.11 `Purchase` / `PurchaseItem` — 🟡 modelled, unreachable
+### 3.11 `AuditLog` — who changed what
+
+| Column         | Type      | Notes                                                                                                  |
+| -------------- | --------- | ------------------------------------------------------------------------------------------------------ |
+| `id`         | String    | PK, cuid                                                                                               |
+| `at`         | DateTime  | default now. Indexed — the usual query is "what happened in this window"                              |
+| `actorId`    | String?   | **No foreign key, deliberately.** Null for writes with no signed-in user            |
+| `actorEmail` | String?   | Snapshot of the actor's address at the time                                                            |
+| `action`     | String    | `CREATE` · `UPDATE` · `DELETE`                                                                   |
+| `model`      | String    | The Prisma model written to, e.g.`Batch`                                                             |
+| `recordId`   | String?   | Indexed with`model` — "the history of this batch" is the second query                               |
+| `before`     | Json?     | Prior state. Null on a create                                                                          |
+| `after`      | Json?     | Resulting state. Null on a delete                                                                      |
+| `requestId`  | String?   | The`X-Request-Id` of the causing request, so a row joins to that request's log lines                 |
+
+**No relation to `User`.** A foreign key would either block deleting an account or null the column out, and a trail that forgets who did something the moment their account is removed is not a trail. `actorId` and `actorEmail` are therefore copies.
+
+**Written by a Prisma middleware** (`config/audit.js`), not by controllers, so a new write path records itself without being asked. The actor reaches the data layer through an `AsyncLocalStorage` context set per request — a Prisma middleware has no idea a request exists, and threading an actor through every call would put the remembering back into the controllers.
+
+**What is covered:** `Medicine`, `Batch`, `Supplier`, `Category`, `Manufacturer`, `Customer`, `User`, for single-record `create`, `update` and `delete`.
+
+**What is not, and why:**
+
+| Excluded                     | Reason                                                                                                                                    |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Invoice` / `InvoiceItem` | Already attributed by`Invoice.userId`, append-only, never edited. Auditing them would double the write volume of the hottest path to restate what is already recorded |
+| `RefreshToken`             | Churns by design — a 30-minute access token means each device rotates one about 48 times a day, which would bury everything worth reading  |
+| `InvoiceCounter`           | A serial allocator, not business data                                                                                                       |
+| `AuditLog`                 | Auditing the audit log does not terminate                                                                                                   |
+| `updateMany` / `deleteMany` | The one that matters is the stock decrement inside invoice creation, which is attributable through its invoice. It is also the only write inside a long transaction, and the audit row cannot join that transaction — so a rolled-back sale would leave a row claiming stock moved |
+
+**`password` and `tokenVersion` are stripped** from both `before` and `after`. An audit row must never become a second place credential material lives.
+
+**Failure is non-fatal.** If the audit insert throws, the error is logged and the original write still succeeds. A lost audit row is a gap in a record; a rejected write is a pharmacist who cannot do their job.
+
+#### Retention — decided 2026-08-22
+
+**Keep for 24 months, then purge.** No purge job exists yet, so today the table grows without bound; at this shop's volume that is a few hundred rows a day and not urgent, but it is not indefinite by decision.
+
+Two constraints shaped the number. It must **outlive the customer-retention period** ([PRD Q6](./01-product-requirements.md#14-open-questions), still open), because an erasure needs to be auditable — deleting a customer without a record of who deleted them replaces one gap with another. And it must be long enough to answer "who changed this price" across at least one full annual cycle of GST filings, since that is when a wrong figure typically surfaces.
+
+> **Erasure and audit pull in opposite directions.** `before`/`after` on a `Customer` write contains that customer's own data, so an audit row can outlive the erasure it records. When the retention decision in [PRD Q6](./01-product-requirements.md#14-open-questions) lands, the erasure path must either redact customer PII from historical audit rows or accept the residue explicitly. It cannot be left to be discovered.
+
+#### Reads are not logged — decided 2026-08-22
+
+Threat [T-9](./07-security.md#9-threat-model) is insider exfiltration: any authenticated role can page through every customer's purchase history and nothing records it. **Row-level read logging is still the wrong answer here**, and it is worth saying why rather than leaving it looking like an oversight.
+
+The POS search fires on every keystroke, and the dashboard reads batches on every load. Logging reads would multiply audit volume by the *read* volume — orders of magnitude more rows than the writes anyone wants to inspect — and would bury the price and stock changes this table exists for. It would also make the audit log itself a bulk store of customer-access patterns, which is more sensitive data, not less.
+
+The honest mitigation for T-9 is **restricting who can read customer history** ([07 §3](./07-security.md#3-authorisation)), not recording that everyone did. Revisit if staff numbers grow past the point where "everyone here can see everything" stops being an accurate description of the shop.
+
+### 3.12 `Purchase` / `PurchaseItem` — 🟡 modelled, unreachable
 
 | `Purchase`             | Type          | Notes                  |
 | ------------------------ | ------------- | ---------------------- |
@@ -398,6 +467,7 @@ These must hold at all times. Any new write path must preserve them.
 | `20260820132000_add_invoice_void`         | 2026-08-20 | Adds the`InvoiceType` and `InvoiceStatus` enums, `Invoice.type` / `status` / `reversesId`, the **unique** index on `reversesId` and its self-FK ([G-15](./08-gap-analysis.md#g-15)) |
 | `20260822140056_add_token_version`        | 2026-08-22 | Adds`User.tokenVersion`, default `0` — the revocation counter behind `POST /api/auth/logout` (FR-AUTH-09)                                                    |
 | `20260822143539_add_refresh_tokens`       | 2026-08-22 | Adds the`RefreshToken` table (one row per signed-in device, `ON DELETE CASCADE`) — the state behind rotation and reuse detection (FR-AUTH-10)                |
+| `20260822154410_add_audit_log`            | 2026-08-22 | Adds the`AuditLog` table — attribution for every write to master data (NFR-17, threat T-12). See §3.11                                                     |
 
 All eight are applied — confirmed against `_prisma_migrations` on 2026-08-22. Two of them contain SQL that exists **only** in migration history and cannot be reproduced from `schema.prisma`; see the note in §4 before rebuilding a database with `db push`.
 
@@ -473,7 +543,7 @@ The GST report is deliberately **not** in that list: it reports documents, not t
 | ~~2~~ | ~~`mfgDate` unreachable~~                                          | Fixed 2026-08-19. Rows created before then still hold`null`                                                                                                 | [G-04](./08-gap-analysis.md#g-04)                            |
 | 3      | `Purchase`/`PurchaseItem` unused                                  | Dead schema; misleading supplier response                                                                                                                     | [FR-PUR](./01-product-requirements.md#611-purchases--fr-pur) |
 | 4      | No`updatedAt` on `Batch`, `Customer`, `Supplier`, `Invoice` | Cannot tell when a record last changed                                                                                                                        | —                                                          |
-| 5      | No audit table                                                        | Price and stock edits are untraceable                                                                                                                         | NFR-17                                                      |
+| ~~5~~ | ~~No audit table~~                                                    | Fixed 2026-08-22 — a Prisma middleware records actor, before and after on every write to master data. Reads are deliberately not logged; see §3.11        | NFR-17                                                      |
 | 6      | `Medicine.unit` is a free string in the DB                          | Direct DB writes can bypass the Zod allowlist                                                                                                                 | Consider a Postgres enum                                    |
 | ~~7~~ | ~~No `CHECK (quantity >= 0)`~~                                     | Fixed 2026-08-20 — the database now rejects a negative quantity on any write path, not just the guarded decrement                                            | I-1                                                         |
 | ~~8~~ | ~~`totalStock` computed from one batch~~                           | Fixed 2026-08-19 — summed with a`groupBy`                                                                                                                  | [G-10](./08-gap-analysis.md#g-10)                            |
