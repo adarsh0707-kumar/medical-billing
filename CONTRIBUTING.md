@@ -194,7 +194,7 @@ docker compose exec \
 
 ```bash
 cd frontend
-npm test          # 66 unit tests, seconds
+npm test          # 67 unit tests, seconds
 npm run test:e2e  # 6 browser flows — needs `docker compose up -d` first
 ```
 

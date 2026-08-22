@@ -1,6 +1,8 @@
 # Testing Strategy
 
-**Current state (2026-08-20): 327 backend tests, 66 frontend unit tests and a 6-flow browser smoke — all three layers on CI.** The backend suite is implemented. Frontend unit testing is now set up (Vitest + Testing Library) and covers the cart arithmetic; the remaining §5.6 cases and the browser smoke test are still open. Sections 1–4 describe the approach and the acceptance fixtures; §5 lists the cases, most of which now exist.
+**Current state (measured 2026-08-22): 368 backend tests across 14 files, 67 frontend unit tests across 6 files, and a 6-flow browser smoke — all three layers on CI.** Sections 1–4 describe the approach and the acceptance fixtures; §5 lists the cases, most of which now exist.
+
+> Counts here are taken by **running the suites**, not by adding up the table below. Three documents previously carried four different numbers because the table was maintained by hand and two suites were never added to it.
 
 ---
 
@@ -46,25 +48,52 @@ Two decisions worth knowing:
 
 ### What exists
 
-| File                                          | Tests | Covers                                                                     |
-| --------------------------------------------- | ----: | -------------------------------------------------------------------------- |
-| `tests/auth/auth.test.js`                   |    13 | Login, token rejection, immediate revocation, password change              |
-| `tests/auth/rbac.test.js`                   |   142 | The full role matrix, plus anonymous rejection on every route              |
-| `tests/auth/rate-limit.test.js`             |     5 | Failed-login budget, per-client isolation, successful sign-ins not counted |
-| `tests/billing/invoice-create.test.js`      |    28 | GST fixtures, invariants, rejections, atomicity                            |
-| `tests/billing/invoice-concurrency.test.js` |     4 | Last-unit races, oversell bursts, gapless serials                          |
-| `tests/billing/reports.test.js`             |    12 | Daily and GST reports, date boundaries, paid-only filtering                |
-| `tests/billing/customers.test.js`           |    10 | Uniqueness, validation, search, history                                    |
-| `tests/inventory/medicines.test.js`         |    14 | Stock totals, POS search, soft delete, validation                          |
-| `tests/inventory/batches.test.js`           |    16 | Opening stock, manufacture dates, strict updates, alert windows            |
-| `tests/inventory/masters.test.js`           |    17 | Masters CRUD, delete conflicts, suppliers                                  |
-| `tests/users/users.test.js`                 |    17 | User CRUD, validation, profile safety                                      |
+**Backend — 368 across 14 files.**
 
-Coverage is 87% overall; `billing.controller.js` and `auth.middleware.js` are gated at 90% in CI.
+| File                                            | Tests | Covers                                                                     |
+| ----------------------------------------------- | ----: | -------------------------------------------------------------------------- |
+| `tests/api/query-validation.test.js`          |    46 | Every query surface: bounds, coercion, and that a filter actually filters ([G-19](./08-gap-analysis.md#g-19)) |
+| `tests/auth/auth.test.js`                     |    18 | Login, token rejection, immediate revocation, password change              |
+| `tests/auth/password-change-required.test.js` |    13 | The forced-password-change gate and its two deliberate exemptions          |
+| `tests/auth/rate-limit.test.js`               |     5 | Failed-login budget, per-client isolation, successful sign-ins not counted |
+| `tests/auth/rbac.test.js`                     |   142 | The full role matrix, plus anonymous rejection on every route              |
+| `tests/billing/customers.test.js`             |    13 | Uniqueness, validation, search, history, pagination shape                  |
+| `tests/billing/invoice-concurrency.test.js`   |     4 | Last-unit races, oversell bursts, gapless serials                          |
+| `tests/billing/invoice-create.test.js`        |    30 | GST fixtures, invariants, rejections, atomicity                            |
+| `tests/billing/invoice-void.test.js`          |    12 | Stock restoration, credit notes, double-submit and concurrent voids, period rule |
+| `tests/billing/reports.test.js`               |    23 | Daily, trend and GST reports, date boundaries, paid-only filtering         |
+| `tests/inventory/batches.test.js`             |    16 | Opening stock, manufacture dates, strict updates, alert windows            |
+| `tests/inventory/masters.test.js`             |    15 | Masters CRUD, delete conflicts, suppliers                                  |
+| `tests/inventory/medicines.test.js`           |    14 | Stock totals, POS search, soft delete, validation                          |
+| `tests/users/users.test.js`                   |    17 | User CRUD, validation, profile safety                                      |
+
+**Frontend — 67 across 6 files.**
+
+| File                                             | Tests | Covers                                                           |
+| ------------------------------------------------ | ----: | ----------------------------------------------------------------- |
+| `src/pages/__tests__/cart-math.test.ts`        |    41 | The §4 fixtures in integer paise, mirroring the server ([G-17](./08-gap-analysis.md#g-17)) |
+| `src/lib/__tests__/api.test.ts`                |     8 | The 401 interceptor and the password-change redirect              |
+| `src/hooks/__tests__/useNotifications.test.ts` |     6 | Alert derivation and severity thresholds                          |
+| `src/components/__tests__/Sidebar.test.tsx`    |     5 | The role filter on navigation                                     |
+| `src/pages/__tests__/Billing.guards.test.tsx`  |     4 | POS stock guards, driven through the rendered page                |
+| `src/components/__tests__/ProtectedRoute.test.tsx` | 3 | Redirect when unauthenticated                                     |
+
+**Browser — 6 flows**, `e2e/smoke.spec.ts`, Chromium only.
+
+### Coverage
+
+Measured 2026-08-22: **about 85% of statements** overall. The gate is deliberately not a whole-repo number — it sits on the two files where a regression is a financial or security incident:
+
+| File                              | Statements | Branches | Gate |
+| --------------------------------- | ---------: | -------: | ---- |
+| `billing.controller.js`         |     94.93% |   76.19% | 90%  |
+| `auth.middleware.js`            |     96.15% |   93.75% | 90%  |
+
+> **`dashboard.controller.js` sits at 21.73%** — the lowest in the codebase. It serves `GET /api/dashboard/stats`, the single request that replaced thirteen, so every panel the dashboard renders depends on it and almost none of it is exercised. That is the most valuable backend gap left.
 
 ### Still open
 
-- ~~Frontend unit tests — §5.6~~ **done 2026-08-20**: 66 cases across cart maths, the POS stock guards, `ProtectedRoute`, the sidebar role filter, the 401 interceptor and notification severity.
+- ~~Frontend unit tests — §5.6~~ **done 2026-08-20**: 67 cases across cart maths, the POS stock guards, `ProtectedRoute`, the sidebar role filter, the 401 interceptor and notification severity.
 - ~~Wiring `npm test` into the frontend CI job~~ **done** — it runs before the build, and a broken cart rounding now turns CI red.
 - ~~A Playwright browser smoke test — §5.7~~ **done 2026-08-20**, all six flows, in its own CI job.
 - Component coverage beyond the §5.6 screens, and a second browser besides Chromium.
