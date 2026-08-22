@@ -175,13 +175,13 @@ Briefly, so you know what to expect when reviewing:
 | Revocation | Deactivating a user takes effect on their next request — every protected request reloads the user and rejects `isActive: false` |
 | Authorisation | Server-side `authorize(...roles)` on every mutating route; client-side checks are cosmetic only |
 | Input validation | Zod on every mutating route; unknown keys stripped, and rejected outright on the most sensitive routes |
-| SQL injection | Prisma parameterises everything. One raw statement exists (the invoice-serial upsert) and uses a bound tagged template |
+| SQL injection | Prisma parameterises everything. Five raw statements exist — two document-serial upserts, two trend aggregations and the readiness probe — and every one is a bound `$queryRaw` tagged template. `$queryRawUnsafe` appears nowhere ([full list](./docs/07-security.md#5-injection--data-access-safety)) |
 | Rate limiting | 500 requests / 15 min per client, plus 10 failed logins / 15 min |
-| Transport headers | `helmet()` defaults on API responses |
+| Transport headers | `helmet()` defaults on API responses; in production nginx adds HSTS, a CSP with `script-src 'self'`, `X-Frame-Options: DENY`, `Referrer-Policy` and `Permissions-Policy` to the SPA |
 | Financial integrity | Exact decimal arithmetic; invoice creation and stock deduction commit in a single transaction |
 
 Full detail, including the threat model and the prioritised hardening backlog: [`docs/07-security.md`](./docs/07-security.md).
 
 ---
 
-*Last reviewed: 19 August 2026.*
+*Last reviewed: 22 August 2026.*
