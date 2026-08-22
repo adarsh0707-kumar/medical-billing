@@ -9,7 +9,7 @@ Everything here was written by reading the actual source tree (`backend/src`, `f
 > `🟡 Partial` — present but incomplete, unreachable, or unused.
 > `⬜ Planned` — not in the codebase; described as intent only.
 >
-> The component READMEs at the repo root (`README.md`, `backend/README.md`, `frontend/README.md`, `nginx/README.md`) contain a number of aspirational claims that the code does not implement. Those discrepancies are catalogued in [08 — Gap Analysis](./08-gap-analysis.md). **Where the two disagree, these docs are correct.**
+> The component READMEs at the repo root (`README.md`, `backend/README.md`, `frontend/README.md`, `nginx/README.md`) once contained a number of aspirational claims the code did not implement — endpoints that were never built, a cookie-based session, an `express-validator` dependency. All four were trimmed on 2026-08-20 to a short "what this is / how to run it" plus links into this set, and the discrepancies are catalogued as `D-nn` in [08 — Gap Analysis](./08-gap-analysis.md). **Where any document disagrees with this set, check the code — that is how both were written.**
 
 ---
 

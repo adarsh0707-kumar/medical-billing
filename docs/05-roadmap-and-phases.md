@@ -47,10 +47,10 @@ The honest read as of **2026-08-20**: the correctness gaps that made v1.0.0 unsa
 
 **Goal:** one command brings up a working stack.
 
-- `docker-compose.yml` with five services, healthcheck-gated start order, `pgdata` volume.
+- `docker-compose.yml` with five services, healthcheck-gated start order, `pgdata` volume. *(Four today — Redis was removed in Phase 8, [G-03](./08-gap-analysis.md#g-03).)*
 - Dev Dockerfiles for frontend (Vite, `--host 0.0.0.0`) and backend (nodemon, openssl for Prisma).
 - Nginx reverse proxy with WebSocket upgrade headers for HMR.
-- Express bootstrap: helmet, compression, morgan, CORS allowlist, rate limiter, `/health`.
+- Express bootstrap: helmet, compression, morgan, CORS allowlist, rate limiter, `/health`. *(morgan was replaced by pino in Phase 8.8.)*
 - Prisma client singleton that exits on connection failure; Redis client that never crashes the process *(the Redis half was removed in Phase 8 — it never acquired a consumer)*.
 
 **Exit criteria met:** `docker compose up` → `/health` returns 200.
@@ -96,7 +96,7 @@ The honest read as of **2026-08-20**: the correctness gaps that made v1.0.0 unsa
 - Fast POS search returning the FEFO batch inline.
 - Frontend Billing page: debounced search, cart with per-line discount, live totals, payment selection, print.
 
-**Known debt:** ~~numbering collision and the stock-check race~~ — both fixed 2026-08-18 ([G-01](./08-gap-analysis.md#g-01), [G-09](./08-gap-analysis.md#g-09)); no void/edit path (FR-BILL-17).
+**Known debt:** ~~numbering collision and the stock-check race~~ — both fixed 2026-08-18 ([G-01](./08-gap-analysis.md#g-01), [G-09](./08-gap-analysis.md#g-09)); ~~no void path~~ — voiding shipped 2026-08-20 ([G-15](./08-gap-analysis.md#g-15)). There is deliberately still no *edit*: a filed period must reconcile to what was filed, so a correction is a dated credit note rather than a rewrite. Partial returns remain unsupported.
 
 ### Phase 4 — Customers & suppliers ✅
 
