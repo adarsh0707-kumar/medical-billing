@@ -6,6 +6,7 @@ const {
   getMe,
   changePassword,
   logout,
+  refresh,
 } = require("../controllers/auth.controller");
 const { protect, authorize } = require("../middlewares/auth.middleware");
 const requirePasswordChange = require("../middlewares/password-change.middleware");
@@ -24,6 +25,9 @@ router.post(
   register,
 ); // only admin can create users
 router.post("/login", login); // public
+// No `protect`: the caller's access token has expired, which is why they are
+// here. The refresh cookie is the credential.
+router.post("/refresh", refresh); // public — authenticates via the cookie
 router.get("/me", protect, getMe); // any logged in user
 router.put(
   "/change-password",

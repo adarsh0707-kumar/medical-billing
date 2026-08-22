@@ -1,27 +1,37 @@
 const jwt = require("jsonwebtoken");
 
-// `tokenVersion` is the revocation counter from the user's row (FR-AUTH-09).
-// `protect` compares it against the current value and rejects the token if it
-// has fallen behind, so bumping the column invalidates every session that user
-// has open.
-//
-// It defaults to 0 so a caller that has not loaded the column still produces a
-// usable token for a fresh account, and so tokens minted before the column
-// existed keep verifying.
-const generateToken = (userId, tokenVersion = 0) => {
-  return jwt.sign({ id: userId, tokenVersion }, process.env.JWT_SECRET, {
-    expiresIn: "7d",
-  });
-};
+// Access tokens are short-lived because they are the half the browser can read:
+// they live in localStorage, so anything that runs script in the page can take
+// one. Thirty minutes is short enough that a token captured in a log, a proxy or
+// a screenshot is usually already dead, and long enough that the silent refresh
+// is rare. The session as a whole still lasts a week — see below.
+const ACCESS_TOKEN_TTL = "30m";
 
-// Written for a refresh-rotation flow that was never built; nothing calls it.
-// Keep the payload in step with generateToken so it is not a trap for whoever
-// does build it — a refresh token that skipped the revocation check would hand
-// back access tokens for a session the user had already ended.
-const generateRefreshToken = (userId, tokenVersion = 0) => {
-  return jwt.sign({ id: userId, tokenVersion }, process.env.JWT_SECRET, {
-    expiresIn: "30d",
-  });
-};
+// The refresh token carries the week. It is never readable by JavaScript: it is
+// set as an httpOnly cookie, which is the entire reason splitting the two is
+// worth doing. Both halves in localStorage would be strictly worse than the one
+// long token this replaced.
+const REFRESH_TOKEN_TTL_DAYS = 7;
 
-module.exports = { generateToken, generateRefreshToken };
+// `tokenVersion` is the revocation counter from the user's row. `protect`
+// compares it and rejects a token that has fallen behind, so bumping the column
+// invalidates every session that user has open.
+const generateToken = (userId, tokenVersion = 0) =>
+  jwt.sign({ id: userId, tokenVersion }, process.env.JWT_SECRET, {
+    expiresIn: ACCESS_TOKEN_TTL,
+  });
+
+// `jti` is the id of the RefreshToken row backing this session, which is what
+// makes rotation and reuse detection possible: the server holds the state and
+// the token is only a pointer to it.
+const generateRefreshToken = (userId, tokenVersion = 0, jti) =>
+  jwt.sign({ id: userId, tokenVersion, jti }, process.env.JWT_SECRET, {
+    expiresIn: `${REFRESH_TOKEN_TTL_DAYS}d`,
+  });
+
+module.exports = {
+  generateToken,
+  generateRefreshToken,
+  ACCESS_TOKEN_TTL,
+  REFRESH_TOKEN_TTL_DAYS,
+};

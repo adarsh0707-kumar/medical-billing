@@ -273,6 +273,95 @@ describe("POST /api/auth/logout", () => {
   });
 });
 
+// Guards FR-AUTH-10 / docs/07 A-3. Access tokens are short-lived; the week is
+// carried by a refresh cookie that JavaScript cannot read.
+describe("POST /api/auth/refresh", () => {
+  const cookieOf = (res) =>
+    (res.headers["set-cookie"] ?? []).find((c) => c.startsWith("refresh_token="));
+
+  const signInFor = async (email) => {
+    const user = await makeUser({ role: "CASHIER", email });
+    const res = await request(app)
+      .post("/api/auth/login")
+      .send({ email: user.email, password: PASSWORD });
+    return { user, res, cookie: cookieOf(res) };
+  };
+
+  it("issues the refresh token as an httpOnly cookie, not in the body", async () => {
+    const { res, cookie } = await signInFor("cookie@test.local");
+
+    expect(cookie).toBeTruthy();
+    // The entire reason for splitting the two: script in the page can read the
+    // access token, and must not be able to read the long-lived half.
+    expect(cookie).toMatch(/HttpOnly/i);
+    expect(cookie).toMatch(/SameSite=Strict/i);
+    expect(JSON.stringify(res.body)).not.toContain("refresh_token");
+  });
+
+  it("issues an access token that expires in 30 minutes, not 7 days", async () => {
+    const { res } = await signInFor("shortlived@test.local");
+    const { iat, exp } = jwt.decode(res.body.data.token);
+
+    expect(Math.round((exp - iat) / 60)).toBe(30);
+  });
+
+  it("exchanges the cookie for a fresh access token", async () => {
+    const { cookie } = await signInFor("exchange@test.local");
+
+    const res = await request(app).post("/api/auth/refresh").set("Cookie", cookie);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.token).toBeTruthy();
+    expect((await request(app).get("/api/auth/me").set("Authorization", `Bearer ${res.body.data.token}`)).status).toBe(200);
+  });
+
+  it("rotates the cookie on every use", async () => {
+    const { cookie } = await signInFor("rotate@test.local");
+
+    const res = await request(app).post("/api/auth/refresh").set("Cookie", cookie);
+
+    expect(cookieOf(res)).toBeTruthy();
+    expect(cookieOf(res)).not.toBe(cookie);
+  });
+
+  it("treats a replayed cookie as theft and ends every session", async () => {
+    const { cookie: original } = await signInFor("replay@test.local");
+
+    const rotated = cookieOf(
+      await request(app).post("/api/auth/refresh").set("Cookie", original),
+    );
+    // A legitimate client never replays a rotated token, so presenting one
+    // means two parties hold the same credential.
+    expect((await request(app).post("/api/auth/refresh").set("Cookie", original)).status).toBe(401);
+
+    // ...and the response is to end everything, including the session the
+    // honest client is holding. Losing a session beats leaving a thief in one.
+    expect((await request(app).post("/api/auth/refresh").set("Cookie", rotated)).status).toBe(401);
+  });
+
+  it("refuses with no cookie at all", async () => {
+    expect((await request(app).post("/api/auth/refresh")).status).toBe(401);
+  });
+
+  it("stops working after a logout", async () => {
+    const { res, cookie } = await signInFor("loggedout@test.local");
+
+    await request(app)
+      .post("/api/auth/logout")
+      .set("Authorization", `Bearer ${res.body.data.token}`);
+
+    // Otherwise signing out would last only until the next silent refresh.
+    expect((await request(app).post("/api/auth/refresh").set("Cookie", cookie)).status).toBe(401);
+  });
+
+  it("stops working once the account is deactivated", async () => {
+    const { user, cookie } = await signInFor("deactivated@test.local");
+    await prisma.user.update({ where: { id: user.id }, data: { isActive: false } });
+
+    expect((await request(app).post("/api/auth/refresh").set("Cookie", cookie)).status).toBe(401);
+  });
+});
+
 describe("PUT /api/auth/change-password", () => {
   it("changes the password when the current one is right", async () => {
     const { token, user } = await signIn(app);

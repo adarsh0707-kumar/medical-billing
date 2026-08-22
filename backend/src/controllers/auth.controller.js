@@ -1,6 +1,62 @@
 const bcrypt = require("bcryptjs");
 const prisma = require("../config/db");
-const { generateToken } = require("../utils/jwt.utils");
+const jwt = require("jsonwebtoken");
+const {
+  generateToken,
+  generateRefreshToken,
+  REFRESH_TOKEN_TTL_DAYS,
+} = require("../utils/jwt.utils");
+
+const REFRESH_COOKIE = "refresh_token";
+
+// httpOnly so script in the page cannot read it — that is the point of holding
+// the long-lived half here rather than in localStorage alongside the access
+// token. SameSite=Strict means a cross-site request never carries it, which is
+// what stands in for CSRF protection on the refresh route. Path scopes it to the
+// auth endpoints, so it is not attached to every API call. Secure only in
+// production, because the development stack is deliberately plain HTTP and a
+// Secure cookie would simply never be sent there.
+const refreshCookieOptions = () => ({
+  httpOnly: true,
+  sameSite: "strict",
+  secure: process.env.NODE_ENV === "production",
+  path: "/api/auth",
+  maxAge: REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000,
+});
+
+// Express does not parse cookies and this is the only one the API reads, so a
+// dependency for it would be more surface than the five lines it saves.
+const readCookie = (req, name) => {
+  const raw = req.headers.cookie;
+  if (!raw) return null;
+  for (const part of raw.split(";")) {
+    const eq = part.indexOf("=");
+    if (eq > 0 && part.slice(0, eq).trim() === name) {
+      return decodeURIComponent(part.slice(eq + 1).trim());
+    }
+  }
+  return null;
+};
+
+// Opens a session: one RefreshToken row (the device), a refresh cookie pointing
+// at it, and a short access token. Used by login and by every rotation.
+const issueSession = async (res, user) => {
+  const expiresAt = new Date(
+    Date.now() + REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000,
+  );
+  const row = await prisma.refreshToken.create({
+    data: { userId: user.id, expiresAt },
+    select: { id: true },
+  });
+
+  res.cookie(
+    REFRESH_COOKIE,
+    generateRefreshToken(user.id, user.tokenVersion, row.id),
+    refreshCookieOptions(),
+  );
+
+  return generateToken(user.id, user.tokenVersion);
+};
 
 // ─── Register (Admin only, first time setup) ───────────
 const register = async (req, res, next) => {
@@ -74,7 +130,8 @@ const login = async (req, res, next) => {
       });
     }
 
-    const token = generateToken(user.id, user.tokenVersion);
+    // Sets the refresh cookie as a side effect and returns the access token.
+    const token = await issueSession(res, user);
 
     res.json({
       success: true,
@@ -171,10 +228,21 @@ const changePassword = async (req, res, next) => {
 // outcome than the one the flag exists to prevent.
 const logout = async (req, res, next) => {
   try {
-    await prisma.user.update({
-      where: { id: req.user.id },
-      data: { tokenVersion: { increment: 1 } },
-    });
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id: req.user.id },
+        data: { tokenVersion: { increment: 1 } },
+      }),
+      // The counter kills outstanding access tokens; this kills the refresh
+      // tokens that would otherwise mint new ones. Both halves, or signing out
+      // only ends the session until the next silent refresh.
+      prisma.refreshToken.updateMany({
+        where: { userId: req.user.id, revokedAt: null },
+        data: { revokedAt: new Date() },
+      }),
+    ]);
+
+    res.clearCookie(REFRESH_COOKIE, refreshCookieOptions());
 
     // 200 with no data: the client's job is to discard its copy, and there is
     // nothing to hand back. Calling it twice is harmless.
@@ -187,4 +255,116 @@ const logout = async (req, res, next) => {
   }
 };
 
-module.exports = { register, login, getMe, changePassword, logout };
+// ─── Refresh ───────────────────────────────────────────
+// Exchanges the refresh cookie for a new access token, and rotates the cookie.
+// Public in the sense that it takes no Authorization header — the cookie is the
+// credential, which is the point: the access token it replaces has expired.
+//
+// Rotation is what makes theft detectable. Each use revokes the row it was
+// issued against and creates a new one, so presenting a row that is *already*
+// revoked means two parties hold the same credential. A legitimate client never
+// does that, so it is treated as theft and every session for the user ends.
+const refresh = async (req, res, next) => {
+  const deny = () => {
+    res.clearCookie(REFRESH_COOKIE, refreshCookieOptions());
+    return res
+      .status(401)
+      .json({ success: false, message: "Session expired. Please sign in again." });
+  };
+
+  try {
+    const raw = readCookie(req, REFRESH_COOKIE);
+    if (!raw) return deny();
+
+    let decoded;
+    try {
+      decoded = jwt.verify(raw, process.env.JWT_SECRET);
+    } catch {
+      // Expired or forged. Indistinguishable to the caller on purpose.
+      return deny();
+    }
+    if (!decoded.jti) return deny();
+
+    const row = await prisma.refreshToken.findUnique({
+      where: { id: decoded.jti },
+    });
+    if (!row || row.userId !== decoded.id) return deny();
+
+    if (row.revokedAt) {
+      // Reuse of a rotated token. Either the real client replayed an old cookie
+      // — which it has no reason to do — or somebody else is holding a copy.
+      // Cannot tell which, so assume the worse one and end everything: bump the
+      // counter (kills outstanding access tokens) and revoke every row.
+      await prisma.$transaction([
+        prisma.user.update({
+          where: { id: row.userId },
+          data: { tokenVersion: { increment: 1 } },
+        }),
+        prisma.refreshToken.updateMany({
+          where: { userId: row.userId, revokedAt: null },
+          data: { revokedAt: new Date() },
+        }),
+      ]);
+      return deny();
+    }
+
+    if (row.expiresAt <= new Date()) return deny();
+
+    const user = await prisma.user.findUnique({
+      where: { id: row.userId },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        isActive: true,
+        mustChangePassword: true,
+        tokenVersion: true,
+      },
+    });
+    if (!user || !user.isActive) return deny();
+    // The counter moved under us — a logout, a password change or a
+    // deactivation happened after this cookie was issued.
+    if ((decoded.tokenVersion ?? 0) !== user.tokenVersion) return deny();
+
+    // Retire this row and open the next one in a single transaction, so a
+    // crash between the two cannot leave a session with no live token.
+    const expiresAt = new Date(
+      Date.now() + REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000,
+    );
+    const [, next] = await prisma.$transaction([
+      prisma.refreshToken.update({
+        where: { id: row.id },
+        data: { revokedAt: new Date() },
+      }),
+      prisma.refreshToken.create({
+        data: { userId: user.id, expiresAt },
+        select: { id: true },
+      }),
+    ]);
+
+    res.cookie(
+      REFRESH_COOKIE,
+      generateRefreshToken(user.id, user.tokenVersion, next.id),
+      refreshCookieOptions(),
+    );
+
+    res.json({
+      success: true,
+      data: {
+        token: generateToken(user.id, user.tokenVersion),
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          mustChangePassword: user.mustChangePassword,
+        },
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+module.exports = { register, login, getMe, changePassword, logout, refresh };
