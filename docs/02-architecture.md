@@ -83,47 +83,61 @@ Start order is enforced: `backend` waits for Postgres to pass `pg_isready`; `fro
 
 ```
 backend/src/
-├── index.js                     Binds the port. Nothing else.
-├── app.js                       createApp() factory — helmet → compression → morgan → CORS
-│                                → json/urlencoded → rate limit (/api) → login limiter
-│                                → /health → routers → notFound → errorHandler.
+├── index.js                     Checks JWT_SECRET is set, then binds the port. Nothing else.
+├── app.js                       createApp() factory — the whole middleware stack, listed below.
 │                                A factory so tests mount the real stack without listening,
 │                                and can dial rate limits down to exercise them.
 ├── config/
-│   └── db.js                    PrismaClient singleton; exits the process if connect fails
+│   ├── db.js                    PrismaClient singleton; exits the process if connect fails
+│   └── logger.js                pino + pino-http. One JSON object per line in production,
+│                                pretty in development, silent under test. Every request
+│                                carries a correlation id echoed as X-Request-Id, and the
+│                                redaction list covers tokens and every password field.
 ├── middlewares/
-│   ├── auth.middleware.js       protect() verifies JWT + reloads user; authorize(...roles) RBAC
+│   ├── auth.middleware.js       protect() verifies the JWT, then reloads the user — two
+│   │                            separate catches, so a database fault is a 500 rather than
+│   │                            a bad-credential 401 (G-18); authorize(...roles) RBAC
+│   ├── password-change.middleware.js
+│   │                            403 PASSWORD_CHANGE_REQUIRED while the flag is set, so the
+│   │                            seeded admin cannot use the system until it is replaced
 │   ├── validate.middleware.js   validate(zodSchema) — parses, replaces req.body, 400 on failure
+│   ├── validate-query.middleware.js
+│   │                            validateQuery(zodSchema) → req.validatedQuery. Deliberately
+│   │                            NOT req.query: in Express 5 that is a getter, and assigning
+│   │                            to it reads as working code while silently doing nothing
 │   └── error.middleware.js      notFound() + errorHandler() incl. Prisma P2002/P2003/P2025
-├── validators/                  Zod schemas — billing.validator.js, inventory.validator.js
-├── routes/                      auth · inventory · billing · user   (4 files, all mounted)
-│                                customer · medicine · report · supplier  (4 EMPTY FILES)
+├── validators/                  Zod schemas — billing · common · inventory · user
+├── routes/                      auth · inventory · billing · user · dashboard  (5, all mounted)
 ├── controllers/                 auth · user · category · manufacturer · medicine · batch
-│                                · supplier · customer · billing
+│                                · supplier · customer · billing · dashboard
 └── utils/
     ├── jwt.utils.js             generateToken (7d) · generateRefreshToken (30d, unused)
-    ├── invoice.utils.js         generateInvoiceNumber() · generatePurchaseNumber() (unused)
-    └── seed.js                  Creates admin@medstore.com / admin123
+    ├── invoice.utils.js         generateInvoiceNumber() · generateCreditNoteNumber()
+    │                            · isDuplicateNumber() · generatePurchaseNumber() (unused)
+    └── seed.js                  Creates admin@medstore.com, flagged mustChangePassword
 
-backend/tests/                   278 tests — Vitest + Supertest against real PostgreSQL
+backend/tests/                   368 tests across 14 files — Vitest + Supertest, real PostgreSQL
 ├── setup/                       Database-name guard, migrations, per-test cleanup
 ├── helpers/factory.js           buildApp(), signed-in users by role, inventory fixtures
-├── auth/                        Login, tokens, RBAC matrix, rate limiting
-├── billing/                     GST fixtures, concurrency, reports, customers
+├── api/                         Query-parameter validation across all ten surfaces
+├── auth/                        Login, tokens, RBAC matrix, rate limiting, forced password change
+├── billing/                     GST fixtures, concurrency, void and credit notes, reports,
+│                                customers
 ├── inventory/                   Medicines, batches, master data
 └── users/                       User administration
 ```
 
 ### Router mounting — the real map
 
-`index.js` mounts exactly four routers. Resource grouping does **not** follow the file names:
+`app.js` mounts five routers. Resource grouping does **not** follow the file names:
 
-| Mount              | Router file             | Resources served                                                            |
-| ------------------ | ----------------------- | --------------------------------------------------------------------------- |
-| `/api/auth`      | `auth.routes.js`      | login, register, me, change-password                                        |
-| `/api/users`     | `user.routes.js`      | user CRUD + own-profile update                                              |
-| `/api/inventory` | `inventory.routes.js` | categories, manufacturers,**medicines**, batches, **suppliers** |
-| `/api/billing`   | `billing.routes.js`   | **customers**, invoices, daily summary, GST report                    |
+| Mount              | Router file              | Resources served                                                            |
+| ------------------ | ------------------------ | --------------------------------------------------------------------------- |
+| `/api/auth`      | `auth.routes.js`       | login, register, me, change-password                                        |
+| `/api/users`     | `user.routes.js`       | user CRUD + own-profile update                                              |
+| `/api/inventory` | `inventory.routes.js`  | categories, manufacturers,**medicines**, batches, **suppliers** |
+| `/api/billing`   | `billing.routes.js`    | **customers**, invoices, void, daily summary, trend, GST report        |
+| `/api/dashboard` | `dashboard.routes.js`  | `GET /stats` — every dashboard panel in one request ([G-08](./08-gap-analysis.md#g-08)) |
 
 Two consequences worth internalising before writing client code:
 
@@ -131,22 +145,30 @@ Two consequences worth internalising before writing client code:
 - **Suppliers and medicines live under `/api/inventory/`**, not at the top level.
 - There is no `customer.routes.js`, `medicine.routes.js`, `report.routes.js` or `supplier.routes.js`. Four zero-byte placeholders with those names were deleted on 2026-08-20 ([G-13](./08-gap-analysis.md#g-13)) because they implied routers that never existed. Re-grouping the URLs is queued for 2.0.0.
 
-### Middleware order (`index.js`)
+### Middleware order (`app.js`)
 
 ```
-helmet()  →  compression()  →  morgan("dev")  →  cors(allowlist)
+helmet()  →  compression()  →  pino-http (correlation id → X-Request-Id)
+  →  set("trust proxy", TRUST_PROXY)      private ranges, not `true` — port 5000 is
+  →  cors(allowlist)                      published, so X-Forwarded-For must not be forgeable
+  →  set("json replacer", …)              unwraps Prisma Decimal to a JSON number
   →  express.json()  →  express.urlencoded()
-  →  rateLimit(15 min / 500 req)  mounted on /api only
-  →  GET /health          (outside the rate limiter)
-  →  /api/auth  /api/inventory  /api/billing  /api/users
+  →  rateLimit(15 min / 500 req)          mounted on /api only
+  →  rateLimit(15 min / 10 failures)      mounted on /api/auth/login, successes not counted
+  →  GET /health  ·  GET /health/ready    (outside the rate limiter)
+  →  /api/auth  /api/inventory  /api/billing  /api/users  /api/dashboard
   →  notFound  →  errorHandler
 ```
 
 Within a protected router the per-request chain is:
 
 ```
-protect  →  authorize(...roles)  →  validate(schema)  →  controller
+protect  →  requirePasswordChange  →  authorize(...roles)  →  validate(schema)  →  controller
 ```
+
+`validateQuery(schema)` takes `validate`'s place on read routes, landing its output on `req.validatedQuery`.
+
+**`requirePasswordChange` is mounted by routing, not by an exemption list.** Four routers apply it with `router.use()`; `auth.routes.js` applies it per route, and deliberately omits it from `GET /me` and `PUT /change-password` — the two routes a blocked account needs in order to stop being blocked. Keeping the exemption in the routing rather than in a list inside the middleware means there is no second place for the two to drift apart.
 
 `protect` does a **database read on every request** to reload the user and check `isActive`. That is a correctness win (instant deactivation) at the cost of one query per call — the most obvious candidate if a cache is ever introduced, though caching it trades directly against the immediate-deactivation guarantee that makes the read worth doing.
 
@@ -278,15 +300,19 @@ The last two fetch one row purely to read a count — cheap, but a dedicated `/s
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
 | Authentication   | JWT HS256,`Authorization: Bearer`, 7-day expiry, per-request DB reload                                                                                                                             | `auth.middleware.js`         |
 | Authorisation    | `authorize(...roles)` → 403 with the required role named                                                                                                                                          | `auth.middleware.js`         |
-| Validation       | Zod`safeParse`; on success `req.body` is **replaced** by parsed data (unknown keys dropped)                                                                                                | `validate.middleware.js`     |
+| Forced password change | `403 PASSWORD_CHANGE_REQUIRED` on every route but reading your own profile and changing your password, while `User.mustChangePassword` is set                                             | `password-change.middleware.js` |
+| Body validation  | Zod`safeParse`; on success `req.body` is **replaced** by parsed data (unknown keys dropped)                                                                                                | `validate.middleware.js`     |
+| Query validation | Zod`safeParse` onto **`req.validatedQuery`** — never `req.query`, which is a getter in Express 5. Absent means default; present but unparseable is a 400                       | `validate-query.middleware.js` |
+| Money on the wire | An Express`json replacer` unwraps `Prisma.Decimal` to a JSON number, so exactness lives in storage and arithmetic while the API contract stays numeric                                       | `app.js`                     |
 | Error handling   | Central`errorHandler`; maps Prisma `P2002` → 409 (duplicate, with offending field), `P2003` → 409 (still referenced) and `P2025` → 404; stack included only when `NODE_ENV=development` | `error.middleware.js`        |
 | 404 routing      | `notFound` builds `Route not found: <url>` and delegates                                                                                                                                         | `error.middleware.js`        |
-| Logging          | `morgan("dev")` to stdout; Prisma logs queries in development                                                                                                                                      | `index.js`, `config/db.js` |
-| Rate limiting    | 500 requests / 15 min,`/api` prefix only                                                                                                                                                           | `index.js`                   |
-| CORS             | Explicit origin allowlist +`credentials: true`                                                                                                                                                     | `index.js`                   |
-| Compression      | gzip on all responses                                                                                                                                                                                | `index.js`                   |
-| Security headers | helmet defaults                                                                                                                                                                                      | `index.js`                   |
-| Caching          | *None active*                                                                                                                                                                                      | —                             |
+| Logging          | **pino** — one JSON object per line in production, pretty in development, silent under test. A correlation id per request, echoed as `X-Request-Id`; tokens and password fields redacted | `config/logger.js`           |
+| Rate limiting    | 500 requests / 15 min on`/api`, plus 10 **failed** logins / 15 min on `/api/auth/login`. Keyed on the real client via `trust proxy`                                            | `app.js`                     |
+| CORS             | Explicit origin allowlist +`credentials: true`. In production the allowlist is exactly `CORS_ORIGINS`; the development origins are not appended                                            | `app.js`                     |
+| Compression      | gzip on all responses                                                                                                                                                                                | `app.js`                     |
+| Security headers | helmet defaults on API responses; the SPA's CSP and HSTS come from nginx in production                                                                                                               | `app.js`, `nginx.prod.conf` |
+| Health           | `/health` is liveness and touches nothing; `/health/ready` runs `SELECT 1` and answers 503 when the database is unreachable                                                                 | `app.js`                     |
+| Caching          | *None.* The Redis service was removed in Phase 8 without ever acquiring a consumer ([G-03](./08-gap-analysis.md#g-03))                                                                                                                                                                                      | —                             |
 
 ### Response envelope
 
@@ -306,7 +332,9 @@ Note `message` — not `error` / `statusCode`, which the root README claimed unt
 
 ## 8. Deployment topology
 
-### Development (the only configured topology)
+Two topologies are configured: `docker-compose.yml` for development and `docker-compose.prod.yml` for deployment. They are not variants of one file — the differences are the point.
+
+### Development (`docker-compose.yml`)
 
 ```
 host:80   → nginx  ─┬─ /      → frontend:5173 (Vite HMR, WebSocket upgrade headers set)
@@ -317,6 +345,26 @@ host:5432 → postgres  (direct, exposed)
 ```
 
 Source is bind-mounted (`./backend:/app`, `./frontend:/app`) with anonymous volumes preserving each container's `node_modules`. Editing a file on the host restarts nodemon / triggers HMR.
+
+> On some host filesystems — external or network-mounted volumes in particular — inotify events do not cross the bind mount, so nodemon never sees the write and keeps serving the old code. If a change appears to have no effect, `docker compose restart backend` before doubting the change.
+
+### Production (`docker-compose.prod.yml`)
+
+```
+host:443 → nginx  ─┬─ /      → frontend:80    (static `vite build` output, no Node at runtime)
+                   └─ /api   → backend:5000
+host:80  → nginx     301 → https://$host$request_uri
+                     postgres — internal network only, no published port
+```
+
+The differences that matter:
+
+- **No bind mounts.** What runs is what was built, not whatever is in the working tree.
+- **Postgres publishes no host port.** It is reachable only on the compose network, which is the difference between a password being a defence and being the only defence.
+- **No credential literals.** Every value comes from `.env.prod`, and the compose file fails fast with a named error if any is unset. `DATABASE_URL` is composed from the same variables Postgres uses, so the two cannot drift.
+- **`restart: unless-stopped`** everywhere, with healthcheck-gated startup and a `pgdata_prod` volume distinct from the development stack's — Postgres only applies `POSTGRES_USER`/`PASSWORD` when initialising an empty data directory, so sharing a volume would silently keep the development credentials.
+
+Setup, TLS certificates, backup and restore: [06 — Development Guide](./06-development-guide.md#running-in-production).
 
 ### Environment matrix
 
@@ -332,16 +380,23 @@ Source is bind-mounted (`./backend:/app`, `./frontend:/app`) with anonymous volu
 
 `frontend/.env` exists but is **empty**, which is correct — the client calls `/api` on its own origin, so it needs no variables at all. The dev-server proxy target comes from `VITE_PROXY_TARGET` in compose and defaults to `http://localhost:5000` for a non-Docker run.
 
-### Production gaps
+### Production readiness
 
-The stack has no production path today. Minimum required before a real deployment — expanded in [Phase 8](./05-roadmap-and-phases.md#phase-8--production-readiness):
+Everything [Phase 8](./05-roadmap-and-phases.md#phase-8--production-readiness) listed as a blocker has shipped:
 
-- ~~Multi-stage Dockerfiles; `vite build` output served statically by Nginx.~~ **Done 2026-08-20** — `backend/Dockerfile` and `frontend/Dockerfile`.
-- ~~TLS termination and HSTS.~~ **Done** — `nginx/nginx.prod.conf`, plus the security headers and gzip the nginx README had long claimed.
-- ~~Postgres credentials and `JWT_SECRET` from a secret store, not compose literals.~~ **Done** — `docker-compose.prod.yml` has no credential literals and refuses to start without them.
-- ~~Remove host port exposure for Postgres and Redis.~~ **Done** — only 80 and 443 are published; Redis was removed entirely ([G-03](./08-gap-analysis.md#g-03)).
-- ~~`app.set('trust proxy', …)`~~ **done** — set to `loopback, linklocal, uniquelocal` (override with `TRUST_PROXY`), so the rate limiter keys on the real client address rather than a spoofable header.
-- ~~Backup/restore for the `pgdata` volume.~~ **Done** — `scripts/backup.sh` and `scripts/restore.sh`, rehearsed against the production stack.
+| Was missing                                          | Now                                                                                                                     |
+| ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Multi-stage images;`vite build` served statically  | `backend/Dockerfile` and `frontend/Dockerfile`. The frontend image is nginx serving static output, with no Node at runtime |
+| TLS termination and HSTS                             | `nginx/nginx.prod.conf` — TLS 1.2/1.3, HSTS at one year, 80 → 443, plus a CSP, `X-Frame-Options`, `Referrer-Policy` and `Permissions-Policy` |
+| Credentials from a secret store, not compose literals | `docker-compose.prod.yml` has none, and refuses to start without them                                                   |
+| Host port exposure on the data tier                  | Only 80 and 443 are published; Redis was removed entirely ([G-03](./08-gap-analysis.md#g-03))                            |
+| `app.set('trust proxy', …)`                        | `loopback, linklocal, uniquelocal`, overridable with `TRUST_PROXY`, so the limiter keys on the real client rather than a spoofable header |
+| Structured logs                                      | pino, with a correlation id echoed as`X-Request-Id`                                                                     |
+| A readiness probe                                    | `/health/ready` runs `SELECT 1` and answers 503 when the database is unreachable                                       |
+| Backup and restore                                   | `scripts/backup.sh` and `scripts/restore.sh`, rehearsed against the production stack by dropping the schema and restoring it |
+| The seeded admin password                            | Enforced, not requested —`403 PASSWORD_CHANGE_REQUIRED` until it is replaced                                            |
+
+**Two things remain the operator's**, and no configuration can decide them: a real TLS certificate in place of the self-signed one `scripts/gen-cert.sh` generates, and a retention period for customer records. Both are in [SECURITY.md](../SECURITY.md#for-operators).
 
 ---
 
