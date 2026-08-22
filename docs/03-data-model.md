@@ -28,6 +28,7 @@ erDiagram
         string email UK
         string password
         Role role
+        boolean mustChangePassword
         boolean isActive
     }
     Category {
@@ -86,6 +87,9 @@ erDiagram
         decimal totalAmount
         PaymentMode paymentMode
         PaymentStatus paymentStatus
+        InvoiceType type
+        InvoiceStatus status
+        string reversesId FK
     }
     InvoiceItem {
         string id PK
@@ -125,6 +129,10 @@ erDiagram
 | `Gender`        | `MALE`, `FEMALE`, `OTHER`         | *(nullable)* | `Customer.gender`       |
 | `PaymentMode`   | `CASH`, `UPI`, `CARD`, `CREDIT` | `CASH`       | `Invoice.paymentMode`   |
 | `PaymentStatus` | `PAID`, `PENDING`, `PARTIAL`      | `PAID`       | `Invoice.paymentStatus` |
+| `InvoiceType`   | `SALE`, `CREDIT_NOTE`               | `SALE`       | `Invoice.type`          |
+| `InvoiceStatus` | `ACTIVE`, `CANCELLED`               | `ACTIVE`     | `Invoice.status`        |
+
+`InvoiceType` and `InvoiceStatus` are kept apart from `PaymentStatus` on purpose — see §3.8 and §8.
 
 ---
 
@@ -139,6 +147,7 @@ erDiagram
 | `email`                     | String   | **unique**, required | Login identity; duplicates surface as`409`                               |
 | `password`                  | String   | required                   | bcrypt hash, cost 12. Never selected into responses                        |
 | `role`                      | Role     | default`CASHIER`         |                                                                            |
+| `mustChangePassword`        | Boolean  | default`false`           | Set on the seeded bootstrap admin. While true the API answers`403 PASSWORD_CHANGE_REQUIRED` to every route except reading your own profile and changing your password — the credential is published in this repository, so the account is created unusable rather than merely discouraged (threat T-2) |
 | `isActive`                  | Boolean  | default`true`            | `false` blocks login *and* invalidates existing tokens on next request |
 | `createdAt` / `updatedAt` | DateTime | auto                       |                                                                            |
 
@@ -253,10 +262,15 @@ Relations: `invoices Invoice[]`. **No `updatedAt`, no soft delete, no delete rou
 | `totalAmount`   | Decimal(12,2) |                          | `subtotal + cgst + sgst − discountAmt`, exactly                            |
 | `paymentMode`   | PaymentMode   | default`CASH`          |                                                                               |
 | `paymentStatus` | PaymentStatus | default`PAID`          | Only`PAID` invoices enter the GST report                                    |
+| `type`          | InvoiceType   | default`SALE`          | `SALE` or `CREDIT_NOTE`. A credit note carries **negated** money on every field and a `CRNyymmdd-nnnn` serial from its own series |
+| `status`        | InvoiceStatus | default`ACTIVE`        | `ACTIVE` or `CANCELLED`. **The only column a void changes** — number, date, totals and lines are exactly what was issued |
+| `reversesId`    | String?       | **unique**, FK → Invoice | Set on a credit note: the sale it reverses. Null on a sale. The unique index is what makes a double-submitted void restore stock exactly once |
 | `notes`         | String?       | optional                 |                                                                               |
 | `createdAt`     | DateTime      | auto                     | Distinct from`date`; invoice numbering counts on `createdAt`              |
 
-Relations: `customer?`, `user`, `items InvoiceItem[]`.
+Relations: `customer?`, `user`, `items InvoiceItem[]`, plus the self-relation `reverses` / `reversedBy` on `reversesId`.
+
+> **`type` and `status` are deliberately separate from `paymentStatus`.** "Was it paid" and "is it a reversal" are orthogonal questions, and folding `CANCELLED` into `PaymentStatus` would have dropped a voided invoice out of the GST report — which filters on `PAID` — silently rewriting a tax period that may already have been filed. See §8.
 
 > `date` and `createdAt` both default to now and never diverge today, but reports filter on `date` while `generateInvoiceNumber()` counts on `createdAt`. If back-dated invoices are ever allowed, these will disagree.
 
@@ -325,16 +339,28 @@ No route, controller, validator or UI touches these tables. `generatePurchaseNum
 
 ### Added 2026-08-20
 
-| Suggested index                                   | Serves                            | Why it matters                                                                                                                                                                          |
+Before this the schema had **no custom indexes at all** — only primary keys and unique constraints — so every one of these tables was on a sequential scan. Six come from `@@index` declarations in `schema.prisma`; the seventh cannot be expressed there. All are in migration `20260820115654_add_performance_indexes`.
+
+| Index                                             | Serves                            | Effect                                                                                                                                                                                  |
 | ------------------------------------------------- | --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Batch(expiryDate)`                             | expiry alerts, FEFO ordering      | Hit on every dashboard load and every POS search                                                                                                                                        |
-| `Batch(quantity)`                               | low-stock report                  | Full scan today                                                                                                                                                                         |
-| `Batch(medicineId)`                             | POS search join                   | Prisma does not create FK-side indexes automatically                                                                                                                                    |
-| `Invoice(date)`                                 | every report and the invoice list | The hottest filter in the reporting layer                                                                                                                                               |
-| `Invoice(customerId)`                           | customer history                  |                                                                                                                                                                                         |
-| `InvoiceItem(invoiceId)`                        | invoice detail/print              |                                                                                                                                                                                         |
-| GIN`pg_trgm` on `Medicine(name, genericName)` | POS search                        | `ILIKE '%q%'` cannot use a b-tree index                                                                                                                                               |
-| ~~`CHECK (Batch.quantity >= 0)`~~              | integrity                         | **Added 2026-08-20** (`Batch_quantity_non_negative`). Hand-written in migration `20260820052324_add_batch_quantity_check` — Prisma cannot express CHECK in `schema.prisma` |
+| `Batch_expiryDate_idx`                          | expiry alerts, FEFO ordering      | Hit on every dashboard load and every POS search                                                                                                                                        |
+| `Batch_quantity_idx`                            | low-stock report                  | Was a full scan                                                                                                                                                                         |
+| `Batch_medicineId_idx`                          | POS search join                   | Prisma does not create FK-side indexes automatically, so this join had none                                                                                                             |
+| `Invoice_date_idx`                              | every report and the invoice list | The hottest filter in the reporting layer. The invoice list went from a Seq Scan at cost 730 to an Index Scan at 36                                                                     |
+| `Invoice_customerId_idx`                        | customer history                  |                                                                                                                                                                                         |
+| `InvoiceItem_invoiceId_idx`                     | invoice detail/print              |                                                                                                                                                                                         |
+| `Medicine_name_generic_trgm_idx`                | POS search                        | **GIN over `pg_trgm`**, on `name` and `COALESCE(genericName, '')`. `ILIKE '%q%'` has a leading wildcard, which no b-tree can serve. 824 kB |
+
+**Two things live only in migration history**, because `schema.prisma` cannot express either. `prisma migrate dev` will not regenerate them, and `prisma db push` against a scratch database will not create them:
+
+| Object                              | Migration                                     | What it is                                                                                                                            |
+| ----------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `Batch_quantity_non_negative`     | `20260820052324_add_batch_quantity_check`   | `CHECK ("quantity" >= 0)` — invariant I-1's database backstop. Verified against live data before applying: 0 rows were negative |
+| `Medicine_name_generic_trgm_idx`  | `20260820115654_add_performance_indexes`    | The GIN index above, plus`CREATE EXTENSION IF NOT EXISTS pg_trgm`                                                                   |
+
+`schema.prisma` carries doc comments on `Batch.quantity` and the `Medicine` model pointing at both, so they are not invisible to someone reading the model.
+
+> The trigram index is **pre-emptive**. It is used for a selective search term, but at 10,000 medicines the planner still prefers a sequential scan for a common one — the index earns its place as the catalogue grows, not today.
 
 ---
 
@@ -360,10 +386,16 @@ These must hold at all times. Any new write path must preserve them.
 
 | Migration                              | Date       | Contents                                             |
 | -------------------------------------- | ---------- | ---------------------------------------------------- |
-| `20260418054922_init`                | 2026-04-18 | All 11 tables, 4 enums, all constraints              |
-| `20260419152932_add_mfgdate`         | 2026-04-19 | Adds nullable`Batch.mfgDate`                       |
-| `20260818171902_add_invoice_counter` | 2026-08-18 | Adds`InvoiceCounter` for race-free invoice serials |
-| `20260819153025_money_to_decimal`    | 2026-08-19 | Money →`DECIMAL(12,2)`, rates → `DECIMAL(5,2)` |
+| `20260418054922_init`                     | 2026-04-18 | All 11 tables, 4 enums, all constraints                                                                                                                            |
+| `20260419152932_add_mfgdate`              | 2026-04-19 | Adds nullable`Batch.mfgDate`                                                                                                                                     |
+| `20260818171902_add_invoice_counter`      | 2026-08-18 | Adds`InvoiceCounter` for race-free invoice serials ([G-01](./08-gap-analysis.md#g-01))                                                                            |
+| `20260819153025_money_to_decimal`         | 2026-08-19 | Money →`DECIMAL(12,2)`, rates → `DECIMAL(5,2)` ([G-07](./08-gap-analysis.md#g-07))                                                                          |
+| `20260820052324_add_batch_quantity_check` | 2026-08-20 | **Hand-written.** `CHECK ("quantity" >= 0)` on `Batch` as `Batch_quantity_non_negative` — invariant I-1's backstop. Prisma cannot express CHECK |
+| `20260820111401_add_must_change_password` | 2026-08-20 | Adds`User.mustChangePassword`, default `false`. Ships the forced-password-change control for the seeded admin (threat T-2)                                    |
+| `20260820115654_add_performance_indexes`  | 2026-08-20 | Six b-tree indexes from`@@index` declarations, plus `CREATE EXTENSION pg_trgm` and the GIN index Prisma cannot express. See §4                                |
+| `20260820132000_add_invoice_void`         | 2026-08-20 | Adds the`InvoiceType` and `InvoiceStatus` enums, `Invoice.type` / `status` / `reversesId`, the **unique** index on `reversesId` and its self-FK ([G-15](./08-gap-analysis.md#g-15)) |
+
+All eight are applied — confirmed against `_prisma_migrations` on 2026-08-22. Two of them contain SQL that exists **only** in migration history and cannot be reproduced from `schema.prisma`; see the note in §4 before rebuilding a database with `db push`.
 
 Workflow:
 
