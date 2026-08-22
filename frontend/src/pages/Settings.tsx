@@ -198,11 +198,22 @@ function PasswordTab() {
     }
     setSaving(true);
     try {
-      await api.put("/api/auth/change-password", {
+      const res = await api.put("/api/auth/change-password", {
         currentPassword: form.currentPassword,
         newPassword: form.newPassword,
       });
-      toast.success("Password changed successfully!");
+
+      // The change signs out every other session for this account. The response
+      // carries a replacement token for this one — adopt it, or the next
+      // request 401s and the user is bounced to /login by their own successful
+      // password change.
+      const fresh: string | undefined = res.data?.data?.token;
+      if (fresh) {
+        localStorage.setItem("token", fresh);
+        useAuthStore.setState({ token: fresh });
+      }
+
+      toast.success("Password changed. Any other devices have been signed out.");
       setForm({ currentPassword: "", newPassword: "", confirmPassword: "" });
       setStrength(0);
     } catch (err: unknown) {

@@ -122,13 +122,33 @@ const changePassword = async (req, res, next) => {
     }
 
     const hashedPassword = await bcrypt.hash(newPassword, 12);
-    await prisma.user.update({
+    const updated = await prisma.user.update({
       where: { id: req.user.id },
-      // Clearing the flag here is what lets the user back into the system.
-      data: { password: hashedPassword, mustChangePassword: false },
+      data: {
+        password: hashedPassword,
+        // Clearing the flag here is what lets the user back into the system.
+        mustChangePassword: false,
+        // Changing a password is how someone responds to a compromise, so it
+        // has to end the attacker's session and not merely the victim's
+        // patience (docs/07 A-6). Bumping the counter invalidates every token
+        // outstanding for this account.
+        tokenVersion: { increment: 1 },
+      },
+      select: { tokenVersion: true },
     });
 
-    res.json({ success: true, message: "Password changed successfully." });
+    // ...including the one that just called, which would leave the caller
+    // signed out by their own successful password change. So they get a fresh
+    // token carrying the new counter: whoever proved they know the current
+    // password keeps working, and everyone else is out. That asymmetry is the
+    // entire point of the control.
+    const token = generateToken(req.user.id, updated.tokenVersion);
+
+    res.json({
+      success: true,
+      message: "Password changed successfully.",
+      data: { token },
+    });
   } catch (err) {
     next(err);
   }

@@ -262,7 +262,15 @@ Returns the freshly-loaded user attached by `protect` — no additional query.
 { "currentPassword": "old", "newPassword": "new" }
 ```
 
-**200** `Password changed successfully.` · **400** `Current password is incorrect.`
+**200** — and the body now carries a **replacement token**:
+
+```json
+{ "success": true, "message": "Password changed successfully.", "data": { "token": "eyJhbGciOi…" } }
+```
+
+**400** `Current password is incorrect.`
+
+> **A password change signs out every session for the account, including the one that called.** That is the point: it is how a user responds to a compromise, so it has to end the attacker's session. The caller gets the replacement above because they just proved they know the current password — **store it before the next request**, or that request answers `401 Session ended. Please sign in again.` and a successful change looks like a failure.
 
 > `newPassword` must be at least 8 characters. Complexity and breach checks are not enforced, and existing tokens remain valid after the change — changing a password does **not** yet end other sessions ([07 A-6](./07-security.md#weaknesses)). Use `POST /api/auth/logout` for that until it does.
 
