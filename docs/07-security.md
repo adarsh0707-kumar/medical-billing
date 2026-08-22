@@ -43,7 +43,7 @@ What still blocks internet exposure is no longer transport or secrets. It is **t
 | #        | Issue                                                                         | Impact                                                                       |
 | -------- | ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
 | A-1      | Token stored in`localStorage`                                               | Any XSS reads it and exfiltrates a 7-day credential                          |
-| A-2      | No revocation / denylist                                                      | A leaked token is valid for up to 7 days; logout is client-side only         |
+| ~~A-2~~ | ~~No revocation / denylist~~                                                 | **Fixed 2026-08-22** — `POST /api/auth/logout` increments `User.tokenVersion`, and `protect` rejects any token carrying a stale copy. Ends every session for that account, so a leaked token dies with the one the user actually signed out of. No denylist and no new dependency: the check rides on the user reload `protect` already performs |
 | A-3      | 7-day lifetime with no refresh rotation                                       | Long exposure window;`generateRefreshToken` exists but is unused           |
 | A-4      | Weak password policy                                                          | Minimum length 8 since 2026-08-19; still no complexity or breach check       |
 | ~~A-5~~ | ~~No login rate limiting~~                                                   | **Fixed 2026-08-19** — 10 failed attempts / 15 min per real client IP |
@@ -234,7 +234,7 @@ Assets: customer PII and purchase history · financial records (invoices, GST li
 **P1 — next**
 
 6. Password policy: ~~minimum length~~ (done — 8 chars), breach check, and a forced reset flow.
-7. Invalidate tokens on password change and on deactivation. A denylist keyed by user id + issued-at is the usual shape, but note there is **no cache store in the stack** since Redis was removed ([G-03](./08-gap-analysis.md#g-03)) — a `tokenVersion` column on `User`, compared against the token's `iat`, needs no new dependency and rides on the user reload `protect` already performs.
+7. **Partly done.** ~~Explicit revocation~~ shipped 2026-08-22 as `POST /api/auth/logout`: a `tokenVersion` counter on `User`, compared against a claim in the token, needing no cache store (there is none since Redis was removed, [G-03](./08-gap-analysis.md#g-03)) and riding on the user reload `protect` already performs. **Still open: bumping it on a password change**, so that responding to a compromise ends the attacker's session too (A-6). Deactivation is already covered by the `isActive` check.
 8. Shorten the access token to 15–60 minutes and implement the refresh rotation the util already anticipates.
 9. ~~Add a CSP header to the SPA.~~ **Done 2026-08-20** — `nginx/nginx.prod.conf` serves `script-src 'self'` with no inline escape, alongside HSTS, `X-Frame-Options: DENY`, `Referrer-Policy` and `Permissions-Policy`. `style-src` still needs `'unsafe-inline'` for Tailwind's injected styles. **The development stack has no CSP**, which is why T-3's residual is split by environment.
 10. ~~Clamp `limit` on every paginated endpoint and validate query parameters.~~ **Done 2026-08-20** — `validateQuery` on all 10 query surfaces, `MAX_LIMIT` 100, 44 tests.

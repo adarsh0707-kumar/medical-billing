@@ -47,6 +47,7 @@ The token comes from `POST /api/auth/login`, is signed HS256 with `JWT_SECRET`, 
 | Expired                                               | 401           | `Token expired.`                                    |
 | Not valid yet (`nbf` in the future)                 | 401           | `Invalid token.`                                    |
 | User deleted or deactivated                           | 401           | `User not found or deactivated.`                    |
+| Revoked by a logout                                   | 401           | `Session ended. Please sign in again.`              |
 | Authenticated but wrong role                          | 403           | `Access denied. Required role: ADMIN or PHARMACIST` |
 | **Database unreachable during the user reload** | **500** | The underlying error                                  |
 
@@ -263,7 +264,32 @@ Returns the freshly-loaded user attached by `protect` — no additional query.
 
 **200** `Password changed successfully.` · **400** `Current password is incorrect.`
 
-> `newPassword` must be at least 8 characters. Complexity and breach checks are not enforced, and existing tokens remain valid after the change.
+> `newPassword` must be at least 8 characters. Complexity and breach checks are not enforced, and existing tokens remain valid after the change — changing a password does **not** yet end other sessions ([07 A-6](./07-security.md#weaknesses)). Use `POST /api/auth/logout` for that until it does.
+
+### `POST /api/auth/logout` — any authenticated role
+
+Ends **every** session for the calling account, not only the one that called. No request body.
+
+**200**
+
+```json
+{ "success": true, "message": "Signed out. All sessions for this account have ended." }
+```
+
+Afterwards every token issued to that user answers **401** `Session ended. Please sign in again.` — including tokens the caller never held, which is the point: a copy someone else took is revoked too. A client-side `localStorage` clear cannot do that.
+
+| Failure                | Status |
+| ---------------------- | ------ |
+| No token               | 401    |
+| Already-revoked token  | 401`Session ended. Please sign in again.` |
+
+Calling it twice is harmless. It is **not** gated by the forced-password-change middleware, for the same reason `GET /me` and `PUT /change-password` are not: an account carrying `mustChangePassword` must still be able to sign out of itself.
+
+**How it works.** `User.tokenVersion` is a counter; every token carries the value current when it was signed, and `protect` rejects any token whose copy has fallen behind. Logout increments it. The check is free — `protect` already reloads the user row on every request.
+
+> A counter rather than a "tokens valid from" timestamp, deliberately: JWT `iat` is second-granular, so a token signed in the same second as a logout would compare equal and survive the revocation it was meant to be caught by.
+>
+> Tokens issued **before** this shipped carry no `tokenVersion` claim; a missing claim reads as `0`, which is the column default, so they kept working until their user logged out once. Deploying the feature did not sign everybody out.
 
 ### `GET /api/users` — ADMIN
 
@@ -769,7 +795,6 @@ Documented elsewhere in the repo but absent from the code. Requests to these ret
 
 | Claimed in            | Path                                                                                               | Reality                                                                                                          |
 | --------------------- | -------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| root + backend README | `POST /api/auth/logout`                                                                          | Logout is client-side only                                                                                       |
 | backend README        | `POST /api/auth/refresh`                                                                         | `generateRefreshToken` exists, no route                                                                        |
 | backend README        | `POST /api/auth/forgot-password`, `/reset-password`                                            | Not implemented                                                                                                  |
 | backend README        | `PUT /api/users/:id/password`, `/:id/role`                                                     | Covered by`PUT /api/users/:id`                                                                                 |

@@ -110,7 +110,7 @@ These are **already documented** in [`docs/07-security.md`](./docs/07-security.m
 | The PostgreSQL password is hard-coded in `docker-compose.yml` | Development default, and still true of the *development* file. `docker-compose.prod.yml` has no credential literals |
 | No TLS anywhere — nginx listens on `:80` only | **Fixed 2026-08-20** for the production stack: TLS, HSTS and an 80 → 443 redirect. The development stack is still plain HTTP, deliberately |
 | JWTs are stored in `localStorage` and are valid for 7 days | Known trade-off. XSS would expose a long-lived credential |
-| No server-side logout or token revocation | A leaked token stays valid until it expires. Rotating `JWT_SECRET` invalidates every session as an emergency measure |
+| ~~No server-side logout or token revocation~~ | **Fixed 2026-08-22**: `POST /api/auth/logout` ends every session for that account, including copies of the token held by someone else. Rotating `JWT_SECRET` remains the blunt lever for signing out *everyone* at once |
 | Changing a password doesn't invalidate existing sessions | Planned |
 | Password policy is length-only (minimum 8) | No complexity or breach checking yet |
 | Login timing reveals whether an email exists | The response body doesn't, but a missing user skips the bcrypt comparison and returns faster |
@@ -172,7 +172,7 @@ Briefly, so you know what to expect when reviewing:
 |---|---|
 | Password storage | bcrypt, cost factor 12; hashes are never returned by any endpoint |
 | Sessions | JWT (HS256), 7-day expiry, carrying only a user id |
-| Revocation | Deactivating a user takes effect on their next request — every protected request reloads the user and rejects `isActive: false` |
+| Revocation | Two levers, both effective on the next request because every protected request reloads the user: deactivating an account (`isActive: false`), and `POST /api/auth/logout`, which bumps `User.tokenVersion` and invalidates every token that account has outstanding. A password change does **not** yet do this |
 | Authorisation | Server-side `authorize(...roles)` on every mutating route; client-side checks are cosmetic only |
 | Input validation | Zod on every mutating route; unknown keys stripped, and rejected outright on the most sensitive routes |
 | SQL injection | Prisma parameterises everything. Five raw statements exist — two document-serial upserts, two trend aggregations and the readiness probe — and every one is a bound `$queryRaw` tagged template. `$queryRawUnsafe` appears nowhere ([full list](./docs/07-security.md#5-injection--data-access-safety)) |

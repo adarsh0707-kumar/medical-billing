@@ -29,6 +29,7 @@ erDiagram
         string password
         Role role
         boolean mustChangePassword
+        int tokenVersion
         boolean isActive
     }
     Category {
@@ -148,6 +149,7 @@ erDiagram
 | `password`                  | String   | required                   | bcrypt hash, cost 12. Never selected into responses                        |
 | `role`                      | Role     | default`CASHIER`         |                                                                            |
 | `mustChangePassword`        | Boolean  | default`false`           | Set on the seeded bootstrap admin. While true the API answers`403 PASSWORD_CHANGE_REQUIRED` to every route except reading your own profile and changing your password — the credential is published in this repository, so the account is created unusable rather than merely discouraged (threat T-2) |
+| `tokenVersion`              | Int      | default`0`               | Revocation counter (FR-AUTH-09). Every issued token carries the value current when it was signed;`protect` rejects any token whose copy has fallen behind. `POST /api/auth/logout` increments it, ending every session for that account. A counter rather than a timestamp because JWT `iat` is second-granular — a token signed in the same second as a logout would survive it |
 | `isActive`                  | Boolean  | default`true`            | `false` blocks login *and* invalidates existing tokens on next request |
 | `createdAt` / `updatedAt` | DateTime | auto                       |                                                                            |
 
@@ -394,6 +396,7 @@ These must hold at all times. Any new write path must preserve them.
 | `20260820111401_add_must_change_password` | 2026-08-20 | Adds`User.mustChangePassword`, default `false`. Ships the forced-password-change control for the seeded admin (threat T-2)                                    |
 | `20260820115654_add_performance_indexes`  | 2026-08-20 | Six b-tree indexes from`@@index` declarations, plus `CREATE EXTENSION pg_trgm` and the GIN index Prisma cannot express. See §4                                |
 | `20260820132000_add_invoice_void`         | 2026-08-20 | Adds the`InvoiceType` and `InvoiceStatus` enums, `Invoice.type` / `status` / `reversesId`, the **unique** index on `reversesId` and its self-FK ([G-15](./08-gap-analysis.md#g-15)) |
+| `20260822140056_add_token_version`        | 2026-08-22 | Adds`User.tokenVersion`, default `0` — the revocation counter behind `POST /api/auth/logout` (FR-AUTH-09)                                                    |
 
 All eight are applied — confirmed against `_prisma_migrations` on 2026-08-22. Two of them contain SQL that exists **only** in migration history and cannot be reproduced from `schema.prisma`; see the note in §4 before rebuilding a database with `db push`.
 

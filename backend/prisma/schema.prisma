@@ -20,6 +20,15 @@ model User {
   /// resets. While true the API refuses every route except signing in, reading
   /// your own profile and changing your password (threat T-2).
   mustChangePassword Boolean @default(false)
+  /// Revocation counter. Every issued token carries the value current when it
+  /// was signed; `protect` rejects any token whose copy no longer matches.
+  /// Incrementing it therefore invalidates every outstanding session for this
+  /// user at once — which is what POST /api/auth/logout does (FR-AUTH-09).
+  ///
+  /// A counter rather than a "valid from" timestamp on purpose: JWT `iat` is
+  /// second-granular, so a token signed in the same second as a logout would
+  /// compare equal and survive the revocation it was meant to be caught by.
+  tokenVersion Int @default(0)
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
