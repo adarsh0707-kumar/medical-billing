@@ -51,7 +51,7 @@ The honest read as of **2026-08-20**: the correctness gaps that made v1.0.0 unsa
 - Dev Dockerfiles for frontend (Vite, `--host 0.0.0.0`) and backend (nodemon, openssl for Prisma).
 - Nginx reverse proxy with WebSocket upgrade headers for HMR.
 - Express bootstrap: helmet, compression, morgan, CORS allowlist, rate limiter, `/health`.
-- Prisma client singleton that exits on connection failure; Redis client that never crashes the process.
+- Prisma client singleton that exits on connection failure; Redis client that never crashes the process *(the Redis half was removed in Phase 8 — it never acquired a consumer)*.
 
 **Exit criteria met:** `docker compose up` → `/health` returns 200.
 
@@ -229,7 +229,7 @@ The honest read as of **2026-08-20**: the correctness gaps that made v1.0.0 unsa
 | CSV/Excel export on all reports            | FR-RPT-09                                           | Most-requested reporting gap                                                                       |
 | Audit log for stock and price changes      | NFR-17                                              | Prisma middleware can capture this centrally                                                       |
 | Password reset by email                    | FR-AUTH-11                                          | Requires an SMTP dependency the stack does not have                                                |
-| Server-side logout / token revocation      | FR-AUTH-09                                          | Needs a Redis denylist — pairs with 11.1                                                          |
+| Server-side logout / token revocation      | FR-AUTH-09                                          | Needs somewhere to record revocation. 11.1 is not applicable and there is no cache store, so a`tokenVersion` column compared against the token's `iat` is the cheaper route |
 | Shared API types between client and server | NFR-22                                              | Zod schemas → inferred TS types in a shared package                                               |
 | IGST / inter-state supply                  | [Q2](./01-product-requirements.md#14-open-questions) | Schema change; only if the store ships out of state                                                |
 | Multi-store                                | Non-goal for 1.x                                    | Would restructure every stock query                                                                |

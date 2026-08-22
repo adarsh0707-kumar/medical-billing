@@ -33,7 +33,7 @@ Writing it is **Phase 8** in
 [`docs/05-roadmap-and-phases.md`](../docs/05-roadmap-and-phases.md), which
 covers multi-stage builds serving `vite build` output statically, TLS
 termination with HSTS and an 80 → 443 redirect, security headers, gzip, and
-removing the host port exposure on Postgres and Redis.
+removing the host port exposure on Postgres.
 
 The forwarded-header setup matters more than it looks: the API's rate limiter
 keys on the client address, and `TRUST_PROXY` has to match the real topology or

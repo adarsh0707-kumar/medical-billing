@@ -184,7 +184,7 @@ Public, outside `/api` and therefore outside the rate limiter.
 { "success": true, "message": "Medical Billing API is running!", "timestamp": "2026-08-17T09:12:44.101Z" }
 ```
 
-It does **not** check database or Redis connectivity — a `200` here does not mean the system can serve requests.
+It does **not** check database connectivity — a `200` here does not mean the system can serve requests.
 
 ---
 

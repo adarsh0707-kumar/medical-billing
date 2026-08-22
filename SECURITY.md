@@ -96,7 +96,7 @@ We will not pursue or support legal action against anyone who reports a vulnerab
 - Denial of service by volume, rate-limit tuning opinions, or resource exhaustion requiring authenticated access
 - Social engineering, physical access, or attacks on a maintainer's accounts
 - Automated scanner output with no analysis of whether it is reachable here
-- Vulnerabilities in Docker, PostgreSQL, Redis or nginx themselves — report those upstream
+- Vulnerabilities in Docker, PostgreSQL or nginx themselves — report those upstream
 
 ---
 

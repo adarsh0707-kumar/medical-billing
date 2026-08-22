@@ -10,7 +10,7 @@ A conventional **three-tier layered monolith**, containerised:
 
 - **Presentation** — React SPA, all rendering client-side, no SSR.
 - **Application** — a single stateless Express process exposing REST/JSON. Layered `routes → middleware → validator → controller → Prisma`.
-- **Data** — PostgreSQL as the system of record; Redis provisioned as a cache but not yet used.
+- **Data** — PostgreSQL as the system of record. There is no cache layer: a Redis service was provisioned before it had a consumer and removed in Phase 8 without ever acquiring one ([G-03](./08-gap-analysis.md#g-03)).
 
 There is no service mesh, message queue, or background worker. Every operation is a synchronous request/response. This is a deliberate fit for the target deployment: one store, one host, a handful of concurrent users.
 
@@ -53,7 +53,6 @@ graph TB
         FE["frontend<br/>Vite dev server :5173"]
         BE["backend<br/>Express 5 :5000"]
         PG[("postgres:15-alpine<br/>:5432<br/>volume pgdata")]
-        RD[("redis:7-alpine<br/>:6379")]
     end
 
     Browser -->|"HTTP /"| Nginx
@@ -61,7 +60,6 @@ graph TB
     Nginx -->|"proxy /"| FE
     Nginx -->|"proxy /api"| BE
     BE -->|"Prisma / SQL"| PG
-    BE -.->|"connected, unused"| RD
 ```
 
 > **The SPA is same-origin.** It calls `/api/...` on whichever origin served it — Nginx on `:80`, or the Vite dev server on `:5173`, which proxies `/api` to the backend itself. Neither path is cross-origin, so CORS never applies to the browser; the allowlist exists only for tools that call port 5000 directly. Set `VITE_API_URL` only when the API genuinely lives on another host. *(Before 2026-08-19 the SPA called `:5000` directly and the `:80` entry point was unusable — [G-02](./08-gap-analysis.md#g-02).)*
@@ -74,7 +72,6 @@ graph TB
 | `frontend` | `./frontend/Dockerfile.dev` (node:20-slim)          | 5173:5173             | bind-mounted source    | Vite dev server with HMR                    |
 | `backend`  | `./backend/Dockerfile.dev` (node:20-slim + openssl) | 5000:5000             | bind-mounted source    | Express API under nodemon                   |
 | `postgres` | `postgres:15-alpine`                                | 5432:5432             | named volume`pgdata` | System of record                            |
-| `redis`    | `redis:7-alpine`                                    | 6379:6379             | none                   | Cache (reserved)                            |
 
 Start order is enforced: `backend` waits for Postgres to pass `pg_isready`; `frontend` waits for `backend`; `nginx` waits for both.
 
@@ -93,8 +90,7 @@ backend/src/
 │                                A factory so tests mount the real stack without listening,
 │                                and can dial rate limits down to exercise them.
 ├── config/
-│   ├── db.js                    PrismaClient singleton; exits the process if connect fails
-│   └── redis.js                 Redis client; connects, logs, never throws — imported by nothing
+│   └── db.js                    PrismaClient singleton; exits the process if connect fails
 ├── middlewares/
 │   ├── auth.middleware.js       protect() verifies JWT + reloads user; authorize(...roles) RBAC
 │   ├── validate.middleware.js   validate(zodSchema) — parses, replaces req.body, 400 on failure
@@ -152,7 +148,7 @@ Within a protected router the per-request chain is:
 protect  →  authorize(...roles)  →  validate(schema)  →  controller
 ```
 
-`protect` does a **database read on every request** to reload the user and check `isActive`. That is a correctness win (instant deactivation) at the cost of one query per call — the single most obvious candidate for the unused Redis cache.
+`protect` does a **database read on every request** to reload the user and check `isActive`. That is a correctness win (instant deactivation) at the cost of one query per call — the most obvious candidate if a cache is ever introduced, though caching it trades directly against the immediate-deactivation guarantee that makes the read worth doing.
 
 ---
 
@@ -318,7 +314,6 @@ host:80   → nginx  ─┬─ /      → frontend:5173 (Vite HMR, WebSocket upg
 host:5173 → frontend  (direct)
 host:5000 → backend   (direct)   ← for curl and tests; the SPA does not use it
 host:5432 → postgres  (direct, exposed)
-host:6379 → redis     (direct, exposed)
 ```
 
 Source is bind-mounted (`./backend:/app`, `./frontend:/app`) with anonymous volumes preserving each container's `node_modules`. Editing a file on the host restarts nodemon / triggers HMR.
@@ -328,7 +323,6 @@ Source is bind-mounted (`./backend:/app`, `./frontend:/app`) with anonymous volu
 | Variable              | Service  | Compose value                                                | Notes                                                                                                      |
 | --------------------- | -------- | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
 | `DATABASE_URL`      | backend  | `postgresql://medadmin:medpass123@postgres:5432/medicaldb` | Credentials are hard-coded in`docker-compose.yml`                                                        |
-| `REDIS_URL`         | backend  | `redis://redis:6379`                                       | Client connects; nothing consumes it                                                                       |
 | `JWT_SECRET`        | backend  | `${JWT_SECRET}`                                            | **Sourced from the host env / root `.env`** — no default; the API refuses to start without it ([D-15](./08-gap-analysis.md#d-15)) |
 | `NODE_ENV`          | backend  | `development`                                              | Controls Prisma query logging and stack exposure                                                           |
 | `PORT`              | backend  | defaults to 5000                                             | Read in`index.js`                                                                                        |
@@ -366,7 +360,7 @@ The stack has no production path today. Minimum required before a real deploymen
 | AD-09 | Zod at the route boundary                                                                                                        | Validation lives next to the contract, and strips unknown keys                                             | Any field absent from a schema is silently dropped — the cause of the`mfgDate` bug ([G-04](./08-gap-analysis.md#g-04))                                           |
 | AD-10 | Zustand over Redux/Context                                                                                                       | Tiny surface for two small global stores                                                                   | No caching/invalidation layer; each page hand-rolls fetching                                                                                                       |
 | AD-11 | shadcn/ui (source-vendored Radix components)                                                                                     | Full control of component source, no runtime UI dependency                                                 | 20 component files to maintain in-repo                                                                                                                             |
-| AD-12 | Redis provisioned before it is used                                                                                              | Reserve the dependency and prove connectivity early                                                        | Dead dependency in the compose file; NFR-04 unmet                                                                                                                  |
+| AD-12 | Redis provisioned before it is used —**reversed in Phase 8**                                                              | Reserve the dependency and prove connectivity early                                                        | It never acquired a consumer, so it was a running service and a documented feature that did nothing. Removed rather than secured ([G-03](./08-gap-analysis.md#g-03)); NFR-04 is now explicitly unmet rather than notionally pending |
 | AD-13 | `DECIMAL(12,2)` for money, `Prisma.Decimal` for arithmetic, rounded half-up per line *(revised 2026-08-19; was `Float`)* | Exact totals; an invoice must reconcile with what it printed, and a month must reconcile with its invoices | Decimal objects must never meet the`+` operator, and are unwrapped to numbers by a `json replacer` at the response boundary ([G-07](./08-gap-analysis.md#g-07)) |
 | AD-14 | Vite dev server behind Nginx even in "prod-ish" runs                                                                             | One entry point during development                                                                         | No production asset pipeline exists yet                                                                                                                            |
 
@@ -379,10 +373,10 @@ The stack has no production path today. Minimum required before a real deploymen
 **First bottlenecks, in the order they will bite:**
 
 1. **Invoice-number contention** — breaks at 2+ simultaneous checkouts, not at scale. Fix first.
-2. **`protect` DB read on every request** — the highest-frequency query in the system. Cache the user by id in Redis with a short TTL and invalidate on user update.
+2. **`protect` DB read on every request** — the highest-frequency query in the system. Caching the user by id with a short TTL is the obvious answer, but it needs a cache store reintroduced (there is none since Phase 8) and it weakens instant deactivation. Measure before doing either.
 3. **`contains` search without an index** — POS search does two `ILIKE %q%` scans; add a `pg_trgm` GIN index on `medicine.name` and `genericName` past ~10k rows.
 4. **Unpaginated list endpoints** — batches, suppliers, users and masters return everything.
 5. **Client-composed trend report** — 7 round trips for one chart; replace with a single server aggregation.
 6. **Dashboard fan-out** — 6 requests per load, collapsible into one `/stats` call.
 
-**Scaling out** would require: stateless backend replicas behind Nginx `upstream` (already stateless — JWT, no session store), Redis for shared cache, and a database sequence for invoice numbers. No code change is needed for horizontal scale *except* the numbering fix.
+**Scaling out** would require: stateless backend replicas behind Nginx `upstream` (already stateless — JWT, no session store), a shared cache store if one is wanted (none is deployed), and a database sequence for invoice numbers. No code change is needed for horizontal scale *except* the numbering fix.

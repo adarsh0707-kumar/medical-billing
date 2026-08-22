@@ -12,7 +12,6 @@ Everything needed to go from a clean checkout to a running, editable system.
 | Node.js             | 20.x    | Local (non-Docker) runs — both images use`node:20-slim` |
 | npm                 | 10.x    |                                                            |
 | PostgreSQL          | 15      | Only if running without Docker                             |
-| Redis               | 7       | Optional — the API runs fine without it                   |
 
 ## 2. First run (Docker)
 
@@ -64,13 +63,12 @@ docker compose build backend && docker compose up -d backend
 ## 3. Running without Docker
 
 ```bash
-# Postgres and Redis must already be running locally.
+# Postgres must already be running locally.
 
 cd backend
 npm install
 cat > .env <<'EOF'
 DATABASE_URL="postgresql://medadmin:medpass123@localhost:5432/medicaldb"
-REDIS_URL="redis://localhost:6379"
 JWT_SECRET="<32+ random bytes>"
 PORT=5000
 NODE_ENV=development
@@ -96,7 +94,6 @@ npm run dev                      # Vite on :5173
 | ---------------- | :------: | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
 | `DATABASE_URL` |    ✅    | —                                   | Postgres connection string. Process exits if unreachable                                                             |
 | `JWT_SECRET`   |    ✅    | —                                   | HMAC key for tokens.**No fallback** — the process refuses to start without it                                |
-| `REDIS_URL`    |          | `redis://localhost:6379`           | Client connects; nothing reads it yet                                                                                |
 | `PORT`         |          | `5000`                             |                                                                                                                      |
 | `NODE_ENV`     |          | —                                   | `development` enables Prisma query logs and error stacks in responses                                              |
 | `FRONTEND_URL` |          | —                                   | Appended to the CORS allowlist when set                                                                              |
@@ -263,7 +260,6 @@ setBatches(res.data.data);
 | Silent field loss on save               | The field is absent from the Zod schema and was stripped                                                                             |
 | Prisma engine / openssl error           | Re-run`npx prisma generate` in the current environment                                                                             |
 | Backend exits on start                  | Postgres unreachable —`config/db.js` calls `process.exit(1)` by design                                                          |
-| `⚠️ Redis connection failed`        | Non-fatal and expected when Redis is down; nothing depends on it                                                                     |
 | Port already in use                     | `lsof -ti:5000 \| xargs kill -9`, or change the mapping in compose                                                                  |
 | Frontend can't reach the API            | Check the Vite proxy target (`VITE_PROXY_TARGET`); env values are inlined at build time, so restart Vite after changing either var |
 
