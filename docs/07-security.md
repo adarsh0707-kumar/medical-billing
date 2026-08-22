@@ -32,7 +32,9 @@ What still blocks internet exposure is no longer transport or secrets. It is **t
 
 **Password storage.** `bcrypt.hash(password, 12)`. Cost 12 is appropriate for 2026. Hashes are never selected into any response; the only queries that read the hash are `login` and `changePassword`.
 
-**Login.** Unknown email, wrong password and deactivated account all return the identical `401 Invalid credentials.` — no user enumeration through the response body. (Timing is not equalised: a nonexistent email skips the bcrypt comparison and returns measurably faster. A determined attacker can enumerate accounts through timing; the fix is a dummy comparison on the miss path.)
+**Login.** Unknown email, wrong password and deactivated account all return the identical `401 Invalid credentials.` — no user enumeration through the response body, and since 2026-08-22 none through timing either. Every login spends exactly one bcrypt comparison: when the account does not exist the password is checked against a decoy hash generated from random bytes at start-up, at the same cost 12 real passwords are stored with. Measured before the change, an unknown email answered in about 5 ms against 380 ms for a wrong password — the whole cost of bcrypt, and trivially distinguishable. Measured after, the two differ by roughly 12 ms.
+
+> The deactivated-account path had the same hole and is easy to miss: it short-circuited before the comparison too, so a suspended account was distinguishable from an active one with a wrong password — which discloses that the account exists just as surely.
 
 **Token issuance.** `jwt.sign({ id }, JWT_SECRET, { expiresIn: "7d" })`. HS256. The payload carries only the user id — role is **not** in the token, which is why `protect` reloads the user.
 
@@ -205,7 +207,7 @@ Assets: customer PII and purchase history · financial records (invoices, GST li
 
 | #    | Threat                                     | Vector                                                                                 | Likelihood | Impact            | Current control                                                                             | Residual                                                             |
 | ---- | ------------------------------------------ | -------------------------------------------------------------------------------------- | ---------- | ----------------- | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| T-1  | Credential stuffing / brute force on login | Public login endpoint                                                                  | Med        | High              | bcrypt, per-IP limiter: 10 failed logins / 15 min                                           | Low — timing still leaks whether an email exists (P2-12)            |
+| T-1  | Credential stuffing / brute force on login | Public login endpoint                                                                  | Med        | High              | bcrypt cost 12, per-IP limiter: 10 failed logins / 15 min, and a constant-work login path | **Low** — the body and the timing now say the same thing whether or not the account exists (P2-12 closed) |
 | T-2  | Default admin credentials unchanged        | Public repo                                                                            | High       | Critical          | **Enforced, not requested** — the account is created with `mustChangePassword` and every route but two answers `403 PASSWORD_CHANGE_REQUIRED` | **Low** — the credential is still public, but it opens an account that cannot sell, stock or administer anything |
 | T-3  | Token theft via XSS                        | `localStorage` + dependency-borne XSS                                                | Low        | High              | React escaping, no`dangerouslySetInnerHTML`, and a production CSP with `script-src 'self'` | Low in production, **Med in development** — no CSP there, and the token is still a 7-day credential once stolen (T-13) |
 | T-4  | Token theft on the wire                    | Plain HTTP                                                                             | Med (LAN)  | High              | TLS 1.2/1.3 with HSTS in production; **nothing in development**                        | Low in production. Unchanged in development, which is why the development stack belongs on a laptop or a trusted LAN |
@@ -242,7 +244,7 @@ Assets: customer PII and purchase history · financial records (invoices, GST li
 
 **P2 — hardening and hygiene**
 
-12. Equalise login timing with a dummy bcrypt comparison on the user-miss path.
+12. ~~Equalise login timing with a dummy bcrypt comparison on the user-miss path.~~ **Done 2026-08-22** — and on the deactivated-account path, which had the same short-circuit. Guarded by a test asserting the comparison happens rather than a wall-clock threshold, which would be flaky on a loaded CI box.
 13. ~~Redis `requirepass` before caching goes live.~~ **Not applicable** — there is no Redis ([G-03](./08-gap-analysis.md#g-03)). Reinstate this item if a cache store is ever reintroduced.
 14. Dependency scanning (`npm audit` / Dependabot) in CI.
 15. Restrict customer-history reads by role if staff counts grow.

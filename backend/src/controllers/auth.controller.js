@@ -9,6 +9,19 @@ const {
 
 const REFRESH_COOKIE = "refresh_token";
 
+// A decoy for the login miss path, so an unknown email costs the same bcrypt
+// work as a known one (docs/07 P2-12).
+//
+// Derived from random bytes at start-up rather than hard-coded: there is no
+// value in the source that could be mistaken for a real credential, and nothing
+// a caller can type will ever match it. Cost 12 to match how real passwords are
+// stored — a cheaper decoy would reintroduce the very difference it exists to
+// hide. Costs one hash at boot, once.
+const DUMMY_PASSWORD_HASH = bcrypt.hashSync(
+  require("node:crypto").randomBytes(32).toString("hex"),
+  12,
+);
+
 // httpOnly so script in the page cannot read it — that is the point of holding
 // the long-lived half here rather than in localStorage alongside the access
 // token. SameSite=Strict means a cross-site request never carries it, which is
@@ -112,18 +125,24 @@ const login = async (req, res, next) => {
       });
     }
 
-    // Find user
     const user = await prisma.user.findUnique({ where: { email } });
-    if (!user || !user.isActive) {
-      return res.status(401).json({
-        success: false,
-        message: "Invalid credentials.",
-      });
-    }
 
-    // Compare password
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) {
+    // Always pay for one bcrypt comparison, whether or not the account exists
+    // (docs/07 P2-12). The three failures below already return an identical
+    // body, but returning it in a fifth of the time when the email is unknown
+    // told an attacker exactly as much — bcrypt at cost 12 is the expensive
+    // part of this request, and skipping it is measurable from outside.
+    //
+    // Both misses had to be covered, not just the unknown email: a deactivated
+    // account skipped the comparison too, so it was distinguishable from an
+    // active one with the wrong password — which is itself a disclosure that
+    // the account exists.
+    const isMatch = await bcrypt.compare(
+      password,
+      user?.password ?? DUMMY_PASSWORD_HASH,
+    );
+
+    if (!user || !user.isActive || !isMatch) {
       return res.status(401).json({
         success: false,
         message: "Invalid credentials.",
