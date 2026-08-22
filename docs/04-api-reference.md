@@ -38,7 +38,11 @@ Every endpoint except `POST /api/auth/login` and `GET /health` requires:
 Authorization: Bearer <jwt>
 ```
 
-The token comes from `POST /api/auth/login`, is signed HS256 with `JWT_SECRET`, and expires in **7 days**. On each request the server decodes it and **reloads the user from the database**, so a deactivated (`isActive = false`) or deleted user is rejected immediately regardless of token validity.
+The token comes from `POST /api/auth/login`, is signed HS256 with `JWT_SECRET`, and expires in **30 minutes**. On each request the server decodes it and **reloads the user from the database**, so a deactivated (`isActive = false`) or deleted user is rejected immediately regardless of token validity.
+
+**A session lasts a week; the access token does not.** Login also sets a **`refresh_token` cookie** — `HttpOnly`, `SameSite=Strict`, `Path=/api/auth`, `Secure` in production — valid for 7 days. When the access token expires, `POST /api/auth/refresh` exchanges the cookie for a new one. The split is the point: the access token lives in `localStorage` where script can read it, so it is short; the week-long half is in a cookie JavaScript cannot touch. Putting both in `localStorage` would have been worse than the single 7-day token it replaced.
+
+A client should treat a `401` on an ordinary call as "try refreshing once, then give up" rather than as a sign-out — see the note under `/api/auth/refresh`.
 
 | Failure                                               | Status        | Body message                                          |
 | ----------------------------------------------------- | ------------- | ----------------------------------------------------- |
@@ -48,6 +52,7 @@ The token comes from `POST /api/auth/login`, is signed HS256 with `JWT_SECRET`, 
 | Not valid yet (`nbf` in the future)                 | 401           | `Invalid token.`                                    |
 | User deleted or deactivated                           | 401           | `User not found or deactivated.`                    |
 | Revoked by a logout                                   | 401           | `Session ended. Please sign in again.`              |
+| Refresh cookie missing, expired, replayed or revoked  | 401           | `Session expired. Please sign in again.`            |
 | Authenticated but wrong role                          | 403           | `Access denied. Required role: ADMIN or PHARMACIST` |
 | **Database unreachable during the user reload** | **500** | The underlying error                                  |
 
@@ -273,6 +278,28 @@ Returns the freshly-loaded user attached by `protect` — no additional query.
 > **A password change signs out every session for the account, including the one that called.** That is the point: it is how a user responds to a compromise, so it has to end the attacker's session. The caller gets the replacement above because they just proved they know the current password — **store it before the next request**, or that request answers `401 Session ended. Please sign in again.` and a successful change looks like a failure.
 
 > `newPassword` must be at least 8 characters. Complexity and breach checks are not enforced, and existing tokens remain valid after the change — changing a password does **not** yet end other sessions ([07 A-6](./07-security.md#weaknesses)). Use `POST /api/auth/logout` for that until it does.
+
+### `POST /api/auth/refresh` — public (the cookie is the credential)
+
+Exchanges the `refresh_token` cookie for a new access token. **No `Authorization` header** — the access token it replaces has expired, which is why the caller is here. No request body.
+
+**200**
+
+```json
+{
+  "success": true,
+  "data": {
+    "token": "eyJhbGciOi…",
+    "user": { "id": "…", "name": "…", "email": "…", "role": "CASHIER", "mustChangePassword": false }
+  }
+}
+```
+
+A new `refresh_token` cookie is set on every success. **401** `Session expired. Please sign in again.` for every failure — missing cookie, expired, forged, already rotated, revoked by a logout, or a deactivated user. Deliberately one message: which of those it was is not the caller's business.
+
+**Rotation and reuse detection.** Each refresh token is backed by a `RefreshToken` row, and its `jti` is that row's id. Using a token revokes its row and issues a new one. Presenting a row that is **already revoked** means two parties hold the same credential — a legitimate client never replays one — so the server treats it as theft and ends *every* session for that user, the honest one included. Losing a session beats leaving someone else in one.
+
+> **Clients must serialise their refreshes.** Because every use rotates, two concurrent refreshes with the same cookie look exactly like theft: the second presents what the first just retired, and the account is signed out. A client firing several requests at once needs one shared in-flight refresh — `frontend/src/lib/api.ts` keeps a single promise for this reason.
 
 ### `POST /api/auth/logout` — any authenticated role
 
