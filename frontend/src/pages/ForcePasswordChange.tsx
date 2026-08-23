@@ -112,12 +112,15 @@ export default function ForcePasswordChange() {
                 id="next"
                 type="password"
                 required
-                minLength={8}
+                minLength={12}
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 className="bg-slate-800 border-slate-700 text-white"
               />
-              <p className="text-slate-500 text-xs">At least 8 characters.</p>
+              <p className="text-slate-500 text-xs">
+                At least 12 characters. Avoid common passwords and anything
+                containing your name or email.
+              </p>
             </div>
 
             <div className="space-y-1.5">

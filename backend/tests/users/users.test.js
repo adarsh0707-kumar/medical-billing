@@ -36,7 +36,7 @@ describe("POST /api/users", () => {
   // reached Prisma and came back as a 500.
   it.each([
     ["a malformed email", { email: "not-an-email" }],
-    ["a password under 8 characters", { password: "short" }],
+    ["a password under 12 characters", { password: "short-one11" }],
     ["an invented role", { role: "SUPERUSER" }],
     ["a one-character name", { name: "P" }],
     ["no password", { password: undefined }],
@@ -47,6 +47,45 @@ describe("POST /api/users", () => {
 
     expect(res.status).toBe(400);
     expect(res.body.message).toBe("Validation failed");
+  });
+
+  // Guards docs/07 A-4 / P1-6. The policy was a length floor of 8 and nothing
+  // else, so `admin123` — the credential published in this repository — was an
+  // acceptable choice for a new account.
+  //
+  // Deliberately no character-class rules: NIST SP 800-63B advises against them
+  // because they push people to `Password1!` shapes that dictionaries already
+  // hold. The length floor and a blocklist do the work instead.
+  it.each([
+    ["one of the most common passwords", "administrator"],
+    ["the seeded credential, padded to length", "admin123admin123"],
+    ["a common password stretched with digits", "password1234"],
+    ["a common password stretched with a year", "pharmacy2026"],
+    ["a single repeated character", "aaaaaaaaaaaa"],
+    ["a straight alphabet run", "abcdefghijkl"],
+    ["the account's own email address", "priya-is-here"],
+    ["the account's own name", "Priya-Priya-1"],
+  ])("refuses %s", async (_label, password) => {
+    const { token } = await signIn(app);
+
+    const res = await as(token, "post", "/api/users", { ...newUser, password });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toBe("Validation failed");
+    expect(res.body.errors.some((e) => e.field === "password")).toBe(true);
+  });
+
+  it("accepts a long, unremarkable passphrase", async () => {
+    const { token } = await signIn(app);
+
+    const res = await as(token, "post", "/api/users", {
+      ...newUser,
+      password: "correct horse battery staple",
+    });
+
+    // The corollary of dropping character-class rules: a passphrase with no
+    // digits or symbols is a good password and must not be refused.
+    expect(res.status).toBe(201);
   });
 
   it("rejects a duplicate email", async () => {

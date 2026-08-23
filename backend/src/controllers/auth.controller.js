@@ -7,6 +7,8 @@ const {
   REFRESH_TOKEN_TTL_DAYS,
 } = require("../utils/jwt.utils");
 
+const { passwordProblem } = require("../validators/password");
+
 const REFRESH_COOKIE = "refresh_token";
 
 // A decoy for the login miss path, so an unknown email costs the same bcrypt
@@ -186,6 +188,22 @@ const getMe = async (req, res) => {
 const changePassword = async (req, res, next) => {
   try {
     const { currentPassword, newPassword } = req.body;
+
+    // The schema has already applied every rule that needs only the password
+    // itself. This one needs the account: the request body carries no name or
+    // email, so "don't use your own address as your password" can only be
+    // checked here, where `protect` has already loaded the user.
+    const contextProblem = passwordProblem(newPassword, {
+      name: req.user.name,
+      email: req.user.email,
+    });
+    if (contextProblem) {
+      return res.status(400).json({
+        success: false,
+        message: "Validation failed",
+        errors: [{ field: "newPassword", message: contextProblem }],
+      });
+    }
 
     const user = await prisma.user.findUnique({ where: { id: req.user.id } });
 

@@ -277,7 +277,11 @@ Returns the freshly-loaded user attached by `protect` — no additional query.
 
 > **A password change signs out every session for the account, including the one that called.** That is the point: it is how a user responds to a compromise, so it has to end the attacker's session. The caller gets the replacement above because they just proved they know the current password — **store it before the next request**, or that request answers `401 Session ended. Please sign in again.` and a successful change looks like a failure.
 
-> `newPassword` must be at least 8 characters. Complexity and breach checks are not enforced, and existing tokens remain valid after the change — changing a password does **not** yet end other sessions ([07 A-6](./07-security.md#weaknesses)). Use `POST /api/auth/logout` for that until it does.
+> **Password rules** (identical for this route and `POST /api/users`): at least **12 characters**, at most 200. Refused if it is a common password or a close variant of one — the blocklist matches the stem, so `password1234` and `pharmacy2026` are caught too — a single repeated character, a straight alphabetical or numeric run, one of the credentials published in this repository, or anything containing the account's own name or email address.
+>
+> There are deliberately **no character-class requirements**. [NIST SP 800-63B](https://pages.nist.gov/800-63-3/sp800-63b.html) advises against them because they push people towards predictable shapes like `Password1!` that cracking dictionaries already hold; a long passphrase with no digits at all is a good password here and is accepted. There is **no breach-corpus lookup** either — see [07 §10](./07-security.md#10-hardening-backlog) for why that trade was declined.
+>
+> A failure is a `400` carrying a field-level error on `password` / `newPassword`.
 
 ### `POST /api/auth/refresh` — public (the cookie is the credential)
 
