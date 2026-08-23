@@ -1,4 +1,5 @@
 const { z } = require("zod");
+const { passwordProblem } = require("./password");
 
 const role = z.enum(["ADMIN", "PHARMACIST", "CASHIER"], {
   errorMap: () => ({ message: "Role must be ADMIN, PHARMACIST or CASHIER" }),
@@ -7,19 +8,44 @@ const role = z.enum(["ADMIN", "PHARMACIST", "CASHIER"], {
 const name = z.string().min(2, "Name must be at least 2 characters");
 const email = z.string().email("A valid email address is required");
 
-// Length only. Complexity and breach checks need an external service and are
-// tracked as a P1 item in docs/07-security.md.
-const password = z.string().min(8, "Password must be at least 8 characters");
+// Rules live in validators/password.js, with the reasoning for what is
+// deliberately absent — no character-class requirements, no breach-corpus
+// lookup. Applied through a single refinement so every password path shares one
+// definition rather than drifting apart.
+const password = z.string().superRefine((value, ctx) => {
+  const problem = passwordProblem(value);
+  if (problem) ctx.addIssue({ code: z.ZodIssueCode.custom, message: problem });
+});
 
 // POST /api/users and POST /api/auth/register.
 // Not strict: the Settings form posts its whole state object, and the extra
 // keys are harmless once stripped.
-const createUserSchema = z.object({
-  name,
-  email,
-  password,
-  role: role.optional(),
-});
+const createUserSchema = z
+  .object({
+    name,
+    email,
+    password,
+    role: role.optional(),
+  })
+  // Re-run the rules once the whole object is known, so the password can be
+  // checked against this account's own name and email. A password that restates
+  // either is guessable by anyone who can see the user list — which is every
+  // administrator. Only reachable when the field-level checks passed, so the
+  // caller never sees two complaints about one value.
+  .superRefine((data, ctx) => {
+    if (typeof data.password !== "string") return;
+    const problem = passwordProblem(data.password, {
+      name: data.name,
+      email: data.email,
+    });
+    if (problem) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["password"],
+        message: problem,
+      });
+    }
+  });
 
 // PUT /api/users/:id — every field optional so a partial edit leaves the rest
 // alone. Not strict: the active/inactive toggle sends the whole user row back.

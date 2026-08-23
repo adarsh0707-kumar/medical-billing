@@ -481,12 +481,31 @@ describe("PUT /api/auth/change-password", () => {
     expect(res.body.message).toBe("Current password is incorrect.");
   });
 
-  it("refuses a new password under 8 characters", async () => {
+  // The change-password path applies the same rules, including the one the
+  // schema cannot reach: the body carries no name or email, so "not your own
+  // address" is checked in the controller against the authenticated user.
+  it.each([
+    ["a blocklisted password", "administrator"],
+    ["a password containing the account's own email", "cashier-at-test"],
+  ])("refuses %s", async (_label, newPassword) => {
+    const user = await makeUser({ role: "CASHIER", email: "cashier@test.local" });
+    const token = await tokenFor(user.id);
+
+    const res = await request(app)
+      .put("/api/auth/change-password")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ currentPassword: PASSWORD, newPassword });
+
+    expect(res.status).toBe(400);
+    expect(res.body.errors?.[0]?.field ?? "newPassword").toBe("newPassword");
+  });
+
+  it("refuses a new password under 12 characters", async () => {
     const { token } = await signIn(app);
     const res = await request(app)
       .put("/api/auth/change-password")
       .set("Authorization", `Bearer ${token}`)
-      .send({ currentPassword: PASSWORD, newPassword: "short" });
+      .send({ currentPassword: PASSWORD, newPassword: "short-one11" });
 
     expect(res.status).toBe(400);
     expect(res.body.errors[0].field).toBe("newPassword");

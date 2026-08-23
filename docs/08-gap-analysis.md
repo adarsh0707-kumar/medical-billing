@@ -325,12 +325,12 @@ const stock = await prisma.batch.groupBy({
 
 | Schema                   | Route                                            | Notes                                                                                                         |
 | ------------------------ | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
-| `createUserSchema`     | `POST /api/users`, `POST /api/auth/register` | name ≥ 2, valid email, password ≥ 8,`role` enum                                                           |
+| `createUserSchema`     | `POST /api/users`, `POST /api/auth/register` | name ≥ 2, valid email,`role` enum, and the password rules below                                          |
 | `updateUserSchema`     | `PUT /api/users/:id`                           | all fields optional;**not** `.strict()` — the active/inactive toggle posts the whole user row back   |
 | `updateProfileSchema`  | `PUT /api/users/profile`                       | `.strict()`, so a stray `role` is a 400 rather than something that looks accepted and is silently dropped |
-| `changePasswordSchema` | `PUT /api/auth/change-password`                | new password ≥ 8                                                                                             |
+| `changePasswordSchema` | `PUT /api/auth/change-password`                | the same password rules; the check against the account's own name and email runs in the controller, which is the only place that knows them |
 
-Password rules are length-only; complexity and breach checks need an external service and stay on the [P1 hardening list](./07-security.md#10-hardening-backlog).
+~~Password rules are length-only~~ — **strengthened 2026-08-22** (`validators/password.js`): minimum 12, a blocklist that also matches the stem of a padded password so `password1234` and `pharmacy2026` are caught, rejection of repeated characters and sequential runs, of credentials published in this repository, and of anything containing the account's own name or email. Deliberately **no character-class rules** and **no breach-corpus lookup** — the reasoning for both is in [P1-6](./07-security.md#10-hardening-backlog).
 
 **Verified:** malformed email, short password and an invalid role are each rejected with `400`; a valid create returns `201`; the Settings toggle posting the entire user object still returns `200`; a stray `role` on the profile route is rejected; and a weak new password on change-password is rejected.
 

@@ -164,6 +164,9 @@ function ProfileTab() {
 // ═══════════════════════════════════════════════════════
 
 function PasswordTab() {
+  // Needed for the "doesn't contain your name or email" hint, which mirrors a
+  // rule the server enforces.
+  const { user } = useAuthStore();
   const [form, setForm] = useState({
     currentPassword: "",
     newPassword: "",
@@ -177,13 +180,18 @@ function PasswordTab() {
   const [saving, setSaving] = useState(false);
   const [strength, setStrength] = useState(0);
 
+  // Scores length, because that is what the server's policy actually values.
+  // The old version scored one point each for an uppercase letter, a digit and
+  // a symbol, which rated `Passw0rd!` above a long passphrase — the exact
+  // inversion NIST SP 800-63B warns about, and the opposite of what the API
+  // now accepts.
   const calcStrength = (pwd: string) => {
     let score = 0;
-    if (pwd.length >= 8) score++;
-    if (/[A-Z]/.test(pwd)) score++;
-    if (/[0-9]/.test(pwd)) score++;
-    if (/[^A-Za-z0-9]/.test(pwd)) score++;
-    setStrength(score);
+    if (pwd.length >= 12) score++;
+    if (pwd.length >= 16) score++;
+    if (pwd.length >= 20) score++;
+    if (pwd.length >= 24 || /\s/.test(pwd.trim())) score++;
+    setStrength(Math.min(score, 4));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -192,8 +200,11 @@ function PasswordTab() {
       toast.error("Passwords do not match!");
       return;
     }
-    if (form.newPassword.length < 6) {
-      toast.error("Password must be at least 6 characters");
+    // Matches the server (backend/src/validators/password.js). The client check
+    // is a courtesy — the API refuses regardless — but it must not disagree, or
+    // the form accepts something the request then rejects.
+    if (form.newPassword.length < 12) {
+      toast.error("Password must be at least 12 characters");
       return;
     }
     setSaving(true);
@@ -366,12 +377,20 @@ function PasswordTab() {
                 Password requirements:
               </p>
               {[
-                ["At least 8 characters", form.newPassword.length >= 8],
-                ["One uppercase letter", /[A-Z]/.test(form.newPassword)],
-                ["One number", /[0-9]/.test(form.newPassword)],
+                ["At least 12 characters", form.newPassword.length >= 12],
                 [
-                  "One special character",
-                  /[^A-Za-z0-9]/.test(form.newPassword),
+                  "Not a common password",
+                  form.newPassword.length >= 12 &&
+                    !/^(password|admin|qwerty|letmein|welcome|pharmacy|medstore)/i.test(
+                      form.newPassword.trim(),
+                    ),
+                ],
+                [
+                  "Doesn't contain your name or email",
+                  form.newPassword.length >= 12 &&
+                    !form.newPassword
+                      .toLowerCase()
+                      .includes((user?.email ?? "@").split("@")[0].toLowerCase()),
                 ],
               ].map(([label, met]) => (
                 <div key={String(label)} className="flex items-center gap-2">
