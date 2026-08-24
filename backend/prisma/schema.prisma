@@ -154,7 +154,6 @@ model Batch {
   medicine       Medicine      @relation(fields: [medicineId], references: [id])
   supplier       Supplier      @relation(fields: [supplierId], references: [id])
   invoiceItems   InvoiceItem[]
-  purchaseItems  PurchaseItem[]
 
   @@unique([medicineId, batchNumber])
   // Expiry alerts and FEFO ordering scan this on every dashboard load.
@@ -208,7 +207,6 @@ model Supplier {
   createdAt   DateTime   @default(now())
 
   batches     Batch[]
-  purchases   Purchase[]
 }
 
 // ─── Billing / Invoices ────────────────────────────────
@@ -348,30 +346,4 @@ enum InvoiceStatus {
 model InvoiceCounter {
   day String @id // yymmdd, matching the INV prefix
   seq Int
-}
-
-// ─── Purchases ─────────────────────────────────────────
-
-model Purchase {
-  id             String         @id @default(cuid())
-  purchaseNumber String         @unique
-  supplierId     String
-  date           DateTime       @default(now())
-  totalAmount    Decimal        @db.Decimal(12, 2)
-  notes          String?
-  createdAt      DateTime       @default(now())
-
-  supplier       Supplier       @relation(fields: [supplierId], references: [id])
-  items          PurchaseItem[]
-}
-
-model PurchaseItem {
-  id          String   @id @default(cuid())
-  purchaseId  String
-  batchId     String
-  quantity    Int
-  costPrice   Decimal  @db.Decimal(12, 2)
-
-  purchase    Purchase @relation(fields: [purchaseId], references: [id])
-  batch       Batch    @relation(fields: [batchId], references: [id])
 }
