@@ -61,6 +61,11 @@ model AuditLog {
   /// hashes and token counters are stripped before either is stored.
   before     Json?
   after      Json?
+  /// Why, when the caller supplied one. Most writes have no answer beyond what
+  /// before/after already shows — a price was changed to this. Some do: a manual
+  /// stock adjustment is meaningless without it (FR-BATCH-11), which is why that
+  /// endpoint makes it mandatory even though the column is nullable.
+  reason     String?
   /// The X-Request-Id of the request that caused it, so an audit row can be
   /// joined back to the log lines for the same request.
   requestId  String?
