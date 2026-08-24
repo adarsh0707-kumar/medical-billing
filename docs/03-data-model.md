@@ -75,6 +75,7 @@ erDiagram
         string phone UK
         int age
         Gender gender
+        datetime anonymisedAt
     }
     Invoice {
         string id PK
@@ -468,6 +469,7 @@ These must hold at all times. Any new write path must preserve them.
 | `20260822140056_add_token_version`        | 2026-08-22 | Adds`User.tokenVersion`, default `0` — the revocation counter behind `POST /api/auth/logout` (FR-AUTH-09)                                                    |
 | `20260822143539_add_refresh_tokens`       | 2026-08-22 | Adds the`RefreshToken` table (one row per signed-in device, `ON DELETE CASCADE`) — the state behind rotation and reuse detection (FR-AUTH-10)                |
 | `20260822154410_add_audit_log`            | 2026-08-22 | Adds the`AuditLog` table — attribution for every write to master data (NFR-17, threat T-12). See §3.11                                                     |
+| `20260824032314_add_customer_anonymised_at` | 2026-08-24 | Adds`Customer.anonymisedAt` and its index — the erasure and retention path (PRD Q6). See §8                                                               |
 
 All eight are applied — confirmed against `_prisma_migrations` on 2026-08-22. Two of them contain SQL that exists **only** in migration history and cannot be reproduced from `schema.prisma`; see the note in §4 before rebuilding a database with `db push`.
 
@@ -531,7 +533,20 @@ Applies to `GET /api/billing/invoices/daily-summary`, `GET /api/billing/invoices
 
 The GST report is deliberately **not** in that list: it reports documents, not trade, and lists the cancelled original and its credit note as the separate filings they are.
 
-**Retention.** No purge or archival exists. Customer records — name, phone, age, gender and full purchase history — are retained indefinitely. Decide a retention period before any deployment handling real customers ([PRD Q6](./01-product-requirements.md#14-open-questions), [07 — Security §8](./07-security.md#8-privacy-considerations)).
+**Retention — decided 2026-08-24 (PRD Q6).** Two clocks, because two different rules apply.
+
+| Data                                    | Kept for      | Why                                                                                              |
+| --------------------------------------- | ------------- | -------------------------------------------------------------------------------------------------- |
+| Invoices and their lines                | **8 years**   | Books of account. CGST Act §36 requires 72 months from the annual return's due date; 8 gives margin |
+| Customer name, phone, email, address, age, gender | **36 months of inactivity** | Not a tax record — no GST return needs a home address — so ordinary data-minimisation applies |
+
+**Why 36 months.** Long enough that a batch recall can still reach whoever bought the affected stock, since shelf life is rarely over three years and anything older cannot still be in a cupboard. Long enough that an annual repeat prescription does not erase the customer between visits. Short enough to treat three years of silence as the end of the relationship.
+
+**Erasure anonymises; it never deletes.** `Invoice.customerId` is a foreign key and invoices are append-only tax records, so the row has to survive. `POST`-ing a `DELETE /api/billing/customers/:id` (ADMIN only) blanks name, phone, email, address, age and gender, stamps `anonymisedAt`, and leaves every invoice exactly as issued — a GST return filed against them still reconciles afterwards.
+
+**It reaches the audit log too.** `AuditLog` holds before/after copies of every `Customer` write, so erasing the customer while leaving those intact would be theatre. Erasure replaces the payload of that customer's audit rows with a redaction marker, keeping the attribution — who changed it, when — and dropping the personal data. This is the tension flagged when the audit log was built (§3.11); it is settled here.
+
+**The purge is run, not scheduled.** `npm run purge:customers` reports what it would erase; `-- --apply` does it. There is no background worker in this stack by design ([02 §1](./02-architecture.md#1-architectural-style)), and `scripts/backup.sh` set the precedent that the software supplies the tool and the operator schedules it. A daily cron entry is in [06 — Development Guide](./06-development-guide.md#running-in-production). Saying so plainly beats claiming an automatic purge that does not exist.
 
 ---
 

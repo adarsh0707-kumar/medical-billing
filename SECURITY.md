@@ -116,7 +116,7 @@ These are **already documented** in [`docs/07-security.md`](./docs/07-security.m
 | ~~Login timing reveals whether an email exists~~ | **Fixed 2026-08-22.** Every login spends one bcrypt comparison, against a decoy hash when the account does not exist, so an unknown email costs the same as a wrong password. The deactivated-account path was fixed with it |
 | ~~No audit log for stock or price changes~~ | **Fixed 2026-08-22.** Every write to medicines, batches, suppliers, categories, manufacturers, customers and users records who did it and the before/after state. Reads are not logged — deliberately; see `docs/03` §3.11 |
 | ~~Query parameters are unvalidated — e.g. `?limit=999999` is honoured~~ | **Fixed 2026-08-20.** Every query string is validated; `limit` is capped at 100 |
-| Any authenticated role can read every customer's purchase history | Intentional for a single small store; revisit as staff numbers grow |
+| ~~Any authenticated role can read every customer's purchase history~~ | **Restricted 2026-08-24.** A cashier can find a customer and bill them, but purchase history is ADMIN/PHARMACIST only. Pharmacists and admins can still read every customer, and reads are not logged |
 | PostgreSQL and Redis publish host ports, and Redis has no password | **Fixed 2026-08-20**: the production stack publishes only 80 and 443, and Redis was removed as an unused dependency |
 
 If you can demonstrate impact **beyond** what's described here — a way to exploit one of these that the documentation doesn't anticipate — that is a genuine finding. Please report it.
@@ -149,7 +149,7 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod exec backend npm 
 - [x] **Set `TRUST_PROXY`** — defaults to the compose network's private ranges; override in `.env.prod` if another proxy sits in front
 - [x] **Restrict the CORS allowlist** — in production the allowlist is exactly `CORS_ORIGINS` and the development origins are *not* appended. It is a required variable
 - [x] **Configure database backups and rehearse a restore** — `scripts/backup.sh` and `scripts/restore.sh`. The restore has been rehearsed against the production stack: schema dropped entirely, restored from a dump, every row count matched and the application authenticated again. See [`docs/06`](./docs/06-development-guide.md)
-- [ ] **Decide a retention period for customer records** — still yours to make. None is enforced, and purchase history accumulates indefinitely
+- [x] **Decide a retention period for customer records** — decided 2026-08-24. Customer details are erased after **36 months of no purchases**; invoices keep **8 years** as books of account. Erasure anonymises rather than deletes, because invoices reference the row and must still reconcile. `DELETE /api/billing/customers/:id` does it on request; `npm run purge:customers -- --apply` does it in bulk. **The purge does not run itself** — schedule it, e.g. a nightly cron entry ([docs/06](./docs/06-development-guide.md#running-in-production))
 
 Two things the software cannot decide for you:
 
@@ -160,7 +160,7 @@ The reasoning behind each item, and the current threat model, is in [`docs/07-se
 
 ### Handling patient-adjacent data
 
-Customer name, phone, address, age, gender and full purchase history are stored in plain columns with no encryption at rest beyond whatever the host volume provides, no retention limit and no access logging. There is also no prescription record for Schedule H medicines — the flag is displayed but the sale is not gated — so the system does not by itself satisfy a prescription-record obligation. Assess this against your local obligations before going live.
+Customer name, phone, address, age, gender and full purchase history are stored in plain columns with no encryption at rest beyond whatever the host volume provides. Retention and erasure now exist (36 months of inactivity, anonymising in place); **reads are still not logged**, which is a deliberate call argued in `docs/03` §3.11. There is also no prescription record for Schedule H medicines — the flag is displayed but the sale is not gated — so the system does not by itself satisfy a prescription-record obligation. Assess this against your local obligations before going live.
 
 ---
 

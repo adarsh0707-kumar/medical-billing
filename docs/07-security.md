@@ -20,7 +20,7 @@
 
 **Read every row above as a statement about a specific stack.** `docker-compose.yml` is a development configuration: it speaks plain HTTP, publishes Postgres on the host and carries `medadmin`/`medpass123` in the file. None of that is a finding — it is what a development stack is for, and [SECURITY.md](../SECURITY.md#scope) puts findings against a deployment that skipped the hardening checklist out of scope. `docker-compose.prod.yml` is the deployable one, and it is where this document's claims about TLS, secrets and port exposure apply.
 
-The blockers named in earlier revisions of this document — transport, secrets, token revocation, auditability — have all been addressed. What remains is **not a code gap**: a real TLS certificate in place of the self-signed one, and a retention decision for customer records. Both are the operator's, and both are in [SECURITY.md](../SECURITY.md#for-operators). The largest outstanding item in §10 is a forced-reset flow, and the largest unaddressed threat is T-9 — every authenticated role can read every customer's purchase history.
+The blockers named in earlier revisions of this document — transport, secrets, token revocation, auditability, customer retention — have all been addressed. What remains is **not a code gap**: a real TLS certificate in place of the self-signed one, and running the retention purge on a schedule the shop chooses. Both are the operator's, and both are in [SECURITY.md](../SECURITY.md#for-operators). The largest outstanding item in §10 is a forced-reset flow.
 
 *Last revised 2026-08-22, after the Phase 8 production work. The previous revision predated it and described TLS as absent, which contradicted the operator checklist that points here for its reasoning.*
 
@@ -71,7 +71,7 @@ The full permission matrix is in [04 §4](./04-api-reference.md#4-role-matrix).
 ### Design notes
 
 - **Client-side checks are cosmetic.** The role-filtered sidebar and `ProtectedRoute` improve UX; the server is the boundary. A cashier calling `GET /api/users` directly gets `403` regardless of what the UI shows.
-- **Read is broadly permitted.** Every authenticated role can read inventory, customers and invoices, including other operators' invoices. Intentional for a small store; revisit if staff counts grow.
+- **Read is broadly permitted, with one exception.** Every authenticated role can read inventory, customers and invoices, including other operators' invoices. Since 2026-08-24 a **cashier cannot read a customer's purchase history**: `GET /api/billing/customers/:id` returns the customer to every role but the attached invoices only to ADMIN and PHARMACIST. A cashier still needs to find someone and attach them to a sale, and the POS is unaffected — what they lose is the ability to browse what a named person has been buying, which in a pharmacy is health information. Reversing it is one constant in `customer.controller.js`.
 - **The GST report is the only report gated by role** (ADMIN/PHARMACIST). The daily summary is open to cashiers — meaning a cashier can see whole-day store revenue. Confirm that is intended.
 - **Deletes are ADMIN-only** across categories, manufacturers, medicines, suppliers and users. Good.
 - **Customer writes are open to all roles**, including create and update. A cashier can alter any customer record. Low risk, but there is no audit trail.
@@ -187,15 +187,20 @@ The **development stack is plain HTTP** on `:80`, so credentials and tokens cros
 
 The system stores customer **name, phone, email, address, age, gender** and a complete **medicine purchase history**. Purchase history in a pharmacy context reveals health conditions — this is health-adjacent personal data even though the system holds no clinical records.
 
-Current state:
+**Three decisions taken 2026-08-24**, closing PRD Q6:
+
+| Question | Decision |
+|---|---|
+| How long are customer details kept? | **36 months of inactivity.** Invoices are separate and keep 8 years as books of account (CGST §36). Rationale — recall reach, repeat prescriptions, and when a relationship is over — in [03 §8](./03-data-model.md#8-data-lifecycle--retention) |
+| Is there an erasure path? | **Yes — `DELETE /api/billing/customers/:id`, ADMIN only.** It *anonymises*: the row survives because invoices reference it and are tax records, but name, phone, email, address, age and gender are blanked and `anonymisedAt` is stamped. It also redacts that customer's audit-log payloads, so erasure is not undone by the trail that recorded it |
+| Do cashiers need purchase history? | **No.** A cashier can still find a customer and attach them to a sale — the POS is unaffected — but `GET /api/billing/customers/:id` returns invoice history only to ADMIN and PHARMACIST. This is the first real reduction in T-9's blast radius |
+
+Still true, and not addressed here:
 
 - No encryption at rest beyond whatever the host volume provides.
-- No retention limit — records are kept forever, and there is no customer-delete endpoint.
-- No access log of who viewed a customer record.
+- No access log of who *viewed* a customer record — deliberately; read logging is argued against in [03 §3.11](./03-data-model.md#311-auditlog--who-changed-what).
 - No consent capture or privacy notice.
-- Any authenticated user of any role can read every customer's full purchase history.
-
-Before handling real customers, decide: retention period, deletion path (right-to-erasure), and whether cashiers need customer history at all. See [PRD Q6](./01-product-requirements.md#14-open-questions).
+- The purge is a command an operator runs, not a scheduled job. Nothing erases on its own.
 
 **Schedule H note.** The system flags prescription-only medicines but stores no prescription record and does not block the sale ([FR-MED-12](./01-product-requirements.md#64-medicine-catalogue--fr-med)). Where the Drugs and Cosmetics Rules require a prescription record for such sales, this system does not by itself satisfy that obligation.
 
@@ -215,7 +220,7 @@ Assets: customer PII and purchase history · financial records (invoices, GST li
 | T-6  | Stock/price tampering                      | `PUT /batches/:id`                                                                   | Low        | High              | ADMIN/PHARMACIST only; strict schema, stock not editable                                    | Low — price edits are still untracked, pending an audit log (P1-11) |
 | T-7  | Direct database access                     | Exposed :5432 with a committed password                                                | Med        | Critical          | Production publishes**only 80 and 443**; Postgres is reachable on the compose network alone, with a generated password | Low in production. **Critical if the development stack is exposed** — that is the deployment SECURITY.md puts out of scope, and this is why |
 | ~~T-8~~ | ~~Unauthenticated Redis access~~        | ~~Exposed :6379, no auth~~                                                             | —         | —                | **Eliminated** — the service was removed, not secured ([G-03](./08-gap-analysis.md#g-03))                                                                       | None. Reintroducing a cache reopens this threat                      |
-| T-9  | Insider data exfiltration                  | Any role can page through all customers                                                | Med        | Med               | None — no logging or export controls                                                       | **Med**                                                        |
+| T-9  | Insider data exfiltration                  | Any role could page through every customer's history                                   | Med        | Med               | **Reduced 2026-08-24** — history is ADMIN/PHARMACIST only, and every *write* to a customer record is attributed. Reads are still not logged, deliberately ([03 §3.11](./03-data-model.md#311-auditlog--who-changed-what)) | Low–Med — a pharmacist or admin can still export at will, and nothing records a read |
 | T-10 | Denial of service                          | ~~`?limit=999999`~~, shared rate bucket                                             | Med        | Med               | Per-client limiter;`limit` capped at 100 and every query parameter validated (2026-08-20) | Low — bounded page sizes; volumetric DoS remains out of scope       |
 | T-11 | Financial data corruption                  | Concurrency races ([G-01](./08-gap-analysis.md#g-01), [G-09](./08-gap-analysis.md#g-09)) | Med        | High              | Serials from an atomic per-day counter and stock from a guarded decrement, both**inside** the invoice transaction; a `CHECK (quantity >= 0)` backstop; exact `Decimal` money | **Low** — Phase 7 delivered, and proven by concurrent tests rather than by inspection |
 | ~~T-12~~ | Repudiation of a sale or a price change | ~~No audit trail beyond`Invoice.userId`~~                                          | Low        | Med               | Invoice authorship, a void that leaves the original intact, and an`AuditLog` row for every write to master data carrying actor, before and after | **Low** — writes are attributed. Reads are not, which is T-9's problem rather than this one |
