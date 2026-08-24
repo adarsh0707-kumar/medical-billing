@@ -320,7 +320,7 @@ const createInvoice = async (req, res, next) => {
 const voidInvoice = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { reason } = req.body;
+    const { reason, items: requested } = req.body;
 
     const original = await prisma.invoice.findUnique({
       where: { id },
@@ -345,35 +345,188 @@ const voidInvoice = async (req, res, next) => {
       });
     }
 
-    const creditNote = await prisma.$transaction(async (tx) => {
-      // Flip the original first. Combined with the unique index on reversesId
-      // this is what makes a double-submitted void safe: the second transaction
-      // either sees CANCELLED here or loses the index below, and rolls back
-      // before restoring anything a second time.
-      const { count: flipped } = await tx.invoice.updateMany({
-        where: { id, status: "ACTIVE", type: "SALE" },
-        data: { status: "CANCELLED" },
-      });
-      if (flipped === 0) {
-        throw new StockConflictError("This invoice has already been voided.", 409);
+    // What is still returnable on each line. `quantity` never changes — invoices
+    // are append-only — so this is stable; `returnedQty` is what moves.
+    const outstanding = new Map(
+      original.items.map((i) => [i.id, i.quantity - i.returnedQty]),
+    );
+
+    // Absent `items` means "everything still outstanding", which is exactly what
+    // this endpoint did before partial returns existed.
+    let returns;
+    if (!requested) {
+      returns = original.items
+        .filter((i) => outstanding.get(i.id) > 0)
+        .map((i) => ({ item: i, quantity: outstanding.get(i.id) }));
+      if (!returns.length) {
+        return res.status(409).json({
+          success: false,
+          message: "Every line on this invoice has already been returned.",
+        });
+      }
+    } else {
+      const byId = new Map(original.items.map((i) => [i.id, i]));
+      const seen = new Set();
+      returns = [];
+      for (const line of requested) {
+        const item = byId.get(line.invoiceItemId);
+        if (!item) {
+          return res.status(400).json({
+            success: false,
+            message: `Line ${line.invoiceItemId} is not on invoice ${original.invoiceNumber}.`,
+          });
+        }
+        if (seen.has(item.id)) {
+          return res.status(400).json({
+            success: false,
+            message: `Line ${item.medicineName} is listed twice. Combine it into one quantity.`,
+          });
+        }
+        seen.add(item.id);
+        const left = outstanding.get(item.id);
+        if (line.quantity > left) {
+          return res.status(400).json({
+            success: false,
+            message: `Cannot return ${line.quantity} of ${item.medicineName}: ${left} of ${item.quantity} still outstanding.`,
+          });
+        }
+        returns.push({ item, quantity: line.quantity });
+      }
+    }
+
+    // Money for the returned units only, through the same pipeline the sale used
+    // — round each line, round the two GST halves separately, and build the
+    // header from the rounded parts. Anything else and the credit note would not
+    // reconcile with the invoice it reverses.
+    let subtotal = new D(0);
+    let totalCgst = new D(0);
+    let totalSgst = new D(0);
+    const creditLines = returns.map(({ item, quantity }) => {
+      const lineSubtotal = item.unitPrice.times(quantity);
+      const discountVal = lineSubtotal.times(item.discount).dividedBy(100);
+      const taxableAmt = money(lineSubtotal.minus(discountVal));
+      const gstAmt = taxableAmt.times(item.gstPercent).dividedBy(100);
+      const cgst = money(gstAmt.dividedBy(2));
+      const sgst = money(gstAmt.dividedBy(2));
+
+      subtotal = subtotal.plus(taxableAmt);
+      totalCgst = totalCgst.plus(cgst);
+      totalSgst = totalSgst.plus(sgst);
+
+      return {
+        batchId: item.batchId,
+        medicineName: item.medicineName,
+        quantity,
+        unitPrice: item.unitPrice,
+        discount: item.discount,
+        gstPercent: item.gstPercent,
+        totalPrice: taxableAmt.plus(cgst).plus(sgst).negated(),
+      };
+    });
+
+    const { creditNote, completes } = await prisma.$transaction(async (tx) => {
+      // THE GUARD. One conditional statement per line: increment only while the
+      // running total leaves room. Two simultaneous returns of the same units
+      // cannot both match — the loser affects zero rows and takes the whole
+      // transaction down with it, so no stock is restored twice and no second
+      // credit note is written.
+      //
+      // Same shape as the stock decrement in G-09, and for the same reason: a
+      // read, a check and a write are three things, and only one statement is
+      // atomic.
+      for (const { item, quantity } of returns) {
+        const { count } = await tx.invoiceItem.updateMany({
+          where: {
+            id: item.id,
+            returnedQty: { lte: item.quantity - quantity },
+          },
+          data: { returnedQty: { increment: quantity } },
+        });
+        if (count === 0) {
+          throw new StockConflictError(
+            `${item.medicineName} was returned by someone else while this was in progress. Nothing has been changed — check the invoice and try again.`,
+            409,
+          );
+        }
       }
 
-      // Return the units to the batches they came from, keeping the original
-      // expiry dates and batch numbers (PRD Q3). Unconditional increment: unlike
-      // the deduction there is no ceiling to race against, and the guard above
-      // already ensures this runs once.
-      for (const item of original.items) {
+      // Units go back to the batch they came from, keeping its expiry and batch
+      // number (PRD Q3). Unconditional: there is no ceiling to race against, and
+      // the guard above already ensures this runs once per unit.
+      for (const { item, quantity } of returns) {
         await tx.batch.update({
           where: { id: item.batchId },
-          data: { quantity: { increment: item.quantity } },
+          data: { quantity: { increment: quantity } },
+        });
+      }
+
+      // Whether this return finishes the invoice can only be decided HERE, and
+      // this is the second half of the guard.
+      //
+      // Deciding it from `original.items` — read before the transaction opened —
+      // is a read-then-decide race: four concurrent single-unit returns of a
+      // four-unit line every one of them read `returnedQty: 0`, every one of them
+      // concluded "0 + 1 is not 4, so I am not the last", and the invoice was
+      // left ACTIVE with nothing outstanding. Measured, not theorised.
+      //
+      // Reading back inside the transaction, after the increments, is correct
+      // because the conditional update above has already serialised every writer
+      // on these rows: this statement takes a fresh READ COMMITTED snapshot, so
+      // it sees its own increment plus every increment that has committed. The
+      // transaction that increments last is therefore the only one that sees a
+      // fully returned invoice, and exactly one of them flips the status.
+      const settled = await tx.invoiceItem.findMany({
+        where: { invoiceId: original.id },
+        select: { quantity: true, returnedQty: true },
+      });
+      const completes = settled.every((i) => i.returnedQty === i.quantity);
+
+      // The bill-level discount is apportioned by value, except on the return
+      // that completes the invoice, which gets whatever is left. Pro-rating alone
+      // would leave the credit notes a paisa short or over after rounding; this
+      // way the credits sum to exactly the original.
+      //
+      // Inside the transaction for the same reason as `completes`: the sum of
+      // what has already been credited is only trustworthy once this return's
+      // place in the order is fixed. Read outside, two concurrent partials both
+      // see zero credited and both pro-rate against the full discount.
+      const priorCredits = await tx.invoice.aggregate({
+        where: { reversesId: original.id, type: "CREDIT_NOTE" },
+        _sum: { discountAmt: true },
+      });
+      const creditedSoFar = (
+        priorCredits._sum.discountAmt ?? new D(0)
+      ).negated();
+      let discountToCredit;
+      if (completes) {
+        discountToCredit = original.discountAmt.minus(creditedSoFar);
+      } else if (original.subtotal.isZero()) {
+        discountToCredit = new D(0);
+      } else {
+        discountToCredit = money(
+          original.discountAmt.times(subtotal).dividedBy(original.subtotal),
+        );
+        const room = original.discountAmt.minus(creditedSoFar);
+        if (discountToCredit.greaterThan(room)) discountToCredit = room;
+      }
+
+      const totalAmount = subtotal
+        .plus(totalCgst)
+        .plus(totalSgst)
+        .minus(discountToCredit);
+
+      // Only once nothing is outstanding. A partially returned invoice is still
+      // a live sale for the part the customer kept.
+      if (completes) {
+        await tx.invoice.updateMany({
+          where: { id: original.id, status: "ACTIVE" },
+          data: { status: "CANCELLED" },
         });
       }
 
       const number = await generateCreditNoteNumber(tx);
 
-      // Negative amounts, so any period that sums invoices nets correctly
-      // without every report having to learn about credit notes.
-      return tx.invoice.create({
+      const created = await tx.invoice.create({
         data: {
           invoiceNumber: number,
           type: "CREDIT_NOTE",
@@ -381,35 +534,31 @@ const voidInvoice = async (req, res, next) => {
           reversesId: original.id,
           customerId: original.customerId,
           userId: req.user.id,
-          subtotal: original.subtotal.negated(),
-          discountAmt: original.discountAmt.negated(),
-          cgst: original.cgst.negated(),
-          sgst: original.sgst.negated(),
-          totalAmount: original.totalAmount.negated(),
+          subtotal: subtotal.negated(),
+          discountAmt: discountToCredit.negated(),
+          cgst: totalCgst.negated(),
+          sgst: totalSgst.negated(),
+          totalAmount: totalAmount.negated(),
           paymentMode: original.paymentMode,
           paymentStatus: original.paymentStatus,
-          notes: reason
-            ? `Reverses ${original.invoiceNumber}: ${reason}`
-            : `Reverses ${original.invoiceNumber}`,
-          items: {
-            create: original.items.map((i) => ({
-              batchId: i.batchId,
-              medicineName: i.medicineName,
-              quantity: i.quantity,
-              unitPrice: i.unitPrice,
-              discount: i.discount,
-              gstPercent: i.gstPercent,
-              totalPrice: i.totalPrice.negated(),
-            })),
-          },
+          notes: `${completes ? "Reverses" : "Partial return against"} ${original.invoiceNumber}: ${reason}`,
+          items: { create: creditLines },
         },
-        include: { items: true, customer: true, user: { select: { name: true } } },
+        include: {
+          items: true,
+          customer: true,
+          user: { select: { name: true } },
+        },
       });
+
+      return { creditNote: created, completes };
     });
 
     res.status(201).json({
       success: true,
-      message: `Invoice ${original.invoiceNumber} voided. Credit note ${creditNote.invoiceNumber} issued.`,
+      message: completes
+        ? `Invoice ${original.invoiceNumber} voided. Credit note ${creditNote.invoiceNumber} issued.`
+        : `Partial return against ${original.invoiceNumber}. Credit note ${creditNote.invoiceNumber} issued.`,
       data: creditNote,
     });
   } catch (err) {
@@ -417,13 +566,6 @@ const voidInvoice = async (req, res, next) => {
       return res
         .status(err.statusCode)
         .json({ success: false, message: err.message });
-    }
-    // Losing the race for the unique index means another void committed first.
-    if (isDuplicateNumber(err, "reversesId")) {
-      return res.status(409).json({
-        success: false,
-        message: "This invoice has already been voided.",
-      });
     }
     next(err);
   }
@@ -566,7 +708,10 @@ const getDailySummary = async (req, res, next) => {
     });
 
     const countOf = (type) =>
-      byModeAndType.reduce((n, r) => (r.type === type ? n + r._count.id : n), 0);
+      byModeAndType.reduce(
+        (n, r) => (r.type === type ? n + r._count.id : n),
+        0,
+      );
 
     // One row per mode, in the shape clients already read: the money is the net,
     // the count is sales only — so the "N bills" under each mode adds up to the
@@ -585,7 +730,10 @@ const getDailySummary = async (req, res, next) => {
           ),
         },
         _count: {
-          id: rows.reduce((n, r) => (r.type === "SALE" ? n + r._count.id : n), 0),
+          id: rows.reduce(
+            (n, r) => (r.type === "SALE" ? n + r._count.id : n),
+            0,
+          ),
         },
       };
     });
