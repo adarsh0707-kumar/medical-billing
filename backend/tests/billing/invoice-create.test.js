@@ -322,3 +322,132 @@ describe("atomicity", () => {
     expect((await prisma.batch.findUnique({ where: { id: short.batch.id } })).quantity).toBe(1);
   });
 });
+
+// FR-BATCH-09. Expiry was displayed on every screen and enforced nowhere: the
+// POS showed the date, the dashboard warned about it, and the sale went through
+// regardless. Selling expired medicine is a regulatory and safety failure, not a
+// data-quality problem.
+describe("expired stock cannot be sold", () => {
+  const dayOffset = (days) => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() + days);
+    return d;
+  };
+
+  const sell = async (token, medicine, batch, quantity = 1) =>
+    request(app)
+      .post("/api/billing/invoices")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        items: [line(medicine, batch, { quantity })],
+        paymentMode: "CASH",
+        paymentStatus: "PAID",
+      });
+
+  // The three cases the boundary turns on. A medicine is good *through* the date
+  // printed on it, so expiring today still sells — which is also why no override
+  // is needed for "stock expiring today".
+  it.each([
+    ["expired yesterday", -1, 400],
+    ["expiring today", 0, 201],
+    ["expiring tomorrow", 1, 201],
+  ])("a batch %s -> %i", async (_label, offset, expected) => {
+    const { token } = await signIn(app, "CASHIER");
+    const { medicine, batch } = await makeSellable({
+      quantity: 10,
+      expiryDate: dayOffset(offset),
+    });
+
+    const res = await sell(token, medicine, batch);
+    expect(res.status).toBe(expected);
+  });
+
+  it("names the batch and the date, so the operator knows what to pull", async () => {
+    const { token } = await signIn(app, "CASHIER");
+    const { medicine, batch } = await makeSellable({
+      quantity: 10,
+      expiryDate: dayOffset(-30),
+      batchNumber: "EXP-001",
+    });
+
+    const res = await sell(token, medicine, batch);
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/expired/i);
+    expect(res.body.message).toContain("EXP-001");
+  });
+
+  it("leaves the stock alone when it refuses", async () => {
+    const { token } = await signIn(app, "CASHIER");
+    const { medicine, batch } = await makeSellable({
+      quantity: 10,
+      expiryDate: dayOffset(-1),
+    });
+
+    await sell(token, medicine, batch, 3);
+
+    // A refused sale must not have moved anything — the expired units are still
+    // on the shelf to be written off, and no invoice exists.
+    expect((await prisma.batch.findUnique({ where: { id: batch.id } })).quantity).toBe(10);
+    expect(await prisma.invoice.count()).toBe(0);
+  });
+
+  it("refuses an ADMIN too — there is no override", async () => {
+    const { token } = await signIn(app, "ADMIN");
+    const { medicine, batch } = await makeSellable({
+      quantity: 10,
+      expiryDate: dayOffset(-1),
+    });
+
+    // Deliberate: selling expired medicine is not a permission anyone should
+    // hold. Clearing expired stock is a write-off (FR-BATCH-11), not a sale.
+    expect((await sell(token, medicine, batch)).status).toBe(400);
+  });
+
+  it("rolls the whole invoice back when only one line is expired", async () => {
+    const { token } = await signIn(app, "CASHIER");
+    const good = await makeSellable({ quantity: 10 });
+    const bad = await makeSellable({ quantity: 10, expiryDate: dayOffset(-1) });
+
+    const res = await request(app)
+      .post("/api/billing/invoices")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        items: [
+          line(good.medicine, good.batch, { quantity: 2 }),
+          line(bad.medicine, bad.batch, { quantity: 2 }),
+        ],
+        paymentMode: "CASH",
+        paymentStatus: "PAID",
+      });
+
+    expect(res.status).toBe(400);
+    // Same guarantee the oversell case gives: nothing is written unless
+    // everything can be.
+    expect((await prisma.batch.findUnique({ where: { id: good.batch.id } })).quantity).toBe(10);
+    expect(await prisma.invoice.count()).toBe(0);
+  });
+
+  it("catches a batch that expired after its cart entry was built", async () => {
+    const { token } = await signIn(app, "CASHIER");
+    const { medicine, batch } = await makeSellable({ quantity: 10 });
+
+    // The till was open over midnight: the batch was sellable when the cashier
+    // added it and is not when they press Enter.
+    //
+    // Note what this does and does not prove. It expires the batch before the
+    // request, so the advisory pre-check is what rejects it here. Interleaving a
+    // write between the pre-check and the decrement is not something a test can
+    // do reliably, so the transactional guard is verified separately — by
+    // deleting the pre-check and confirming these cases still pass.
+    await prisma.batch.update({
+      where: { id: batch.id },
+      data: { expiryDate: dayOffset(-1) },
+    });
+
+    const res = await sell(token, medicine, batch);
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/expired/i);
+  });
+});

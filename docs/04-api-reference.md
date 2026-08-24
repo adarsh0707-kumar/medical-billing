@@ -671,7 +671,11 @@ invoice:   subtotal    = Σ taxable
 
 `medicineId` is validated but not persisted — the line is tied to the batch, and the name is snapshotted.
 
-**Sequence:** stock is verified for every line → totals computed → invoice number generated → invoice, items and every batch decrement written inside one `prisma.$transaction`.
+**Sequence:** stock and expiry are verified for every line → totals computed → invoice number generated → invoice, items and every batch decrement written inside one `prisma.$transaction`.
+
+> **Expiry is enforced, not just displayed** (FR-BATCH-09). A medicine is sellable **through** the date printed on it: a batch expiring *today* sells, one that expired *yesterday* is refused. The authoritative check is a predicate on the same atomic `updateMany` that decrements stock, so a batch that expires between the cart being built and the sale committing — a till left open over midnight — is still caught. The pre-transaction check is advisory and exists only for a faster, friendlier message.
+>
+> **No role can override this, including ADMIN.** The case that looks like it needs an override — "we need to sell stock expiring today" — is already allowed. For genuinely expired stock there is no lawful retail sale; taking it off the shelf is a write-off ([FR-BATCH-11](./01-product-requirements.md#65-stock--batches--fr-batch)), which keeps the stock movement attributable instead of disguised as a sale.
 
 **201** returns the invoice with `items`, `customer` and `user.name`.
 
@@ -680,6 +684,7 @@ invoice:   subtotal    = Σ taxable
 | Body fails schema           | 400    | `Validation failed` + `errors[]`                                                                                                                                               |
 | A`batchId` does not exist | 404    | `Batch not found for <medicineName>`                                                                                                                                             |
 | Quantity exceeds stock      | 400    | `Insufficient stock for <medicineName>. Available: <n>`                                                                                                                          |
+| The batch has expired       | 400    | `<medicineName> (batch <batchNumber>) expired on <yyyy-mm-dd> and cannot be sold. Remove it from stock.`                                                                        |
 | `discountAmt` exceeds the bill | 400 | `Discount of <x> is more than the bill total of <y>.`, with a field error on `discountAmt` naming the maximum. **Refused, never clamped** — clamping the total would break `subtotal + cgst + sgst − discountAmt = totalAmount`, and clamping the discount would store a figure nobody typed. Money moving back to a customer is a credit note (§9.2, void), not a negative sale ([F7](./09-testing-strategy.md#4-gst-engine-fixtures)) |
 | Invoice number collision    | 409    | `A record with this value already exists.` — unreachable in normal operation since the atomic per-day counter landed ([G-01](./08-gap-analysis.md#g-01)); retained as a backstop |
 
