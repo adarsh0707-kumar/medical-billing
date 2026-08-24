@@ -32,7 +32,12 @@ import { toast } from "sonner";
 
 let mock: MockAdapter;
 
-const result = (over = {}) => ({
+const FAR = new Date(Date.now() + 365 * 864e5).toISOString();
+
+// The flattened FEFO fields and `batches[0]` describe the same batch, exactly as
+// the API guarantees. A fixture that let them drift would test a response shape
+// the server never sends.
+const result = (over: Record<string, unknown> = {}) => ({
   id: "med1",
   name: "Paracetamol 500mg",
   genericName: "Paracetamol",
@@ -41,11 +46,35 @@ const result = (over = {}) => ({
   isScheduledH: false,
   batchId: "batch1",
   batchNumber: "B-001",
-  expiryDate: new Date(Date.now() + 365 * 864e5).toISOString(),
+  expiryDate: FAR,
   sellingPrice: 24.5,
   stock: 3,
+  batches: [
+    {
+      id: "batch1",
+      batchNumber: "B-001",
+      expiryDate: FAR,
+      sellingPrice: 24.5,
+      quantity: 3,
+    },
+  ],
+  expiredBatches: 0,
   ...over,
 });
+
+// A medicine carrying a second, longer-dated batch — the case FR-BILL-19 is
+// about. FEFO still points at B-001.
+const twoBatches = (over: Record<string, unknown> = {}) => {
+  const later = {
+    id: "batch2",
+    batchNumber: "B-002",
+    expiryDate: new Date(Date.now() + 730 * 864e5).toISOString(),
+    sellingPrice: 31,
+    quantity: 12,
+  };
+  const base = result();
+  return { ...base, batches: [...base.batches, later], ...over };
+};
 
 // The cart row renders the same medicine name as the search result, so results
 // are addressed by role — only the dropdown entry is a button.
@@ -163,5 +192,130 @@ describe("POS cart guards", () => {
       expect.stringContaining("prescription required"),
     );
     expect(vi.mocked(toast.error)).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * FR-BILL-19 — the operator may overrule FEFO, but only on purpose.
+ *
+ * AD-04 traded operator choice away for automatic expiry minimisation. These
+ * assert the trade is now a default rather than a cage: the ordinary click must
+ * still take the earliest-expiring batch with no extra step, and the override
+ * must take a deliberate second action to reach.
+ */
+describe("batch selection at the POS", () => {
+  const batchesButton = () => screen.findByRole("button", { name: /2 batches/ });
+
+  it("takes the FEFO batch on a plain click, with no extra step", async () => {
+    const user = userEvent.setup();
+    mock.onGet(/medicines\/search/).reply(200, {
+      success: true,
+      data: [twoBatches()],
+    });
+
+    render(<Billing />);
+    await searchFor(user);
+    await user.click(await resultButton());
+
+    // B-001 is the earliest-expiring, so its price is what the cart quotes.
+    expect(await screen.findByText(/Batch: B-001/)).toBeInTheDocument();
+    expect(screen.queryByText(/Batch: B-002/)).not.toBeInTheDocument();
+    expect(vi.mocked(toast.error)).not.toHaveBeenCalled();
+  });
+
+  it("offers no override when there is only one batch", async () => {
+    const user = userEvent.setup();
+    mock.onGet(/medicines\/search/).reply(200, {
+      success: true,
+      data: [result()],
+    });
+
+    render(<Billing />);
+    await searchFor(user);
+    await screen.findByRole("button", { name: /Paracetamol 500mg/ });
+
+    // A picker over a single option is a false choice and a wasted click.
+    expect(screen.queryByRole("button", { name: /batches/ })).toBeNull();
+  });
+
+  it("adds the batch the operator picked, at that batch's price", async () => {
+    const user = userEvent.setup();
+    mock.onGet(/medicines\/search/).reply(200, {
+      success: true,
+      data: [twoBatches()],
+    });
+
+    render(<Billing />);
+    await searchFor(user);
+    await user.click(await batchesButton());
+
+    // The picker lists both, FEFO first and marked as the default.
+    expect(await screen.findByText("Default")).toBeInTheDocument();
+
+    await user.click(await screen.findByRole("button", { name: /B-002/ }));
+
+    expect(await screen.findByText(/Batch: B-002/)).toBeInTheDocument();
+    expect(vi.mocked(toast.success)).toHaveBeenCalledWith(
+      expect.stringContaining("B-002"),
+    );
+  });
+
+  it("caps the picked batch at its own stock, not the FEFO batch's", async () => {
+    const user = userEvent.setup();
+    // B-001 holds 3, B-002 holds 12. Carrying the wrong ceiling across would
+    // either block a legitimate sale or let the cart overshoot into a 400.
+    mock.onGet(/medicines\/search/).reply(200, {
+      success: true,
+      data: [twoBatches()],
+    });
+
+    render(<Billing />);
+    await searchFor(user);
+    await user.click(await batchesButton());
+    await user.click(await screen.findByRole("button", { name: /B-002/ }));
+    await screen.findByText(/Batch: B-002/);
+
+    // The cart row's inputs, in order: quantity, unit price, discount. The unit
+    // price proves the picked batch's own price came across, not the FEFO one's.
+    const [qty, price] = screen.getAllByRole("spinbutton");
+    expect(price).toHaveValue(31);
+
+    // Four clicks takes it to 5 — past B-001's 3, well inside B-002's 12. If the
+    // cart had kept the FEFO batch's ceiling this would refuse at 4.
+    const plus = screen.getByLabelText("Increase quantity");
+    for (let i = 0; i < 4; i++) await user.click(plus);
+
+    expect(qty).toHaveValue(5);
+    expect(vi.mocked(toast.error)).not.toHaveBeenCalledWith(
+      "Insufficient stock!",
+    );
+  });
+
+  it("says stock is expired rather than absent when it is", async () => {
+    const user = userEvent.setup();
+    // The shelf is full; none of it is sellable. "No Stock" would send someone
+    // to reorder a medicine they already have boxes of.
+    mock.onGet(/medicines\/search/).reply(200, {
+      success: true,
+      data: [
+        result({
+          batchId: null,
+          batchNumber: "No Stock",
+          stock: 0,
+          batches: [],
+          expiredBatches: 2,
+        }),
+      ],
+    });
+
+    render(<Billing />);
+    await searchFor(user);
+
+    expect(await screen.findByText("Stock Expired")).toBeInTheDocument();
+    await user.click(await resultButton());
+
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith(
+      expect.stringContaining("expired"),
+    );
   });
 });

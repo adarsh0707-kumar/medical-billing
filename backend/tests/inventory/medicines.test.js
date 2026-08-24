@@ -102,6 +102,80 @@ describe("GET /api/inventory/medicines/search", () => {
     expect(hit.batchId).toBeNull();
     expect(hit.batchNumber).toBe("No Stock");
     expect(hit.stock).toBe(0);
+    expect(hit.batches).toEqual([]);
+  });
+
+  // FR-BILL-19: the operator has to be able to overrule FEFO, which means the
+  // search has to hand them something to choose from.
+  it("offers every sellable batch, earliest expiry first", async () => {
+    const { token } = await signIn(app);
+    const { medicine, supplier } = await makeMedicine({ name: "Paracetamol 500mg" });
+    const b = (batchNumber, expiryDate, quantity, sellingPrice) =>
+      makeBatch({ medicineId: medicine.id, supplierId: supplier.id, batchNumber, expiryDate: new Date(expiryDate), quantity, sellingPrice });
+    await b("LATER", "2029-01-01", 10, 30);
+    await b("SOONER", "2027-01-01", 7, 24.5);
+    await b("MIDDLE", "2028-01-01", 4, 27);
+
+    const [hit] = (await get(token, "/api/inventory/medicines/search?q=para")).body.data;
+
+    expect(hit.batches.map((x) => x.batchNumber)).toEqual(["SOONER", "MIDDLE", "LATER"]);
+    expect(hit.batches.map((x) => x.quantity)).toEqual([7, 4, 10]);
+    // FEFO is still the default, and the default is still the first option.
+    expect(hit.batchId).toBe(hit.batches[0].id);
+    expect(hit.batchNumber).toBe("SOONER");
+  });
+
+  // GUARD G-20 — an expired batch must never be offered, and above all must
+  // never be the FEFO default. Drop the expiry filter from the search include
+  // and this fails: expiry-ascending sorts the dead batch to the front, the POS
+  // auto-attaches it, and the sale is refused even though good stock exists.
+  it("never offers or defaults to an expired batch", async () => {
+    const { token } = await signIn(app);
+    const { medicine, supplier } = await makeMedicine({ name: "Paracetamol 500mg" });
+    await makeBatch({ medicineId: medicine.id, supplierId: supplier.id, batchNumber: "DEAD", quantity: 50, expiryDate: new Date("2020-01-31"), sellingPrice: 12 });
+    await makeBatch({ medicineId: medicine.id, supplierId: supplier.id, batchNumber: "GOOD", quantity: 8, expiryDate: new Date("2029-06-30"), sellingPrice: 20 });
+
+    const [hit] = (await get(token, "/api/inventory/medicines/search?q=para")).body.data;
+
+    expect(hit.batches.map((x) => x.batchNumber)).toEqual(["GOOD"]);
+    expect(hit.batchNumber).toBe("GOOD");
+    expect(hit.stock).toBe(8);
+  });
+
+  // A batch expiring today is still sellable — the same boundary the sale itself
+  // applies (FR-BATCH-09), so the two cannot disagree about what is on offer.
+  it("still offers a batch that expires today", async () => {
+    const { token } = await signIn(app);
+    const { medicine, supplier } = await makeMedicine({ name: "Paracetamol 500mg" });
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    await makeBatch({ medicineId: medicine.id, supplierId: supplier.id, batchNumber: "TODAY", quantity: 3, expiryDate: today });
+
+    const [hit] = (await get(token, "/api/inventory/medicines/search?q=para")).body.data;
+
+    expect(hit.batches.map((x) => x.batchNumber)).toEqual(["TODAY"]);
+  });
+
+  // Otherwise "No Stock" is printed over a full shelf, and nobody is told to
+  // clear it.
+  it("distinguishes never-stocked from all-stock-expired", async () => {
+    const { token } = await signIn(app);
+    const { medicine, supplier } = await makeMedicine({ name: "Paracetamol 500mg" });
+    await makeBatch({ medicineId: medicine.id, supplierId: supplier.id, batchNumber: "DEAD-1", quantity: 50, expiryDate: new Date("2020-01-31") });
+    await makeBatch({ medicineId: medicine.id, supplierId: supplier.id, batchNumber: "DEAD-2", quantity: 20, expiryDate: new Date("2021-01-31") });
+
+    const [hit] = (await get(token, "/api/inventory/medicines/search?q=para")).body.data;
+
+    expect(hit.batches).toEqual([]);
+    expect(hit.batchId).toBeNull();
+    expect(hit.expiredBatches).toBe(2);
+  });
+
+  it("reports no expired stock when there is none", async () => {
+    const { token } = await signIn(app);
+    await makeSellable();
+    const [hit] = (await get(token, "/api/inventory/medicines/search?q=para")).body.data;
+    expect(hit.expiredBatches).toBe(0);
   });
 });
 

@@ -416,7 +416,7 @@ Only `isActive: true` medicines are returned, ordered by name.
 
 #### `GET /api/inventory/medicines/search?q=<term>` — any role
 
-The POS lookup. Returns `[]` when `q` is shorter than 2 characters. Max 10 results, each flattened with the nearest-expiry in-stock batch:
+The POS lookup. Returns `[]` when `q` is shorter than 2 characters. Max 10 results. Each result carries the FEFO batch flattened onto it **and** the full list of batches the operator may choose instead (FR-BILL-19):
 
 ```json
 {
@@ -427,13 +427,26 @@ The POS lookup. Returns `[]` when `q` is shorter than 2 characters. Max 10 resul
       "unit": "capsule", "gstPercent": 12, "isScheduledH": true,
       "batchId": "clb…", "batchNumber": "AMX-2311",
       "expiryDate": "2026-11-30T00:00:00.000Z",
-      "sellingPrice": 82.0, "stock": 46
+      "sellingPrice": 82.0, "stock": 46,
+      "batches": [
+        { "id": "clb…", "batchNumber": "AMX-2311", "expiryDate": "2026-11-30T00:00:00.000Z", "sellingPrice": 82.0, "quantity": 46 },
+        { "id": "clc…", "batchNumber": "AMX-2404", "expiryDate": "2027-04-30T00:00:00.000Z", "sellingPrice": 88.5, "quantity": 120 }
+      ],
+      "expiredBatches": 0
     }
   ]
 }
 ```
 
-When a medicine has no stock, `batchId` is `null`, `batchNumber` is the string `"No Stock"`, `sellingPrice` is `0` and `stock` is `0`. Out-of-stock medicines are **still returned** — the client must guard against adding a null `batchId` to the cart.
+| Field                                                    | Meaning                                                                                                                                                             |
+| -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `batchId`, `batchNumber`, `expiryDate`, `sellingPrice`, `stock` | The FEFO default — always identical to `batches[0]`. Kept flat so a client that does not care about batch choice needs no changes.                        |
+| `batches`                                              | Every**sellable** batch, earliest expiry first. Capped at 20 per medicine — the endpoint is called on every keystroke, and batch 21 is the longest-dated. |
+| `expiredBatches`                                       | Count of in-stock batches that are past their date. Not sellable, not listed, but reported so the client can distinguish "never stocked" from "all of it is expired". |
+
+**Only sellable batches appear.** A batch is excluded when its quantity is `0` or its expiry is before today (`expiryDate >= ` local midnight — a batch is good *through* its printed date, FR-BATCH-09, the same boundary `POST /api/billing/invoices` applies). This matters because FEFO orders by expiry ascending: before this filter existed an expired batch sorted to the **front** and became the auto-attached default, so a medicine with good stock behind it could not be sold at all ([G-20](./08-gap-analysis.md#g-20)).
+
+When a medicine has no sellable stock, `batchId` is `null`, `batchNumber` is the string `"No Stock"`, `sellingPrice` is `0`, `stock` is `0` and `batches` is `[]`. Out-of-stock medicines are **still returned** — the client must guard against adding a null `batchId` to the cart. If `expiredBatches` is above zero in that state, the shelf is not empty; the stock on it is dead and should be pulled.
 
 #### `GET /api/inventory/medicines/:id` — any role
 
@@ -922,7 +935,10 @@ TOKEN=$(curl -s -X POST $BASE/api/auth/login \
 curl -s "$BASE/api/inventory/medicines/search?q=para" \
   -H "Authorization: Bearer $TOKEN" | jq
 
-# 3. Create the invoice using the batchId returned above
+# 3. Create the invoice using the batchId returned above.
+#    That is the FEFO batch. To sell a different one, take any `id` from the
+#    result's `batches[]` instead — the API does not care which, it only checks
+#    the batch has the stock and has not expired.
 curl -s -X POST $BASE/api/billing/invoices \
   -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \

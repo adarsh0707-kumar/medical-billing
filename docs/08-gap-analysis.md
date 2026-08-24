@@ -68,6 +68,9 @@ Severity: 🔴 causes data corruption or a security exposure · 🟠 causes inco
 | [G-15](#g-15) | ✅ Fixed | Invoices are immutable with no correction path |
 | [G-17](#g-17) | ✅ Fixed        | Cart total disagreed with the invoice the server wrote                  |
 | [G-18](#g-18) | ✅ Fixed        | A database failure during`protect` was reported as an invalid token   |
+| [G-16](#g-16) | 🟡 Open         | Data fetching sets state synchronously inside effects                   |
+| [G-19](#g-19) | ✅ Fixed        | Query validation silently disabled the batch filters                    |
+| [G-20](#g-20) | ✅ Fixed        | FEFO auto-selected expired batches, blocking the sale                   |
 
 ---
 
@@ -564,6 +567,28 @@ Splitting the catches also exposed that two documented behaviours had never been
 The query-validation tests did not catch it because they asserted only status codes — a broken filter returns a perfectly good `200`.
 
 **Fix.** Compare the booleans as booleans. The regression guard now asserts that a filter **filters**: it creates a batch matching neither condition, checks each filtered count is zero, then makes it match both and checks each is one. A filter test that only checks the status code is not a filter test.
+
+---
+
+### <a id="g-20"></a>G-20 ✅ FIXED — FEFO auto-selected expired batches, blocking the sale
+
+**Where:** [`backend/src/controllers/medicine.controller.js`](../backend/src/controllers/medicine.controller.js) — `search`
+
+**Problem.** The POS lookup attached one batch to each result:
+
+```js
+batches: { where: { quantity: { gt: 0 } }, orderBy: { expiryDate: "asc" }, take: 1 }
+```
+
+The filter asked only for stock, never for a usable date. Because FEFO sorts **expiry ascending**, an expired batch sorted ahead of every good one and became the batch the POS auto-attached. The sale was then refused by the expiry guard added in FR-BATCH-09, and since the operator had no way to choose a different batch (FR-BILL-19, AD-04), the medicine could not be sold at all until someone cleared the shelf.
+
+Reproduced against the running stack: a medicine with an expired batch (50 units) and a good one (50 units, expiry 2027) returned `EXPIRED-PROBE` from search, and posting that `batchId` to `POST /api/billing/invoices` returned **400** `… expired on 2024-01-31 and cannot be sold`. Good stock sat behind it, unreachable.
+
+The two conditions had to meet before this could bite — an expiry guard that refuses the sale, and an auto-selector with no expiry filter — which is why it survived both changes that created it.
+
+**Fix.** The search now excludes any batch whose expiry is before local midnight today, the same boundary the sale itself applies, so the two can never disagree about what is on offer. Expired batches are excluded rather than listed-and-disabled: they are not a choice the API would honour. Their count is returned separately as `expiredBatches`, so the POS can say *Stock Expired* over a full shelf instead of *No Stock*, which would send someone to reorder what they already have.
+
+The regression guard asserts the default: given an expired batch and a good one, search must offer only the good one and must not make the expired one the default. A companion test pins the boundary — a batch expiring **today** is still offered, matching FR-BATCH-09.
 
 ---
 
