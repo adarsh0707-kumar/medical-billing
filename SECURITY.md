@@ -160,7 +160,7 @@ The reasoning behind each item, and the current threat model, is in [`docs/07-se
 
 ### Handling patient-adjacent data
 
-Customer name, phone, address, age, gender and full purchase history are stored in plain columns with no encryption at rest beyond whatever the host volume provides. Retention and erasure now exist (36 months of inactivity, anonymising in place); **reads are still not logged**, which is a deliberate call argued in `docs/03` §3.11. There is also no prescription record for Schedule H medicines — the flag is displayed but the sale is not gated — so the system does not by itself satisfy a prescription-record obligation. Assess this against your local obligations before going live.
+Customer name, phone, address, age, gender and full purchase history are stored in plain columns with no encryption at rest beyond whatever the host volume provides. Retention and erasure now exist (36 months of inactivity, anonymising in place); **reads are still not logged**, which is a deliberate call argued in `docs/03` §3.11. Since 2026-08-24 a Schedule H sale **requires** a register entry — prescriber, council registration number, prescription date and patient name — recorded against the invoice in the same transaction (Rule 65(11) particulars). No prescription image is stored; the register is the record. Whether that satisfies your obligations is still yours to assess against local rules. Assess this against your local obligations before going live.
 
 ---
 

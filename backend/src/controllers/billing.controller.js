@@ -40,6 +40,7 @@ const createInvoice = async (req, res, next) => {
     const {
       customerId,
       items,
+      prescription,
       discountAmt = 0,
       paymentMode,
       paymentStatus,
@@ -60,9 +61,18 @@ const createInvoice = async (req, res, next) => {
     // Step 1 — Verify stock availability and expiry for all items.
     // Advisory only: it fails fast with a friendly message before any work is
     // done, but the authoritative checks are the guarded decrement in Step 3.
+    // Collected while walking the lines, so the Schedule H check below can name
+    // exactly which medicines forced the requirement.
+    const scheduledH = [];
+
     for (const item of items) {
       const batch = await prisma.batch.findUnique({
         where: { id: item.batchId },
+        // Resolved through the batch, never from `item.medicineId`. That field
+        // is validated but not persisted, so a caller could otherwise pair a
+        // Schedule H batch with a harmless medicineId and walk past the
+        // prescription requirement entirely.
+        include: { medicine: { select: { name: true, isScheduledH: true } } },
       });
       if (!batch) {
         return res.status(404).json({
@@ -85,6 +95,30 @@ const createInvoice = async (req, res, next) => {
           message: `Insufficient stock for ${item.medicineName}. Available: ${batch.quantity}`,
         });
       }
+      if (batch.medicine?.isScheduledH) scheduledH.push(batch.medicine.name);
+    }
+
+    // A Schedule H drug may only be supplied against a registered
+    // practitioner's prescription, and the pharmacy has to be able to show the
+    // particulars afterwards (FR-MED-12). Until now the flag was displayed and
+    // enforced nowhere.
+    //
+    // Checked here rather than inside the transaction, unlike stock and expiry.
+    // Those two guard against a race — the world changing between the check and
+    // the commit. This is a statement about the request itself, which cannot
+    // change underneath us, so the transaction buys nothing.
+    if (scheduledH.length && !prescription) {
+      return res.status(400).json({
+        success: false,
+        message: `A prescription is required: ${[...new Set(scheduledH)].join(", ")} ${scheduledH.length > 1 ? "are" : "is"} Schedule H.`,
+        errors: [
+          {
+            field: "prescription",
+            message:
+              "Record the prescriber, their registration number, the prescription date and the patient's name.",
+          },
+        ],
+      });
     }
 
     // Step 2 — Calculate totals
@@ -181,10 +215,18 @@ const createInvoice = async (req, res, next) => {
               paymentStatus,
               notes,
               items: { create: processedItems },
+              // Written in the same transaction as the sale it belongs to: a
+              // Schedule H invoice without its register entry is exactly the
+              // gap this closes, so the two cannot come apart.
+              //
+              // Recorded whenever supplied, even if no line turned out to need
+              // it — a pharmacist who logged a prescription meant to.
+              ...(prescription && { prescription: { create: prescription } }),
             },
             include: {
               items: true,
               customer: true,
+              prescription: true,
               user: { select: { name: true } },
             },
           });

@@ -37,14 +37,6 @@ model User {
   refreshTokens RefreshToken[]
 }
 
-/// One row per signed-in device (FR-AUTH-10). The refresh token's `jti` is this
-/// row's id, so the server holds authoritative state for a credential the client
-/// only carries a copy of.
-///
-/// Rotation: every use revokes the presented row and issues a new one. That is
-/// what makes a stolen refresh token detectable — replaying an already-revoked
-/// row is something a legitimate client never does, so it means two parties hold
-/// the same credential, and the answer is to end every session for that user.
 /// Who changed what, and to what (NFR-17, threat T-12).
 ///
 /// Written by a Prisma middleware rather than by controllers, so a new write
@@ -78,6 +70,14 @@ model AuditLog {
   @@index([actorId])
 }
 
+/// One row per signed-in device (FR-AUTH-10). The refresh token's `jti` is this
+/// row's id, so the server holds authoritative state for a credential the client
+/// only carries a copy of.
+///
+/// Rotation: every use revokes the presented row and issues a new one. That is
+/// what makes a stolen refresh token detectable — replaying an already-revoked
+/// row is something a legitimate client never does, so it means two parties hold
+/// the same credential, and the answer is to end every session for that user.
 model RefreshToken {
   id        String    @id @default(cuid())
   userId    String
@@ -236,6 +236,7 @@ model Invoice {
   customer      Customer?     @relation(fields: [customerId], references: [id])
   user          User          @relation(fields: [userId], references: [id])
   items         InvoiceItem[]
+  prescription  Prescription?
 
   /// One credit note per sale, enforced by the unique constraint on reversesId:
   /// that is what makes a double-submitted void restore stock exactly once.
@@ -246,6 +247,48 @@ model Invoice {
   // and the trend chart order or range-scan on this.
   @@index([date])
   @@index([customerId])
+}
+
+/// The prescription a Schedule H sale was dispensed against (FR-MED-12, PRD Q4).
+///
+/// Rule 65(11) of the Drugs and Cosmetics Rules lets a pharmacy record the
+/// *particulars* of a prescription in a register instead of retaining the paper.
+/// This is that register. What the rule asks for that the invoice does not
+/// already carry is the prescriber, the prescription's own date, and the
+/// patient's name — the rest (date of supply, drugs, quantities, dispensing
+/// pharmacist) is the invoice and its lines.
+///
+/// One per invoice, not per line: a customer hands over one prescription and it
+/// covers every Schedule H item on that bill. A bill needing two prescriptions
+/// has to be split, which is what a pharmacist would do at the counter anyway.
+///
+/// No image. The rules permit the register in lieu of the paper, this stack has
+/// no file storage, and a scan would be a second copy of patient-identifying
+/// data with its own retention and erasure obligations. Adding one later does
+/// not disturb these columns.
+model Prescription {
+  id              String   @id @default(cuid())
+  invoiceId       String   @unique
+  /// Registered Medical Practitioner who wrote it.
+  prescriberName  String
+  /// Their council registration number — the field that makes "registered"
+  /// checkable rather than asserted.
+  prescriberRegNo String
+  /// The date on the prescription, which is not the date of supply.
+  prescribedOn    DateTime
+  /// Named separately from `Invoice.customerId` because a Schedule H sale can be
+  /// a walk-in with no customer record, and the register still needs a patient.
+  /// Anonymised alongside the customer when a record is erased (see §8).
+  patientName     String
+  notes           String?
+  createdAt       DateTime @default(now())
+
+  invoice         Invoice  @relation(fields: [invoiceId], references: [id])
+
+  /// "Show me everything dispensed against this prescriber" is the query an
+  /// inspection asks.
+  @@index([prescriberRegNo])
+  @@index([prescribedOn])
 }
 
 model InvoiceItem {

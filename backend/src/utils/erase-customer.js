@@ -44,6 +44,22 @@ const ANONYMISED_FIELDS = {
  */
 const REDACTION = { redacted: "customer data erased" };
 
+/**
+ * What erasure deliberately does **not** reach: `Prescription.patientName`.
+ *
+ * The prescription register is a statutory record. Rule 65(11) of the Drugs and
+ * Cosmetics Rules requires a pharmacy to be able to produce the particulars of a
+ * Schedule H supply — including the patient — and a right to erasure does not
+ * override an obligation to retain. This is the same reasoning that keeps the
+ * invoice: both are records the shop is required to hold, not data it chose to
+ * keep.
+ *
+ * So an erased customer's name disappears from `Customer` and from the audit
+ * trail, and survives in the register of any Schedule H medicine they were
+ * dispensed. That is a real limit on the erasure promise and is documented in
+ * docs/03 §8 rather than left for someone to discover.
+ */
+
 const redactAuditTrail = (customerId) =>
   prisma.auditLog.updateMany({
     where: { model: "Customer", recordId: customerId },

@@ -451,3 +451,142 @@ describe("expired stock cannot be sold", () => {
     expect(res.body.message).toMatch(/expired/i);
   });
 });
+
+// FR-MED-12 / PRD Q4. `isScheduledH` was displayed at the POS and gated nothing:
+// the cashier saw a red badge and the sale went through regardless.
+describe("Schedule H sales require a prescription", () => {
+  const rx = (over = {}) => ({
+    prescriberName: "Dr A. Mehta",
+    prescriberRegNo: "MMC/12345",
+    prescribedOn: new Date().toISOString().slice(0, 10),
+    patientName: "Sunita Rao",
+    ...over,
+  });
+
+  const sell = (token, body) =>
+    request(app)
+      .post("/api/billing/invoices")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ paymentMode: "CASH", paymentStatus: "PAID", ...body });
+
+  const scheduledH = async () => {
+    const { medicine, batch, ...rest } = await makeSellable({ quantity: 10 });
+    await prisma.medicine.update({
+      where: { id: medicine.id },
+      data: { isScheduledH: true },
+    });
+    return { medicine, batch, ...rest };
+  };
+
+  it("refuses a Schedule H sale with no prescription, naming the medicine", async () => {
+    const { token } = await signIn(app, "CASHIER");
+    const { medicine, batch } = await scheduledH();
+
+    const res = await sell(token, { items: [line(medicine, batch)] });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/Schedule H/);
+    expect(res.body.message).toContain(medicine.name);
+    expect(await prisma.invoice.count()).toBe(0);
+  });
+
+  it("records the register entry against the invoice when one is supplied", async () => {
+    const { token } = await signIn(app, "CASHIER");
+    const { medicine, batch } = await scheduledH();
+
+    const res = await sell(token, { items: [line(medicine, batch)], prescription: rx() });
+
+    expect(res.status).toBe(201);
+    const stored = await prisma.prescription.findUnique({
+      where: { invoiceId: res.body.data.id },
+    });
+    expect(stored).toMatchObject({
+      prescriberName: "Dr A. Mehta",
+      prescriberRegNo: "MMC/12345",
+      patientName: "Sunita Rao",
+    });
+  });
+
+  it("leaves an ordinary sale alone", async () => {
+    const { token } = await signIn(app, "CASHIER");
+    const { medicine, batch } = await makeSellable({ quantity: 10 });
+
+    // Requiring a prescription for paracetamol would make the control something
+    // staff route around.
+    expect((await sell(token, { items: [line(medicine, batch)] })).status).toBe(201);
+  });
+
+  it("requires it when only one line of a mixed basket is Schedule H", async () => {
+    const { token } = await signIn(app, "CASHIER");
+    const ordinary = await makeSellable({ quantity: 10 });
+    const controlled = await scheduledH();
+
+    const items = [
+      line(ordinary.medicine, ordinary.batch),
+      line(controlled.medicine, controlled.batch),
+    ];
+
+    expect((await sell(token, { items })).status).toBe(400);
+    expect((await sell(token, { items, prescription: rx() })).status).toBe(201);
+  });
+
+  // The bypass this design exists to close: `medicineId` on a line is validated
+  // but never persisted, so it cannot be the thing that decides whether a
+  // prescription is needed.
+  it("cannot be bypassed by sending a harmless medicineId with a Schedule H batch", async () => {
+    const { token } = await signIn(app, "CASHIER");
+    const ordinary = await makeSellable({ quantity: 10 });
+    const controlled = await scheduledH();
+
+    const res = await sell(token, {
+      items: [
+        {
+          ...line(controlled.medicine, controlled.batch),
+          // Claim it is the harmless one.
+          medicineId: ordinary.medicine.id,
+          medicineName: ordinary.medicine.name,
+        },
+      ],
+    });
+
+    // The batch is what is actually being dispensed, so the batch's medicine is
+    // what decides.
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/Schedule H/);
+  });
+
+  it.each([
+    ["no prescriber", { prescriberName: "" }],
+    ["no registration number", { prescriberRegNo: "" }],
+    ["no patient", { patientName: "" }],
+    ["a future date", { prescribedOn: "2099-01-01" }],
+  ])("rejects a register entry with %s", async (_label, over) => {
+    const { token } = await signIn(app, "CASHIER");
+    const { medicine, batch } = await scheduledH();
+
+    const res = await sell(token, {
+      items: [line(medicine, batch)],
+      prescription: rx(over),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("writes the entry and the sale together, or neither", async () => {
+    const { token } = await signIn(app, "CASHIER");
+    const controlled = await scheduledH();
+    const short = await makeSellable({ quantity: 1 });
+
+    // Second line cannot be filled, so the whole invoice rolls back — and the
+    // register entry must not survive a sale that never happened.
+    await sell(token, {
+      items: [
+        line(controlled.medicine, controlled.batch),
+        line(short.medicine, short.batch, { quantity: 50 }),
+      ],
+      prescription: rx(),
+    });
+
+    expect(await prisma.invoice.count()).toBe(0);
+    expect(await prisma.prescription.count()).toBe(0);
+  });
+});

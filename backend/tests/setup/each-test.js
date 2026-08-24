@@ -9,6 +9,8 @@ const TABLES = [
   // Cascade-deleted with its User today; listed anyway, so a change to that
   // FK cannot quietly start leaking sessions between tests.
   "RefreshToken",
+  // Both reference Invoice, so both go before it.
+  "Prescription",
   "InvoiceItem",
   "Invoice",
   "PurchaseItem",
