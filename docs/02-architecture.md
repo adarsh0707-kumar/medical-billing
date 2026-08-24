@@ -187,7 +187,10 @@ frontend/src/
 ├── store/
 │   ├── auth.store.ts            Zustand + persist("auth-storage") — user, token, isAuthenticated
 │   └── notification.store.ts    In-memory alert list + unread count
-├── hooks/useNotifications.ts    Polls expiring + low-stock every 5 min, builds alert objects
+├── hooks/
+│   ├── useNotifications.ts     Polls expiring + low-stock every 5 min into the notification store
+│   ├── useMasters.ts           Shared category / manufacturer / supplier queries
+│   └── useDebounced.ts         Settles an input before it becomes a query key
 ├── components/
 │   ├── ProtectedRoute.tsx       Redirects to /login when not authenticated
 │   ├── layout/                  Layout · Sidebar (role-filtered nav) · Topbar (alerts, user menu)
@@ -205,7 +208,17 @@ frontend/src/
 └── types/index.ts               Role, User, AuthState only — API payloads are typed per-page
 ```
 
-**State model.** There is no data-fetching library (no React Query/SWR). Each page owns its `useState` + `useEffect` fetch, and mutations are followed by an explicit refetch. Only auth (persisted) and notifications (ephemeral) are global. This keeps the mental model flat and is fine at current scale; it is also why the 7-day trend fires seven sequential-ish requests.
+**State model.** Three kinds of state, kept apart on purpose.
+
+*Server state* is **TanStack Query** (`@tanstack/react-query`, adopted 2026-08-24). Every read goes through `useQuery` with a key describing exactly what it asked for — `["medicines", page, search, categoryFilter]`, `["gst-report", month, year]` — and every `queryFn` forwards the query's `AbortSignal` to axios. Mutations are still plain `api.post`/`put`/`delete` calls followed by `invalidateQueries`, which is the same "write then refetch" shape as before, except the refetch reaches every component holding that key instead of only the one that wrote.
+
+*Client state* stays `useState`: form fields, dialogs, the current page number, the search box.
+
+*Global state* is Zustand, and only for the two things that are genuinely global: auth (persisted) and notifications (ephemeral). The notification store survived the migration because it owns read/unread, which no server response knows about — the fetching underneath it moved, the store did not.
+
+Until this change each page owned its own `useState` + `useEffect` fetch. Nothing was incorrect, but the pattern *cannot express cancellation*: a response for a screen the user has left still resolves and still calls `setState`, so a slow request could land on top of a fresh one. Eleven call sites also hand-rolled `loading` and error handling separately, which is how their error messages drifted apart. Both are now one thing each — a shared `QueryClient` in [`frontend/src/lib/query-client.ts`](../frontend/src/lib/query-client.ts) raises one toast per failed query, overridable per call via `meta.errorMessage` ([G-16](./08-gap-analysis.md#g-16)).
+
+Shared reads are shared for real: [`useMasters.ts`](../frontend/src/hooks/useMasters.ts) holds categories, manufacturers and suppliers, which four tabs used to fetch independently, and the alert bell and the Reports stock panel now hit the same cache entry for the same 30-day window.
 
 **Route protection is defence in depth, not the control.** `ProtectedRoute` and the role-filtered sidebar are UX; the server's `authorize()` is the actual boundary.
 
@@ -413,7 +426,7 @@ Everything [Phase 8](./05-roadmap-and-phases.md#phase-8--production-readiness) l
 | AD-07 | JWT in`localStorage`, no refresh flow                                                                                          | Simplest client; the SPA is not cookie-based                                                               | XSS-exfiltratable; no server-side revocation ([07 — Security](./07-security.md))                                                                                   |
 | AD-08 | Per-request user reload in`protect`                                                                                            | Deactivation takes effect immediately                                                                      | One extra query per request — prime cache candidate                                                                                                               |
 | AD-09 | Zod at the route boundary                                                                                                        | Validation lives next to the contract, and strips unknown keys                                             | Any field absent from a schema is silently dropped — the cause of the`mfgDate` bug ([G-04](./08-gap-analysis.md#g-04))                                           |
-| AD-10 | Zustand over Redux/Context                                                                                                       | Tiny surface for two small global stores                                                                   | No caching/invalidation layer; each page hand-rolls fetching                                                                                                       |
+| AD-10 | Zustand over Redux/Context, **for client state only** *(revised 2026-08-24)* | Tiny surface for two small global stores | Was: no caching/invalidation layer, each page hand-rolled fetching. Server state moved to TanStack Query ([G-16](./08-gap-analysis.md#g-16)); Zustand keeps auth and the notification store, which owns read/unread that no response carries. The split is now the rule: if it came from the API it belongs to a query key |
 | AD-11 | shadcn/ui (source-vendored Radix components)                                                                                     | Full control of component source, no runtime UI dependency                                                 | 20 component files to maintain in-repo                                                                                                                             |
 | AD-12 | Redis provisioned before it is used —**reversed in Phase 8**                                                              | Reserve the dependency and prove connectivity early                                                        | It never acquired a consumer, so it was a running service and a documented feature that did nothing. Removed rather than secured ([G-03](./08-gap-analysis.md#g-03)); NFR-04 is now explicitly unmet rather than notionally pending |
 | AD-13 | `DECIMAL(12,2)` for money, `Prisma.Decimal` for arithmetic, rounded half-up per line *(revised 2026-08-19; was `Float`)* | Exact totals; an invoice must reconcile with what it printed, and a month must reconcile with its invoices | Decimal objects must never meet the`+` operator, and are unwrapped to numbers by a `json replacer` at the response boundary ([G-07](./08-gap-analysis.md#g-07)) |

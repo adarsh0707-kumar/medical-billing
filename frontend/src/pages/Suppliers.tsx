@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Truck, Plus, Search, Edit2, Phone,
   Mail, MapPin, Package, Loader2, Building2
@@ -52,8 +53,6 @@ const SUPPLIER_COLORS = [
 // ─── Main Suppliers Page ────────────────────────────────
 
 export default function Suppliers() {
-  const [suppliers, setSuppliers] = useState<Supplier[]>([])
-  const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState<Supplier | null>(null)
@@ -63,17 +62,20 @@ export default function Suppliers() {
     email: '', gstNumber: '', address: ''
   })
 
-  const fetchSuppliers = useCallback(async () => {
-    setLoading(true)
-    try {
-      const params = search ? `?search=${search}` : ''
-      const res = await api.get(`/api/inventory/suppliers${params}`)
-      setSuppliers(res.data.data)
-    } catch { toast.error('Failed to fetch suppliers') }
-    finally { setLoading(false) }
-  }, [search])
+  const queryClient = useQueryClient()
 
-  useEffect(() => { fetchSuppliers() }, [fetchSuppliers])
+  // Keyed on `search`, so the server-side filter gets its own cache entry and a
+  // request for a term the user has already backspaced past is cancelled rather
+  // than left to land on top of the current one.
+  const { data: suppliers = [], isLoading: loading } = useQuery<Supplier[]>({
+    queryKey: ['suppliers', search],
+    queryFn: async ({ signal }) => {
+      const params = search ? `?search=${search}` : ''
+      const res = await api.get(`/api/inventory/suppliers${params}`, { signal })
+      return res.data.data
+    },
+    meta: { errorMessage: 'Failed to fetch suppliers' },
+  })
 
   const openAdd = () => {
     setEditing(null)
@@ -103,7 +105,7 @@ export default function Suppliers() {
         toast.success('Supplier added!')
       }
       setShowForm(false)
-      fetchSuppliers()
+      queryClient.invalidateQueries({ queryKey: ['suppliers'] })
     } catch (err: unknown) {
       const e = err as { response?: { data?: { message?: string } } }
       toast.error(e.response?.data?.message || 'Failed to save')

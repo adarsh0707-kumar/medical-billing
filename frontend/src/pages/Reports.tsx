@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   BarChart3,
   TrendingUp,
@@ -141,10 +142,28 @@ function StatCard({
 
 function DailyReport() {
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
-  const [summary, setSummary] = useState<DailySummary | null>(null);
-  const [invoices, setInvoices] = useState<Invoice[]>([]);
-  const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
+
+  // Summary and invoices come from one response and are now held as one value.
+  // Split across two useStates they could be rendered mismatched for a frame,
+  // and a slow response for an earlier date could overwrite half of a newer one.
+  const { data, isLoading: loading, refetch } = useQuery({
+    queryKey: ["daily-summary", date],
+    queryFn: async ({ signal }) => {
+      const res = await api.get(
+        `/api/billing/invoices/daily-summary?date=${date}`,
+        { signal },
+      );
+      return {
+        summary: res.data.data.summary as DailySummary,
+        invoices: res.data.data.invoices as Invoice[],
+      };
+    },
+    meta: { errorMessage: "Failed to fetch daily report" },
+  });
+
+  const summary = data?.summary ?? null;
+  const invoices = data?.invoices ?? [];
 
   const exportDaily = async () => {
     setExporting(true);
@@ -161,24 +180,7 @@ function DailyReport() {
     }
   };
 
-  const fetchDaily = async () => {
-    setLoading(true);
-    try {
-      const res = await api.get(
-        `/api/billing/invoices/daily-summary?date=${date}`,
-      );
-      setSummary(res.data.data.summary);
-      setInvoices(res.data.data.invoices);
-    } catch {
-      toast.error("Failed to fetch daily report");
-    } finally {
-      setLoading(false);
-    }
-  };
 
-  useEffect(() => {
-    fetchDaily();
-  }, [date]);
 
   const paymentData =
     summary?.byPaymentMode.map((p) => ({
@@ -201,7 +203,7 @@ function DailyReport() {
           />
         </div>
         <Button
-          onClick={fetchDaily}
+          onClick={() => refetch()}
           size="sm"
           className="bg-teal-600 hover:bg-teal-500 text-white"
         >
@@ -361,29 +363,28 @@ function GstReport() {
   const now = new Date();
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [year, setYear] = useState(now.getFullYear());
-  const [invoices, setInvoices] = useState<Invoice[]>([]);
-  const [totals, setTotals] = useState<GstTotals | null>(null);
-  const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
 
-  const fetchGst = async () => {
-    setLoading(true);
-    try {
+  // Invoices and totals are one response; docs/09 section 4 treats the totals as
+  // a contract with those invoices, so they must never be rendered from
+  // different requests.
+  const { data, isLoading: loading, refetch } = useQuery({
+    queryKey: ["gst-report", month, year],
+    queryFn: async ({ signal }) => {
       const res = await api.get(
         `/api/billing/invoices/gst-report?month=${month}&year=${year}`,
+        { signal },
       );
-      setInvoices(res.data.data.invoices);
-      setTotals(res.data.data.totals);
-    } catch {
-      toast.error("Failed to fetch GST report");
-    } finally {
-      setLoading(false);
-    }
-  };
+      return {
+        invoices: res.data.data.invoices as Invoice[],
+        totals: res.data.data.totals as GstTotals,
+      };
+    },
+    meta: { errorMessage: "Failed to fetch GST report" },
+  });
 
-  useEffect(() => {
-    fetchGst();
-  }, [month, year]);
+  const invoices = data?.invoices ?? [];
+  const totals = data?.totals ?? null;
 
   /**
    * The export is generated server-side (FR-RPT-09).
@@ -446,7 +447,7 @@ function GstReport() {
           </select>
         </div>
         <Button
-          onClick={fetchGst}
+          onClick={() => refetch()}
           size="sm"
           className="bg-teal-600 hover:bg-teal-500"
         >
@@ -610,9 +611,6 @@ function GstReport() {
 // ─── Stock Alerts Tab ──────────────────────────────────
 
 function StockAlerts() {
-  const [expiring, setExpiring] = useState<Batch[]>([]);
-  const [lowStock, setLowStock] = useState<Batch[]>([]);
-  const [loading, setLoading] = useState(true);
   const [days, setDays] = useState(30);
   const [exporting, setExporting] = useState<"expiring" | "low" | null>(null);
 
@@ -647,24 +645,34 @@ function StockAlerts() {
   // the same instant.
   const [nowMs] = useState(() => Date.now());
 
-  useEffect(() => {
-    const fetch = async () => {
-      setLoading(true);
-      try {
-        const [expRes, lowRes] = await Promise.all([
-          api.get(`/api/inventory/batches/expiring?days=${days}`),
-          api.get("/api/inventory/batches/low-stock?threshold=20"),
-        ]);
-        setExpiring(expRes.data.data);
-        setLowStock(lowRes.data.data);
-      } catch {
-        toast.error("Failed to fetch alerts");
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetch();
-  }, [days]);
+  // Two independent reports, so two queries rather than one Promise.all: only
+  // the expiring list depends on `days`, and pairing them meant changing the
+  // window refetched the low-stock list too. They also cache separately now, so
+  // the notifications bell and this panel share the same low-stock response.
+  const { data: expiring = [], isLoading: expiringLoading } = useQuery<Batch[]>({
+    queryKey: ["batches", "expiring", days],
+    queryFn: async ({ signal }) => {
+      const res = await api.get(`/api/inventory/batches/expiring?days=${days}`, {
+        signal,
+      });
+      return res.data.data;
+    },
+    meta: { errorMessage: "Failed to fetch expiry alerts" },
+  });
+
+  const { data: lowStock = [], isLoading: lowLoading } = useQuery<Batch[]>({
+    queryKey: ["batches", "low-stock", 20],
+    queryFn: async ({ signal }) => {
+      const res = await api.get("/api/inventory/batches/low-stock?threshold=20", {
+        signal,
+      });
+      return res.data.data;
+    },
+    meta: { errorMessage: "Failed to fetch low-stock alerts" },
+  });
+
+  // The panel showed one spinner for both lists and still does.
+  const loading = expiringLoading || lowLoading;
 
   const getDaysLeft = (date: string) => {
     const diff = new Date(date).getTime() - nowMs;
@@ -843,39 +851,30 @@ function StockAlerts() {
 // ─── Sales Trend Tab ───────────────────────────────────
 
 function SalesTrend() {
-  const [trendData, setTrendData] = useState<
-    { date: string; sales: number; invoices: number }[]
-  >([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const fetchTrend = async () => {
-      try {
-        // One grouped query on the server instead of seven daily-summary
-        // requests, each of which fetched a whole day of invoices with the
-        // customer joined and then read two integers off it (G-08).
-        const res = await api.get("/api/billing/invoices/trend?days=7");
-        setTrendData(
-          res.data.data.map(
-            (t: { date: string; sales: number; invoices: number }) => ({
-              date: new Date(t.date).toLocaleDateString("en-IN", {
-                day: "2-digit",
-                month: "short",
-              }),
-              sales: t.sales,
-              invoices: t.invoices,
-            }),
-          ),
-        );
-      } catch {
-        toast.error("Failed to fetch trend data");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchTrend();
-  }, []);
+  const { data: trendData = [], isLoading: loading } = useQuery({
+    queryKey: ["invoice-trend", 7],
+    queryFn: async ({ signal }) => {
+      // One grouped query on the server instead of seven daily-summary
+      // requests, each of which fetched a whole day of invoices with the
+      // customer joined and then read two integers off it (G-08).
+      const res = await api.get("/api/billing/invoices/trend?days=7", {
+        signal,
+      });
+      // Shaped for the chart here, in the query, so every consumer of this key
+      // gets the same rows and the mapping is not redone on each render.
+      return res.data.data.map(
+        (t: { date: string; sales: number; invoices: number }) => ({
+          date: new Date(t.date).toLocaleDateString("en-IN", {
+            day: "2-digit",
+            month: "short",
+          }),
+          sales: t.sales,
+          invoices: t.invoices,
+        }),
+      ) as { date: string; sales: number; invoices: number }[];
+    },
+    meta: { errorMessage: "Failed to fetch trend data" },
+  });
 
   const totalWeekSales = trendData.reduce((sum, d) => sum + d.sales, 0);
   const totalWeekInvoices = trendData.reduce((sum, d) => sum + d.invoices, 0);

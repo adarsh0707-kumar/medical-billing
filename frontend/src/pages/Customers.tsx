@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Users,
   Plus,
@@ -102,18 +103,20 @@ function CustomerDetailDialog({
   open: boolean;
   onClose: () => void;
 }) {
-  const [customer, setCustomer] = useState<Customer | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    if (!customerId || !open) return;
-    setLoading(true);
-    api
-      .get(`/api/billing/customers/${customerId}`)
-      .then((r) => setCustomer(r.data.data))
-      .catch(() => toast.error("Failed to load customer"))
-      .finally(() => setLoading(false));
-  }, [customerId, open]);
+  // `enabled` replaces the early return the effect used: the query simply does
+  // not run until there is a customer to load and the dialog is open, and it is
+  // cancelled if the dialog closes mid-flight.
+  const { data: customer = null, isLoading: loading } = useQuery<Customer>({
+    queryKey: ["customer", customerId],
+    enabled: Boolean(customerId) && open,
+    queryFn: async ({ signal }) => {
+      const res = await api.get(`/api/billing/customers/${customerId}`, {
+        signal,
+      });
+      return res.data.data;
+    },
+    meta: { errorMessage: "Failed to load customer" },
+  });
 
   const totalSpent =
     customer?.invoices?.reduce((s, i) => s + i.totalAmount, 0) || 0;
@@ -260,12 +263,8 @@ function CustomerDetailDialog({
 // ─── Main Customers Page ────────────────────────────────
 
 export default function Customers() {
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [total, setTotal] = useState(0);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Customer | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
@@ -279,28 +278,36 @@ export default function Customers() {
     gender: "",
   });
 
-  const fetchCustomers = useCallback(async () => {
-    setLoading(true);
-    try {
+  const queryClient = useQueryClient();
+
+  // One query carries the rows and the pagination together, because they are one
+  // response. Holding them in three separate useStates let them disagree: the
+  // rows could be replaced while the page count still described the previous
+  // request.
+  const { data, isLoading: loading } = useQuery({
+    queryKey: ["customers", page, search],
+    queryFn: async ({ signal }) => {
       const params = new URLSearchParams({
         page: String(page),
         limit: "12",
         ...(search && { search }),
       });
-      const res = await api.get(`/api/billing/customers?${params}`);
-      setCustomers(res.data.data);
-      setTotalPages(res.data.pagination.pages);
-      setTotal(res.data.pagination.total);
-    } catch {
-      toast.error("Failed to fetch customers");
-    } finally {
-      setLoading(false);
-    }
-  }, [page, search]);
+      const res = await api.get(`/api/billing/customers?${params}`, { signal });
+      return {
+        customers: res.data.data as Customer[],
+        totalPages: res.data.pagination.pages as number,
+        total: res.data.pagination.total as number,
+      };
+    },
+    // Keeps the previous page on screen while the next one loads, instead of
+    // blanking the table on every page click.
+    placeholderData: (previous) => previous,
+    meta: { errorMessage: "Failed to fetch customers" },
+  });
 
-  useEffect(() => {
-    fetchCustomers();
-  }, [fetchCustomers]);
+  const customers = data?.customers ?? [];
+  const totalPages = data?.totalPages ?? 1;
+  const total = data?.total ?? 0;
 
   const openAdd = () => {
     setEditing(null);
@@ -350,7 +357,7 @@ export default function Customers() {
         toast.success("Customer added!");
       }
       setShowForm(false);
-      fetchCustomers();
+      queryClient.invalidateQueries({ queryKey: ["customers"] });
     } catch (err: unknown) {
       const e = err as { response?: { data?: { message?: string } } };
       toast.error(e.response?.data?.message || "Failed to save");
