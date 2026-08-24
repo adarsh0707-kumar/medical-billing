@@ -105,6 +105,18 @@ router.get(
   validateQuery(lowStockQuerySchema),
   batchCtrl.getLowStock,
 );
+
+// ─── CSV exports (FR-RPT-09) ──────────────────────────
+router.get(
+  "/batches/expiring/export",
+  validateQuery(expiringQuerySchema),
+  batchCtrl.exportExpiring,
+);
+router.get(
+  "/batches/low-stock/export",
+  validateQuery(lowStockQuerySchema),
+  batchCtrl.exportLowStock,
+);
 router.post(
   "/batches",
   authorize("ADMIN", "PHARMACIST"),

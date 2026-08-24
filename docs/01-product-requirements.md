@@ -216,7 +216,7 @@ Status legend: `✅` implemented · `🟡` partial · `⬜` planned. "Roles" is 
 | FR-RPT-06 | Dashboard: today's sales, invoice count, GST, stock and customer counts, recent invoices, expiry and low-stock panels | All               | ✅                                                                                    |
 | FR-RPT-07 | Top-selling medicines                                                                                                 | All               | ⬜ Claimed in`backend/README.md`; no such endpoint                                  |
 | FR-RPT-08 | Profit/margin report (selling vs purchase price)                                                                      | ADMIN             | ⬜ Data exists (`purchasePrice`, `sellingPrice`); no report                       |
-| FR-RPT-09 | Export any report to CSV/Excel                                                                                        | All               | ⬜                                                                                    |
+| FR-RPT-09 | Export any report to CSV/Excel                                                                                        | All               | ✅ Implemented 2026-08-24. Four server-side CSV endpoints, one per report ([§9b](./04-api-reference.md)). Generated on the server so the figures are the stored ones: the browser version it replaced derived its tax columns arithmetically and got them wrong ([G-21](./08-gap-analysis.md#g-21)) |
 
 ### 6.10 Alerts & notifications — `FR-NOTIF`
 
@@ -347,7 +347,7 @@ A **cancelled invoice stays in the month it was issued in**, and the credit note
 
 1. Admin opens **Reports → GST**, selects month and year.
 2. Reads per-invoice taxable/CGST/SGST rows and the period totals.
-3. Transcribes totals into the filing. *(No export button — [FR-RPT-09](#69-reports--analytics--fr-rpt).)*
+3. Exports the month to CSV and works from that, rather than transcribing totals off the screen ([FR-RPT-09](#69-reports--analytics--fr-rpt)).
 
 ### J4 — Act on expiry
 
