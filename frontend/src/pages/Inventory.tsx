@@ -1,4 +1,7 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCategories, useManufacturers, useSuppliers } from "@/hooks/useMasters";
+import { useDebounced } from "@/hooks/useDebounced";
 import {
   Package,
   Plus,
@@ -135,15 +138,11 @@ const inputCls =
 // ═══════════════════════════════════════════════════════
 
 function MedicinesTab() {
-  const [medicines, setMedicines] = useState<Medicine[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [manufacturers, setManufacturers] = useState<Manufacturer[]>([]);
-  const [loading, setLoading] = useState(true);
+
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [total, setTotal] = useState(0);
+
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Medicine | null>(null);
   const [form, setForm] = useState({
@@ -158,39 +157,41 @@ function MedicinesTab() {
   });
   const [submitting, setSubmitting] = useState(false);
 
-  const fetchMedicines = useCallback(async () => {
-    setLoading(true);
-    try {
+  const queryClient = useQueryClient();
+
+  const { data, isLoading: loading } = useQuery({
+    queryKey: ["medicines", page, search, categoryFilter],
+    queryFn: async ({ signal }) => {
       const params = new URLSearchParams({
         page: String(page),
         limit: "12",
         ...(search && { search }),
         ...(categoryFilter !== "all" && { categoryId: categoryFilter }),
       });
-      const res = await api.get(`/api/inventory/medicines?${params}`);
-      setMedicines(res.data.data);
-      setTotalPages(res.data.pagination.pages);
-      setTotal(res.data.pagination.total);
-    } catch {
-      toast.error("Failed to fetch medicines");
-    } finally {
-      setLoading(false);
-    }
-  }, [page, search, categoryFilter]);
+      const res = await api.get(`/api/inventory/medicines?${params}`, {
+        signal,
+      });
+      return {
+        medicines: res.data.data as Medicine[],
+        totalPages: res.data.pagination.pages as number,
+        total: res.data.pagination.total as number,
+      };
+    },
+    placeholderData: (previous) => previous,
+    meta: { errorMessage: "Failed to fetch medicines" },
+  });
 
-  useEffect(() => {
-    fetchMedicines();
-  }, [fetchMedicines]);
+  const medicines = data?.medicines ?? [];
+  const totalPages = data?.totalPages ?? 1;
+  const total = data?.total ?? 0;
 
-  useEffect(() => {
-    Promise.all([
-      api.get("/api/inventory/categories"),
-      api.get("/api/inventory/manufacturers"),
-    ]).then(([cat, mfr]) => {
-      setCategories(cat.data.data);
-      setManufacturers(mfr.data.data);
-    });
-  }, []);
+  // Shared with the Batches and Masters tabs — one request between them now
+  // rather than one per tab, and they cannot disagree after an edit.
+  const { data: categories = [] } = useCategories<Category>();
+  const { data: manufacturers = [] } = useManufacturers<Manufacturer>();
+
+  const refreshMedicines = () =>
+    queryClient.invalidateQueries({ queryKey: ["medicines"] });
 
   const openAdd = () => {
     setEditing(null);
@@ -234,7 +235,7 @@ function MedicinesTab() {
         toast.success("Medicine added!");
       }
       setShowForm(false);
-      fetchMedicines();
+      refreshMedicines();
     } catch (err: unknown) {
       const e = err as { response?: { data?: { message?: string } } };
       toast.error(e.response?.data?.message || "Failed to save");
@@ -248,7 +249,7 @@ function MedicinesTab() {
     try {
       await api.delete(`/api/inventory/medicines/${med.id}`);
       toast.success("Medicine deleted");
-      fetchMedicines();
+      refreshMedicines();
     } catch {
       toast.error("Failed to delete");
     }
@@ -629,14 +630,10 @@ function MedicinesTab() {
 // ═══════════════════════════════════════════════════════
 
 function BatchesTab() {
-  const [batches, setBatches] = useState<Batch[]>([]);
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"all" | "expiring" | "low">("all");
   const [showForm, setShowForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [medSearch, setMedSearch] = useState("");
-  const [medResults, setMedResults] = useState<Medicine[]>([]);
   const [form, setForm] = useState({
     medicineId: "",
     medicineName: "",
@@ -650,12 +647,12 @@ function BatchesTab() {
   });
 
   const [batchPage, setBatchPage] = useState(1);
-  const [batchTotalPages, setBatchTotalPages] = useState(1);
-  const [batchTotal, setBatchTotal] = useState(0);
 
-  const fetchBatches = useCallback(async () => {
-    setLoading(true);
-    try {
+  const queryClient = useQueryClient();
+
+  const { data, isLoading: loading } = useQuery({
+    queryKey: ["batches", "list", batchPage, filter],
+    queryFn: async ({ signal }) => {
       // Paginated since 2026-08-20. Unfiltered this endpoint used to return
       // every batch in the shop — 8 MB and about a second and a half at 25,000
       // rows — to render one screen.
@@ -665,38 +662,47 @@ function BatchesTab() {
         ...(filter === "expiring" && { expiringSoon: "true" }),
         ...(filter === "low" && { lowStock: "true" }),
       });
-      const res = await api.get(`/api/inventory/batches?${params}`);
-      setBatches(res.data.data);
-      setBatchTotalPages(res.data.pagination?.pages ?? 1);
-      setBatchTotal(res.data.pagination?.total ?? res.data.data.length);
-    } catch {
-      toast.error("Failed to fetch batches");
-    } finally {
-      setLoading(false);
-    }
-  }, [filter, batchPage]);
+      const res = await api.get(`/api/inventory/batches?${params}`, { signal });
+      return {
+        batches: res.data.data as Batch[],
+        totalPages: (res.data.pagination?.pages ?? 1) as number,
+        total: (res.data.pagination?.total ?? res.data.data.length) as number,
+      };
+    },
+    placeholderData: (previous) => previous,
+    meta: { errorMessage: "Failed to fetch batches" },
+  });
 
-  useEffect(() => {
-    fetchBatches();
-  }, [fetchBatches]);
+  const batches = data?.batches ?? [];
+  const batchTotalPages = data?.totalPages ?? 1;
+  const batchTotal = data?.total ?? 0;
 
-  useEffect(() => {
-    api.get("/api/inventory/suppliers").then((r) => setSuppliers(r.data.data));
-  }, []);
+  const { data: suppliers = [] } = useSuppliers<Supplier>();
 
-  // Medicine search for batch form
-  useEffect(() => {
-    if (medSearch.length < 2) {
-      setMedResults([]);
-      return;
-    }
-    const t = setTimeout(() => {
-      api
-        .get(`/api/inventory/medicines?search=${medSearch}&limit=10`)
-        .then((r) => setMedResults(r.data.data));
-    }, 300);
-    return () => clearTimeout(t);
-  }, [medSearch]);
+  // Medicine search for the batch form.
+  //
+  // The debounce is still a `useState` + effect pair because it debounces *input*
+  // rather than fetching: the query below is keyed on the settled term, so an
+  // abandoned keystroke's request is cancelled rather than racing the next one.
+  const debouncedMedSearch = useDebounced(medSearch, 300);
+
+  const { data: medMatches = [] } = useQuery<Medicine[]>({
+    queryKey: ["medicine-search", debouncedMedSearch],
+    enabled: debouncedMedSearch.length >= 2,
+    queryFn: async ({ signal }) => {
+      const res = await api.get(
+        `/api/inventory/medicines?search=${debouncedMedSearch}&limit=10`,
+        { signal },
+      );
+      return res.data.data;
+    },
+    meta: { errorMessage: "Failed to search medicines" },
+  });
+
+  // Read off the live input, not the debounced one. Clearing the box has to empty
+  // the dropdown immediately; the cached results for the term the user just
+  // erased are still under the previous key for another 300ms.
+  const medResults = medSearch.length >= 2 ? medMatches : [];
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -725,7 +731,7 @@ function BatchesTab() {
         sellingPrice: "",
         quantity: "",
       });
-      fetchBatches();
+      queryClient.invalidateQueries({ queryKey: ["batches"] });
     } catch (err: unknown) {
       const e = err as { response?: { data?: { message?: string } } };
       toast.error(e.response?.data?.message || "Failed to add batch");
@@ -964,7 +970,6 @@ function BatchesTab() {
                               medicineName: m.name,
                             });
                             setMedSearch("");
-                            setMedResults([]);
                           }}
                           className="w-full text-left px-3 py-2 hover:bg-slate-600 text-white text-sm"
                         >
@@ -1116,31 +1121,24 @@ function BatchesTab() {
 // ═══════════════════════════════════════════════════════
 
 function CategoriesTab() {
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [manufacturers, setManufacturers] = useState<Manufacturer[]>([]);
-  const [loading, setLoading] = useState(true);
   const [catName, setCatName] = useState("");
   const [mfrName, setMfrName] = useState("");
   const [submittingCat, setSubmittingCat] = useState(false);
   const [submittingMfr, setSubmittingMfr] = useState(false);
 
-  const fetchAll = async () => {
-    setLoading(true);
-    try {
-      const [c, m] = await Promise.all([
-        api.get("/api/inventory/categories"),
-        api.get("/api/inventory/manufacturers"),
-      ]);
-      setCategories(c.data.data);
-      setManufacturers(m.data.data);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const queryClient = useQueryClient();
 
-  useEffect(() => {
-    fetchAll();
-  }, []);
+  // The same two queries the Medicines tab uses. Switching tabs no longer
+  // refetches them, and adding a category here updates the medicine form's
+  // dropdown without either tab knowing about the other.
+  const { data: categories = [], isLoading: catLoading } = useCategories<Category>();
+  const { data: manufacturers = [], isLoading: mfrLoading } = useManufacturers<Manufacturer>();
+  const loading = catLoading || mfrLoading;
+
+  const fetchAll = () => {
+    queryClient.invalidateQueries({ queryKey: ["categories"] });
+    queryClient.invalidateQueries({ queryKey: ["manufacturers"] });
+  };
 
   const addCategory = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1315,8 +1313,6 @@ function CategoriesTab() {
 // ═══════════════════════════════════════════════════════
 
 function SuppliersTab() {
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Supplier | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -1329,19 +1325,13 @@ function SuppliersTab() {
     address: "",
   });
 
-  const fetchSuppliers = async () => {
-    setLoading(true);
-    try {
-      const res = await api.get("/api/inventory/suppliers");
-      setSuppliers(res.data.data);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const queryClient = useQueryClient();
 
-  useEffect(() => {
-    fetchSuppliers();
-  }, []);
+  // Shared with the Batches tab's supplier dropdown.
+  const { data: suppliers = [], isLoading: loading } = useSuppliers<Supplier>();
+
+  const fetchSuppliers = () =>
+    queryClient.invalidateQueries({ queryKey: ["suppliers"] });
 
   const openAdd = () => {
     setEditing(null);
