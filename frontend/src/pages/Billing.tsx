@@ -16,6 +16,7 @@ import {
   UserPlus,
   Receipt,
   Loader2,
+  Layers,
 } from "lucide-react";
 import {
   Select,
@@ -34,6 +35,16 @@ import {
 
 // ─── Types ─────────────────────────────────────────────
 
+// One sellable batch of a medicine. The POS needs price and expiry per batch
+// because both vary between them (AD-03).
+interface BatchOption {
+  id: string;
+  batchNumber: string;
+  expiryDate: string;
+  sellingPrice: number;
+  quantity: number;
+}
+
 interface MedicineResult {
   id: string;
   name: string;
@@ -41,11 +52,18 @@ interface MedicineResult {
   unit: string;
   gstPercent: number;
   isScheduledH: boolean;
+  // The FEFO default, flattened. Identical to `batches[0]`, kept flat because
+  // the overwhelmingly common action is "take what FEFO picked".
   batchId: string;
   batchNumber: string;
   expiryDate: string;
   sellingPrice: number;
   stock: number;
+  // Every batch the operator may choose instead, earliest expiry first.
+  batches: BatchOption[];
+  // In-stock batches that are past their date, so the row can say "expired"
+  // rather than "no stock" over a shelf that is actually full.
+  expiredBatches: number;
 }
 
 interface CartItem {
@@ -323,6 +341,8 @@ export default function Billing() {
     unknown
   > | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  // The medicine whose batch list is open. Null means FEFO is in charge.
+  const [batchPicker, setBatchPicker] = useState<MedicineResult | null>(null);
   // Reading the clock during render is impure. The expiry highlight is a 30-day
   // threshold, which cannot change meaningfully inside one billing session, so a
   // single mount-time reading is enough — and it keeps every badge in a render
@@ -356,17 +376,38 @@ export default function Billing() {
   }, [customerSearch]);
 
   // ─── Add to Cart ──────────────────────────────────────
-  const addToCart = (med: MedicineResult) => {
-    if (!med.batchId) {
-      toast.error(`${med.name} has no stock available!`);
+  // `chosen` is the deliberate override (FR-BILL-19). Omitting it takes the FEFO
+  // batch, which is what every ordinary sale does — the default has to stay a
+  // single click, or FEFO stops being the default in practice.
+  const addToCart = (med: MedicineResult, chosen?: BatchOption) => {
+    const batch: BatchOption | null =
+      chosen ??
+      (med.batchId
+        ? {
+            id: med.batchId,
+            batchNumber: med.batchNumber,
+            expiryDate: med.expiryDate,
+            sellingPrice: med.sellingPrice,
+            quantity: med.stock,
+          }
+        : null);
+
+    if (!batch) {
+      toast.error(
+        med.expiredBatches > 0
+          ? `All stock of ${med.name} has expired and cannot be sold. Remove it from the shelf.`
+          : `${med.name} has no stock available!`,
+      );
       return;
     }
-    // The API refuses this outright and no role can override it, so stopping
-    // here saves the cashier building a cart that cannot be sold. The server is
-    // still the boundary — this is a courtesy, not the control.
-    if (isExpired(med.expiryDate)) {
+    // The search no longer offers expired batches, so this should be
+    // unreachable. It stays because the API refuses the sale outright and no
+    // role can override it: a stale result list on a till left open overnight
+    // would otherwise build a cart that cannot be sold. The server is still the
+    // boundary — this is a courtesy, not the control.
+    if (isExpired(batch.expiryDate)) {
       toast.error(
-        `${med.name} expired on ${new Date(med.expiryDate).toLocaleDateString("en-IN")} and cannot be sold. Remove it from stock.`,
+        `${med.name} expired on ${new Date(batch.expiryDate).toLocaleDateString("en-IN")} and cannot be sold. Remove it from stock.`,
       );
       return;
     }
@@ -375,9 +416,9 @@ export default function Billing() {
         `${med.name} is a Schedule H drug — prescription required!`,
       );
     }
-    const existing = cart.findIndex((i) => i.batchId === med.batchId);
+    const existing = cart.findIndex((i) => i.batchId === batch.id);
     if (existing !== -1) {
-      if (cart[existing].quantity >= med.stock) {
+      if (cart[existing].quantity >= batch.quantity) {
         toast.error("Insufficient stock!");
         return;
       }
@@ -390,25 +431,30 @@ export default function Billing() {
       setCart((prev) => [
         ...prev,
         {
-          batchId: med.batchId,
+          batchId: batch.id,
           medicineId: med.id,
           medicineName: med.name,
-          batchNumber: med.batchNumber,
+          batchNumber: batch.batchNumber,
           unit: med.unit,
           quantity: 1,
-          unitPrice: med.sellingPrice,
+          unitPrice: batch.sellingPrice,
           discount: 0,
           gstPercent: med.gstPercent,
-          stock: med.stock,
-          expiryDate: med.expiryDate,
+          stock: batch.quantity,
+          expiryDate: batch.expiryDate,
           isScheduledH: med.isScheduledH,
         },
       ]);
     }
+    setBatchPicker(null);
     setQuery("");
     setResults([]);
     searchRef.current?.focus();
-    toast.success(`${med.name} added to cart`);
+    toast.success(
+      chosen
+        ? `${med.name} (batch ${batch.batchNumber}) added to cart`
+        : `${med.name} added to cart`,
+    );
   };
 
   const updateQty = (idx: number, qty: number) => {
@@ -536,6 +582,63 @@ export default function Billing() {
     <div className="flex gap-4 h-[calc(130vh-112px)]">
       <PrintInvoice invoice={lastInvoice} />
 
+      {/* Batch override (FR-BILL-19). FEFO remains what a plain click does; this
+          exists for the two cases FEFO cannot see — the customer needs a
+          specific pack, or the earliest-expiring one is physically at the back
+          of the shelf. */}
+      <Dialog
+        open={batchPicker !== null}
+        onOpenChange={(open) => !open && setBatchPicker(null)}
+      >
+        <DialogContent className="bg-slate-800 border-slate-700 text-white">
+          <DialogHeader>
+            <DialogTitle>
+              Choose a batch — {batchPicker?.name}
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-slate-400 text-xs -mt-2">
+            Earliest expiry first. The first is what the till would pick on its
+            own; choose another only when you have a reason to.
+          </p>
+          <div className="rounded-lg border border-slate-600 overflow-hidden divide-y divide-slate-700 max-h-80 overflow-y-auto">
+            {batchPicker?.batches.map((b, idx) => (
+              <button
+                key={b.id}
+                onClick={() => addToCart(batchPicker, b)}
+                className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-700 transition-colors text-left"
+              >
+                <div>
+                  <div className="flex items-center gap-2">
+                    <p className="text-white text-sm font-medium">
+                      {b.batchNumber}
+                    </p>
+                    {idx === 0 && (
+                      <Badge className="text-xs px-1.5 py-0 bg-teal-600">
+                        Default
+                      </Badge>
+                    )}
+                    {isExpiringSoon(b.expiryDate) && (
+                      <Badge className="text-xs px-1.5 py-0 bg-yellow-600">
+                        Expiring Soon
+                      </Badge>
+                    )}
+                  </div>
+                  <p className="text-slate-400 text-xs mt-0.5">
+                    Exp: {new Date(b.expiryDate).toLocaleDateString("en-IN")}
+                  </p>
+                </div>
+                <div className="text-right shrink-0 ml-4">
+                  <p className="text-teal-400 font-bold">₹{b.sellingPrice}</p>
+                  <p className="text-slate-500 text-xs">
+                    Stock: {b.quantity} {batchPicker.unit}
+                  </p>
+                </div>
+              </button>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* ── Left: Search + Cart ── */}
       <div className="flex-1 flex flex-col gap-4 min-w-0">
         {/* Medicine Search */}
@@ -566,11 +669,14 @@ export default function Billing() {
             {results.length > 0 && (
               <div className="mt-2 rounded-lg border border-slate-600 overflow-hidden divide-y divide-slate-700">
                 {results.map((med) => (
-                  <button
+                  <div
                     key={med.id}
-                    onClick={() => addToCart(med)}
-                    className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-700 transition-colors text-left"
+                    className="w-full flex items-center hover:bg-slate-700 transition-colors"
                   >
+                    <button
+                      onClick={() => addToCart(med)}
+                      className="flex-1 min-w-0 flex items-center justify-between px-4 py-3 text-left"
+                    >
                     <div>
                       <div className="flex items-center gap-2">
                         <p className="text-white font-medium text-sm">
@@ -599,7 +705,15 @@ export default function Billing() {
                               Expiring Soon
                             </Badge>
                           )}
-                        {!med.batchId && (
+                        {!med.batchId && med.expiredBatches > 0 && (
+                          <Badge
+                            variant="destructive"
+                            className="text-xs px-1.5 py-0"
+                          >
+                            Stock Expired
+                          </Badge>
+                        )}
+                        {!med.batchId && med.expiredBatches === 0 && (
                           <Badge className="text-xs px-1.5 py-0 bg-slate-600 text-slate-400">
                             No Stock
                           </Badge>
@@ -620,7 +734,21 @@ export default function Billing() {
                         Stock: {med.stock} {med.unit}
                       </p>
                     </div>
-                  </button>
+                    </button>
+                    {/* Overriding FEFO is a separate, explicit action — never
+                        something a hurried click on the row can do by accident
+                        (AD-04). Only shown when there is genuinely a choice. */}
+                    {(med.batches?.length ?? 0) > 1 && (
+                      <button
+                        onClick={() => setBatchPicker(med)}
+                        title={`Choose from ${med.batches.length} batches instead of the earliest-expiring`}
+                        className="shrink-0 mr-3 px-2.5 py-1.5 rounded-md border border-slate-600 text-slate-300 text-xs hover:bg-slate-600 hover:text-white transition-colors flex items-center gap-1"
+                      >
+                        <Layers className="w-3.5 h-3.5" />
+                        {med.batches.length} batches
+                      </button>
+                    )}
+                  </div>
                 ))}
               </div>
             )}

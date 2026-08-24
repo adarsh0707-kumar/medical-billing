@@ -108,6 +108,12 @@ const search = async (req, res, next) => {
     if (typeof q !== "string" || q.length < 2)
       return res.json({ success: true, data: [] });
 
+    // A batch is good *through* the date printed on it (FR-BATCH-09), so the
+    // cutoff is local midnight today — the same comparison billing.controller.js
+    // makes when it refuses the sale.
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+
     const medicines = await prisma.medicine.findMany({
       where: {
         isActive: true,
@@ -115,13 +121,35 @@ const search = async (req, res, next) => {
           { name: { contains: q, mode: "insensitive" } },
           { genericName: { contains: q, mode: "insensitive" } },
         ],
-        
       },
       include: {
+        // Every sellable batch, earliest expiry first, not just the first one.
+        // The operator has to be able to choose (FR-BILL-19), and choosing needs
+        // something to choose from.
+        //
+        // Expired batches are excluded rather than listed-and-disabled. They are
+        // not a choice: the API refuses them outright and no role overrides that.
+        // Leaving them in did real damage — because FEFO orders by expiry
+        // ascending, an expired batch sorted to the *front* and became the
+        // auto-attached default, so a medicine with good stock behind it could
+        // not be sold at all until someone cleared the shelf.
         batches: {
-          where: { quantity: { gt: 0 } },
+          where: { quantity: { gt: 0 }, expiryDate: { gte: startOfToday } },
           orderBy: { expiryDate: "asc" },
-          take: 1,
+          // Bounded: this runs on every keystroke. Twenty is far past what any
+          // real medicine carries, and the ones past it are the longest-dated —
+          // the last a FEFO shop would reach for.
+          take: 20,
+        },
+        // Stock that exists but cannot be sold. Without this the response cannot
+        // tell "we never stocked it" apart from "all of it is expired", and the
+        // POS would print "No Stock" over a shelf that is full.
+        _count: {
+          select: {
+            batches: {
+              where: { quantity: { gt: 0 }, expiryDate: { lt: startOfToday } },
+            },
+          },
         },
       },
       take: 10,
@@ -134,11 +162,21 @@ const search = async (req, res, next) => {
       unit: m.unit,
       gstPercent: m.gstPercent,
       isScheduledH: m.isScheduledH,
+      // FEFO stays the default: these flattened fields are batches[0], and a
+      // client that ignores `batches` entirely behaves exactly as it did before.
       batchId: m.batches[0]?.id || null,
       batchNumber: m.batches[0]?.batchNumber || "No Stock",
       expiryDate: m.batches[0]?.expiryDate || null,
       sellingPrice: m.batches[0]?.sellingPrice || 0,
       stock: m.batches[0]?.quantity || 0,
+      batches: m.batches.map((b) => ({
+        id: b.id,
+        batchNumber: b.batchNumber,
+        expiryDate: b.expiryDate,
+        sellingPrice: b.sellingPrice,
+        quantity: b.quantity,
+      })),
+      expiredBatches: m._count.batches,
     }));
 
     res.json({ success: true, data: result });
