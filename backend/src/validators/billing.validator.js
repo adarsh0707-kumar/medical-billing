@@ -11,8 +11,36 @@ const invoiceItemSchema = z.object({
   gstPercent: z.number().default(0),
 });
 
+// The register entry for a Schedule H sale (FR-MED-12). Required only when a
+// line's medicine is Schedule H — the controller decides that from the *batch's*
+// medicine, not from the client's `medicineId`, which is not persisted and so
+// cannot be trusted to say what is being sold.
+const prescriptionSchema = z
+  .object({
+    prescriberName: z
+      .string()
+      .trim()
+      .min(2, "Prescriber name is required"),
+    // The field that makes "registered medical practitioner" checkable rather
+    // than asserted. Not pattern-matched: registration formats differ by state
+    // council, and a regex that rejects a valid number would block a lawful sale.
+    prescriberRegNo: z
+      .string()
+      .trim()
+      .min(3, "Prescriber registration number is required"),
+    prescribedOn: z.coerce
+      .date({ invalid_type_error: "Prescription date is required" })
+      .refine((d) => d <= new Date(), {
+        message: "A prescription cannot be dated in the future",
+      }),
+    patientName: z.string().trim().min(2, "Patient name is required"),
+    notes: z.string().trim().max(500).optional(),
+  })
+  .strict();
+
 const createInvoiceSchema = z.object({
   customerId: z.string().optional(),
+  prescription: prescriptionSchema.optional(),
   items: z.array(invoiceItemSchema).min(1, "At least one item is required"),
   discountAmt: z.number().min(0).default(0),
   paymentMode: z.enum(["CASH", "UPI", "CARD", "CREDIT"]).default("CASH"),
@@ -95,6 +123,7 @@ const voidInvoiceSchema = z
 const customerListQuerySchema = z.object({ page, limit, search: searchTerm });
 
 module.exports = {
+  prescriptionSchema,
   createInvoiceSchema,
   customerSchema,
   invoiceListQuerySchema,

@@ -60,6 +60,9 @@ interface CartItem {
   gstPercent: number;
   stock: number;
   expiryDate: string;
+  // Carried so the cart itself knows when the register entry is due, rather
+  // than re-querying the medicine at submit time.
+  isScheduledH: boolean;
 }
 
 interface Customer {
@@ -306,6 +309,15 @@ export default function Billing() {
   const [paymentMode, setPaymentMode] = useState("CASH");
   const [extraDiscount, setExtraDiscount] = useState(0);
   const [submitting, setSubmitting] = useState(false);
+  // The Schedule H register entry (FR-MED-12). Kept beside the cart because it
+  // belongs to the sale, and is cleared with it.
+  const emptyRx = {
+    prescriberName: "",
+    prescriberRegNo: "",
+    prescribedOn: new Date().toISOString().slice(0, 10),
+    patientName: "",
+  };
+  const [prescription, setPrescription] = useState(emptyRx);
   const [lastInvoice, setLastInvoice] = useState<Record<
     string,
     unknown
@@ -389,6 +401,7 @@ export default function Billing() {
           gstPercent: med.gstPercent,
           stock: med.stock,
           expiryDate: med.expiryDate,
+          isScheduledH: med.isScheduledH,
         },
       ]);
     }
@@ -442,6 +455,24 @@ export default function Billing() {
       );
       return;
     }
+    // A Schedule H drug may only be supplied against a registered
+    // practitioner's prescription, and the particulars have to be recorded
+    // (FR-MED-12). The API refuses without them; catching it here means the
+    // cashier fills the form instead of losing the cart to a 400.
+    if (needsPrescription) {
+      const missing = (
+        [
+          ["prescriber's name", prescription.prescriberName],
+          ["registration number", prescription.prescriberRegNo],
+          ["prescription date", prescription.prescribedOn],
+          ["patient's name", prescription.patientName],
+        ] as const
+      ).find(([, value]) => !value.trim());
+      if (missing) {
+        toast.error(`Schedule H sale: the ${missing[0]} is required.`);
+        return;
+      }
+    }
     setSubmitting(true);
     try {
       const payload = {
@@ -449,6 +480,7 @@ export default function Billing() {
         paymentMode,
         paymentStatus: "PAID",
         discountAmt: extraDiscount,
+        ...(needsPrescription && { prescription }),
         items: cart.map((item) => ({
           batchId: item.batchId,
           medicineId: item.medicineId,
@@ -465,6 +497,7 @@ export default function Billing() {
       setCart([]);
       setCustomer(null);
       setExtraDiscount(0);
+      setPrescription(emptyRx);
       setPaymentMode("CASH");
       setTimeout(() => window.print(), 500);
     } catch (err: unknown) {
@@ -474,6 +507,10 @@ export default function Billing() {
       setSubmitting(false);
     }
   };
+
+  // Any Schedule H line makes the register entry mandatory for the whole bill:
+  // one prescription covers the sale, which is how it works at the counter.
+  const needsPrescription = cart.some((item) => item.isScheduledH);
 
   const isExpiringSoon = (date: string) => {
     if (!date) return false;
@@ -877,6 +914,59 @@ export default function Billing() {
                 <span>{formatINR(sgstPaise / 100)}</span>
               </div>
             </div>
+
+            {/* Schedule H register entry — FR-MED-12. Appears only when a line
+                in the cart requires it, so an ordinary sale is untouched. */}
+            {needsPrescription && (
+              <div className="space-y-2 rounded-lg border border-red-900/60 bg-red-950/30 p-3">
+                <div className="flex items-center gap-2">
+                  <Badge variant="destructive" className="text-xs px-1.5 py-0">
+                    Sch-H
+                  </Badge>
+                  <p className="text-red-200 text-xs font-medium">
+                    Prescription required for this sale
+                  </p>
+                </div>
+                <p className="text-slate-400 text-[11px] leading-snug">
+                  Recorded against the invoice as the prescription register.
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  <Input
+                    placeholder="Prescriber's name"
+                    value={prescription.prescriberName}
+                    onChange={(e) =>
+                      setPrescription((p) => ({ ...p, prescriberName: e.target.value }))
+                    }
+                    className="bg-slate-700 border-slate-600 text-white h-9 text-sm col-span-2"
+                  />
+                  <Input
+                    placeholder="Registration no."
+                    value={prescription.prescriberRegNo}
+                    onChange={(e) =>
+                      setPrescription((p) => ({ ...p, prescriberRegNo: e.target.value }))
+                    }
+                    className="bg-slate-700 border-slate-600 text-white h-9 text-sm"
+                  />
+                  <Input
+                    type="date"
+                    value={prescription.prescribedOn}
+                    max={new Date().toISOString().slice(0, 10)}
+                    onChange={(e) =>
+                      setPrescription((p) => ({ ...p, prescribedOn: e.target.value }))
+                    }
+                    className="bg-slate-700 border-slate-600 text-white h-9 text-sm"
+                  />
+                  <Input
+                    placeholder="Patient's name"
+                    value={prescription.patientName}
+                    onChange={(e) =>
+                      setPrescription((p) => ({ ...p, patientName: e.target.value }))
+                    }
+                    className="bg-slate-700 border-slate-600 text-white h-9 text-sm col-span-2"
+                  />
+                </div>
+              </div>
+            )}
 
             {/* Payment Mode */}
             <div className="space-y-1.5">

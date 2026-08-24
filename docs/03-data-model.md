@@ -18,6 +18,7 @@ erDiagram
     Supplier ||--o{ Purchase : "sells to us"
     Customer ||--o{ Invoice : "billed on"
     Invoice ||--|{ InvoiceItem : "contains"
+    Invoice ||--o| Prescription : "dispensed against"
     Batch ||--o{ InvoiceItem : "sold from"
     Purchase ||--|{ PurchaseItem : "contains"
     Batch ||--o{ PurchaseItem : "received into"
@@ -122,6 +123,14 @@ erDiagram
         string userId FK
         datetime expiresAt
         datetime revokedAt
+    }
+    Prescription {
+        string id PK
+        string invoiceId FK
+        string prescriberName
+        string prescriberRegNo
+        datetime prescribedOn
+        string patientName
     }
     AuditLog {
         string id PK
@@ -324,7 +333,30 @@ When the row is first created for a day it seeds itself from the invoices alread
 
 This is the only raw SQL in the codebase; the atomicity guarantee is the reason.
 
-### 3.11 `AuditLog` — who changed what
+### 3.11 `Prescription` — the Schedule H register
+
+| Column              | Type      | Notes                                                                                              |
+| ------------------- | --------- | ---------------------------------------------------------------------------------------------------- |
+| `id`              | String    | PK, cuid                                                                                           |
+| `invoiceId`       | String    | **unique**, FK → Invoice. One prescription per bill                                          |
+| `prescriberName`  | String    | The registered medical practitioner who wrote it                                                   |
+| `prescriberRegNo` | String    | Their council registration number. Indexed — "everything dispensed against this prescriber" is what an inspection asks. Deliberately not pattern-matched: formats differ by state council and a wrong regex would block a lawful sale |
+| `prescribedOn`    | DateTime  | The date on the prescription, which is**not** the date of supply. Indexed. A future date is rejected |
+| `patientName`     | String    | Named separately from`Invoice.customerId`, which is nullable — a Schedule H walk-in still needs a patient on the register |
+| `notes`           | String?   | Optional                                                                                           |
+| `createdAt`       | DateTime  | auto                                                                                               |
+
+**Why this exists.** Rule 65(11) of the Drugs and Cosmetics Rules lets a pharmacy record the *particulars* of a prescription in a register rather than retain the paper. Most of those particulars are already here — date of supply, drugs, quantities and the dispensing pharmacist are the invoice, its lines and `Invoice.userId`. The prescriber, the prescription's own date and the patient are what was missing.
+
+**Enforced from the batch, not the request.** An invoice line carries a `medicineId` that is validated but never persisted, so it cannot be what decides whether a prescription is required — a caller could pair a Schedule H batch with a harmless `medicineId`. The controller resolves the medicine through `batch.medicineId`.
+
+**Written in the invoice's transaction.** A Schedule H invoice without its register entry is exactly the gap this closes, so the two cannot come apart: a rolled-back sale leaves no orphan entry.
+
+**No image, deliberately.** The rules permit the register in lieu of the paper; this stack has no file storage; and a scan would be a second copy of patient-identifying data with its own retention and erasure obligations. Adding one later does not disturb these columns.
+
+> **`patientName` is not reached by customer erasure.** The register is a statutory record the pharmacy is required to be able to produce, and a right to erasure does not override an obligation to retain — the same reasoning that keeps the invoice. An erased customer's name therefore disappears from `Customer` and from the audit trail, and survives in the register of any Schedule H medicine they were dispensed. See §8.
+
+### 3.12 `AuditLog` — who changed what
 
 | Column         | Type      | Notes                                                                                                  |
 | -------------- | --------- | ------------------------------------------------------------------------------------------------------ |
@@ -375,7 +407,7 @@ The POS search fires on every keystroke, and the dashboard reads batches on ever
 
 The honest mitigation for T-9 is **restricting who can read customer history** ([07 §3](./07-security.md#3-authorisation)), not recording that everyone did. Revisit if staff numbers grow past the point where "everyone here can see everything" stops being an accurate description of the shop.
 
-### 3.12 `Purchase` / `PurchaseItem` — 🟡 modelled, unreachable
+### 3.13 `Purchase` / `PurchaseItem` — 🟡 modelled, unreachable
 
 | `Purchase`             | Type          | Notes                  |
 | ------------------------ | ------------- | ---------------------- |
@@ -470,6 +502,7 @@ These must hold at all times. Any new write path must preserve them.
 | `20260822143539_add_refresh_tokens`       | 2026-08-22 | Adds the`RefreshToken` table (one row per signed-in device, `ON DELETE CASCADE`) — the state behind rotation and reuse detection (FR-AUTH-10)                |
 | `20260822154410_add_audit_log`            | 2026-08-22 | Adds the`AuditLog` table — attribution for every write to master data (NFR-17, threat T-12). See §3.11                                                     |
 | `20260824032314_add_customer_anonymised_at` | 2026-08-24 | Adds`Customer.anonymisedAt` and its index — the erasure and retention path (PRD Q6). See §8                                                               |
+| `20260824105655_add_prescription`           | 2026-08-24 | Adds the`Prescription` table — the Schedule H register (FR-MED-12, PRD Q4). See §3.11                                                                     |
 
 All eight are applied — confirmed against `_prisma_migrations` on 2026-08-22. Two of them contain SQL that exists **only** in migration history and cannot be reproduced from `schema.prisma`; see the note in §4 before rebuilding a database with `db push`.
 
@@ -543,6 +576,8 @@ The GST report is deliberately **not** in that list: it reports documents, not t
 **Why 36 months.** Long enough that a batch recall can still reach whoever bought the affected stock, since shelf life is rarely over three years and anything older cannot still be in a cupboard. Long enough that an annual repeat prescription does not erase the customer between visits. Short enough to treat three years of silence as the end of the relationship.
 
 **Erasure anonymises; it never deletes.** `Invoice.customerId` is a foreign key and invoices are append-only tax records, so the row has to survive. `POST`-ing a `DELETE /api/billing/customers/:id` (ADMIN only) blanks name, phone, email, address, age and gender, stamps `anonymisedAt`, and leaves every invoice exactly as issued — a GST return filed against them still reconciles afterwards.
+
+**One thing it does not reach: `Prescription.patientName`.** That register is a statutory record under Rule 65(11) and a right to erasure does not override an obligation to retain — the same reason the invoice survives. A customer's name is removed from `Customer` and from the audit trail, and remains in the register of any Schedule H medicine dispensed to them. Stated here rather than left to be discovered.
 
 **It reaches the audit log too.** `AuditLog` holds before/after copies of every `Customer` write, so erasing the customer while leaving those intact would be theatre. Erasure replaces the payload of that customer's audit rows with a redaction marker, keeping the attribution — who changed it, when — and dropping the personal data. This is the tension flagged when the audit log was built (§3.11); it is settled here.
 

@@ -654,6 +654,7 @@ The central write path of the product.
 | `paymentMode`                                       | `CASH` \| `UPI` \| `CARD` \| `CREDIT`, default `CASH` |
 | `paymentStatus`                                     | `PAID` \| `PENDING` \| `PARTIAL`, default `PAID`        |
 | `notes`                                             | optional string                                                 |
+| `prescription`                                    | **Required when any line's medicine is Schedule H**, refused otherwise as a `400`. Object: `prescriberName`, `prescriberRegNo`, `prescribedOn` (not in the future), `patientName`, optional `notes`. `.strict()` |
 
 **Server-side computation** (see [PRD §8](./01-product-requirements.md#8-key-business-rules)) — the client's totals are never trusted:
 
@@ -673,6 +674,10 @@ invoice:   subtotal    = Σ taxable
 
 **Sequence:** stock and expiry are verified for every line → totals computed → invoice number generated → invoice, items and every batch decrement written inside one `prisma.$transaction`.
 
+> **Schedule H sales require a prescription record** (FR-MED-12). One per invoice — a customer hands over one prescription covering every controlled item on the bill — written in the same transaction as the sale, so a rolled-back invoice leaves no orphan entry. It records the particulars Rule 65(11) asks for that the invoice does not already carry: the prescriber, their council registration number, the prescription's own date, and the patient's name (needed because a Schedule H sale can be a walk-in with no `customerId`). **No image is stored.**
+>
+> Whether a line is Schedule H is decided from the **batch's** medicine, never the `medicineId` in the request — that field is validated but not persisted, so trusting it would let a caller pair a Schedule H batch with a harmless id and skip the requirement.
+
 > **Expiry is enforced, not just displayed** (FR-BATCH-09). A medicine is sellable **through** the date printed on it: a batch expiring *today* sells, one that expired *yesterday* is refused. The authoritative check is a predicate on the same atomic `updateMany` that decrements stock, so a batch that expires between the cart being built and the sale committing — a till left open over midnight — is still caught. The pre-transaction check is advisory and exists only for a faster, friendlier message.
 >
 > **No role can override this, including ADMIN.** The case that looks like it needs an override — "we need to sell stock expiring today" — is already allowed. For genuinely expired stock there is no lawful retail sale; taking it off the shelf is a write-off ([FR-BATCH-11](./01-product-requirements.md#65-stock--batches--fr-batch)), which keeps the stock movement attributable instead of disguised as a sale.
@@ -685,6 +690,7 @@ invoice:   subtotal    = Σ taxable
 | A`batchId` does not exist | 404    | `Batch not found for <medicineName>`                                                                                                                                             |
 | Quantity exceeds stock      | 400    | `Insufficient stock for <medicineName>. Available: <n>`                                                                                                                          |
 | The batch has expired       | 400    | `<medicineName> (batch <batchNumber>) expired on <yyyy-mm-dd> and cannot be sold. Remove it from stock.`                                                                        |
+| A Schedule H line has no prescription | 400 | `A prescription is required: <names> is/are Schedule H.` plus a field-level error on `prescription`                                                              |
 | `discountAmt` exceeds the bill | 400 | `Discount of <x> is more than the bill total of <y>.`, with a field error on `discountAmt` naming the maximum. **Refused, never clamped** — clamping the total would break `subtotal + cgst + sgst − discountAmt = totalAmount`, and clamping the discount would store a figure nobody typed. Money moving back to a customer is a credit note (§9.2, void), not a negative sale ([F7](./09-testing-strategy.md#4-gst-engine-fixtures)) |
 | Invoice number collision    | 409    | `A record with this value already exists.` — unreachable in normal operation since the atomic per-day counter landed ([G-01](./08-gap-analysis.md#g-01)); retained as a backstop |
 
