@@ -18,7 +18,7 @@
     "purge:customers": "node src/utils/retention.js"
   },
   "dependencies": {
-    "@prisma/client": "^5.10.0",
+    "@prisma/client": "^7.9.1",
     "bcryptjs": "^3.0.3",
     "compression": "^1.7.4",
     "cors": "^2.8.6",
