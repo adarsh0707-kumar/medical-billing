@@ -68,7 +68,7 @@ Severity: 🔴 causes data corruption or a security exposure · 🟠 causes inco
 | [G-15](#g-15) | ✅ Fixed | Invoices are immutable with no correction path |
 | [G-17](#g-17) | ✅ Fixed        | Cart total disagreed with the invoice the server wrote                  |
 | [G-18](#g-18) | ✅ Fixed        | A database failure during`protect` was reported as an invalid token   |
-| [G-16](#g-16) | 🟡 Open         | Data fetching sets state synchronously inside effects                   |
+| [G-16](#g-16) | ✅ Fixed        | Data fetching set state synchronously inside effects                    |
 | [G-19](#g-19) | ✅ Fixed        | Query validation silently disabled the batch filters                    |
 | [G-20](#g-20) | ✅ Fixed        | FEFO auto-selected expired batches, blocking the sale                   |
 | [G-21](#g-21) | ✅ Fixed        | The GST CSV export invented its tax columns                             |
@@ -490,27 +490,34 @@ Restored exactly once, guarded twice: a conditional `updateMany` on `status: ACT
 Still out of scope: **partial returns**. Returning 2 of 5 units needs per-line quantities and a cumulative guard, and was deliberately deferred (PRD Q3).
 
 ---
-### <a id="g-16"></a>G-16 🟡 Data fetching sets state synchronously inside effects
+### <a id="g-16"></a>G-16 ✅ FIXED — Data fetching set state synchronously inside effects
 
-**Problem.** Eleven components fetch on mount by calling `setState` synchronously in an effect body. `eslint-plugin-react-hooks` v7 promotes this to an error (`react-hooks/set-state-in-effect`), and it was the reason **CI failed on every run from the commit that introduced it until 2026-08-20**.
+**Problem.** Eleven components fetched on mount by calling `setState` synchronously in an effect body. `eslint-plugin-react-hooks` v7 promotes this to an error (`react-hooks/set-state-in-effect`), and it was the reason **CI failed on every run from the commit that introduced it until 2026-08-20**.
 
 | File                                 | Lines                     |
 | ------------------------------------ | ------------------------- |
 | `frontend/src/pages/Customers.tsx` | 110, 302                  |
-| `frontend/src/pages/Inventory.tsx` | 182, 671, 681, 1102, 1303 |
-| `frontend/src/pages/Reports.tsx`   | 163, 353                  |
-| `frontend/src/pages/Settings.tsx`  | 427                       |
+| `frontend/src/pages/Inventory.tsx` | 182, 680, 690, 1142, 1343 |
+| `frontend/src/pages/Reports.tsx`   | 180, 385                  |
+| `frontend/src/pages/Settings.tsx`  | 457                       |
 | `frontend/src/pages/Suppliers.tsx` | 76                        |
 
-The pattern causes a guaranteed second render on every mount, and each site hand-rolls its own `loading` / `error` state. Three of them (`Reports.tsx:163`, `Reports.tsx:353`, `useNotifications.ts:73`) also carry `react-hooks/exhaustive-deps` warnings, which is the same root cause seen from a different angle.
+The pattern caused a guaranteed second render on every mount, and each site hand-rolled its own `loading` / `error` state. Three of them (`Reports.tsx:181`, `Reports.tsx:386`, `useNotifications.ts:73`) also carried `react-hooks/exhaustive-deps` warnings, which was the same root cause seen from a different angle.
 
-Nothing here is *incorrect* today — the screens work. It is a structural problem: the fetch-then-setState pattern cannot express request cancellation, so a fast route change can land a stale response over a fresh one.
+Nothing here was *incorrect* — the screens worked. It was a structural problem: the fetch-then-setState pattern cannot express request cancellation, so a fast route change could land a stale response over a fresh one.
 
-**Fix.** Move data fetching to a query library (TanStack Query is the obvious fit) so caching, cancellation and loading state stop being re-implemented per screen. Until then the rule is set to `warn` in [`frontend/eslint.config.js`](../frontend/eslint.config.js) with a comment pointing here. **Restore it to `error` when this is closed.**
+**Fix (2026-08-24).** Data fetching moved to **TanStack Query**, screen by screen. Eighteen `useQuery` call sites now cover every read; each is keyed on exactly what it asked for and forwards the query's `AbortSignal` to axios, so an abandoned request is cancelled rather than ignored on arrival. Mutations keep their existing shape and call `invalidateQueries` where they used to call a local `fetchX()` — which means a write now refreshes every component holding that key, not just the one that performed it.
 
-> Deliberately *not* fixed alongside the React Compiler purity errors on 2026-08-20: that change had to stay small enough to verify by eye, and this one is a refactor of every screen's data layer.
+Both classes of warning went with it: **`npx eslint .` is clean**, and `react-hooks/set-state-in-effect` is back to the plugin's default `error` in [`frontend/eslint.config.js`](../frontend/eslint.config.js) — verified by reintroducing a violation and confirming the run fails. The three `exhaustive-deps` warnings fell out of the same work, as predicted: they were all effects depending on a fetch function that no longer exists.
 
----
+Things that came out of it beyond the stated scope:
+
+- **Split state that could disagree was rejoined.** `daily-summary` and `gst-report` each held their rows and their totals in two `useState`s fed by one response; docs/09 §4 treats those totals as a contract with exactly those invoices, and two states can render mismatched for a frame. Each is now one query returning one object.
+- **Duplicate master fetches collapsed.** Categories, manufacturers and suppliers were fetched independently by four tabs. [`useMasters.ts`](../frontend/src/hooks/useMasters.ts) shares them on one key each, and the alert bell now shares its 30-day expiry query with the Reports stock panel.
+- **A real bug in the alert bell.** Its five-minute poll rebuilt and republished the notification list unconditionally, resetting every item to unread — so dismissing an alert and waiting five minutes brought it back. Structural sharing means an unchanged poll no longer republishes, and read state survives.
+- **One effect kept on purpose.** [`useDebounced.ts`](../frontend/src/hooks/useDebounced.ts) still pairs an effect with `setState`. The rule targets fetching in effects; debouncing an input is the input settling, and its `setState` runs on a timer rather than synchronously. The query keyed on the settled value is what removes the race.
+
+**Guard.** [`query-cancellation.test.tsx`](../frontend/src/hooks/__tests__/query-cancellation.test.tsx) asserts the two properties the old pattern could not have: that a request whose key has moved on is actually **aborted**, and that a late response cannot overwrite a newer one. The first fails if a `queryFn` forgets to forward its `signal` — verified by removing it. All 18 `queryFn` blocks were audited for that forward.
 
 ### <a id="g-17"></a>G-17 ✅ FIXED — The cart quoted a different total than the invoice
 
@@ -529,7 +536,7 @@ The cashier quoted one number and the printed bill carried another. On a busy co
 
 **Fix.** Cart arithmetic moved to [`frontend/src/lib/cart-math.ts`](../frontend/src/lib/cart-math.ts) and runs in **integer paise**, mirroring the server pipeline statement for statement — unit price to paise, one rounding on the discounted line, each GST half rounded separately, header summed from the rounded components. Verified against the server's own `Decimal` implementation over 2,000,000 single-line and 200,000 randomised multi-line combinations: **zero mismatches**. All seven [docs/09 §4](./09-testing-strategy.md#4-gst-engine-fixtures) fixtures now agree with a real created invoice on total, CGST and SGST.
 
-Extracted to `lib/` rather than exported from `Billing.tsx` so it is unit-testable without tripping `react-refresh/only-export-components`. Guarded by `frontend/src/pages/__tests__/cart-math.test.ts` (40 cases), which is the first frontend suite — see [G-16](#g-16) for what still is not tested.
+Extracted to `lib/` rather than exported from `Billing.tsx` so it is unit-testable without tripping `react-refresh/only-export-components`. Guarded by `frontend/src/pages/__tests__/cart-math.test.ts` (40 cases), which is the first frontend suite.
 
 **Still open:** the frontend CI job runs only lint and build, so this suite does not yet gate a merge. Wiring it in is [Phase 9.5](./05-roadmap-and-phases.md).
 
@@ -640,4 +647,4 @@ The deeper point is not that the arithmetic was wrong but that it existed: the c
 | ~~6c~~ | ~~[G-18](#g-18)~~                                      | **Done 2026-08-20** — infrastructure failures no longer masquerade as bad credentials                                              |
 | ~~7~~   | ~~[G-08](#g-08), [G-03](#g-03), [G-13](#g-13), [G-15](#g-15)~~ | **Done** — the trend query, the void path and the Redis removal all landed 2026-08-20; G-13 keeps two open product decisions                                     |
 | 8       | Part A (docs)                                          | Trim the READMEs to point at`docs/`                                                                                                     |
-| 9       | [G-16](#g-16)                                           | Frontend data-layer refactor. Largest and least urgent — the screens work today. Closing it restores`set-state-in-effect` to `error` |
+| ~~9~~   | ~~[G-16](#g-16)~~                                       | **Done 2026-08-24** — data fetching moved to TanStack Query screen by screen; `set-state-in-effect` is back to `error` and `eslint .` is clean |

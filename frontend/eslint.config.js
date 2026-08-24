@@ -19,15 +19,6 @@ export default defineConfig([
       ecmaVersion: 2020,
       globals: globals.browser,
     },
-    rules: {
-      // Tracked debt, not an accepted pattern. Eleven call sites fetch on mount by
-      // calling setState synchronously inside an effect. Fixing it properly means
-      // moving data fetching to a query library, which is a refactor of its own —
-      // see G-16 in docs/08-gap-analysis.md for the sites and the proposed fix.
-      // Downgraded so the debt stays visible instead of blocking every other
-      // change; it should go back to 'error' once G-16 is closed.
-      'react-hooks/set-state-in-effect': 'warn',
-    },
   },
   {
     // shadcn/ui primitives are generated and, per CONTRIBUTING, composed rather
