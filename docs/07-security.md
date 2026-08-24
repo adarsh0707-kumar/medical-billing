@@ -251,6 +251,12 @@ Assets: customer PII and purchase history · financial records (invoices, GST li
 
 12. ~~Equalise login timing with a dummy bcrypt comparison on the user-miss path.~~ **Done 2026-08-22** — and on the deactivated-account path, which had the same short-circuit. Guarded by a test asserting the comparison happens rather than a wall-clock threshold, which would be flaky on a loaded CI box.
 13. ~~Redis `requirepass` before caching goes live.~~ **Not applicable** — there is no Redis ([G-03](./08-gap-analysis.md#g-03)). Reinstate this item if a cache store is ever reintroduced.
-14. Dependency scanning (`npm audit` / Dependabot) in CI.
+14. ~~Dependency scanning (`npm audit` / Dependabot) in CI.~~ **Done 2026-08-24.** Both, because they answer different questions: `npm audit` is the alarm and Dependabot is what turns it off again. An alarm with no remedy behind it goes red and stays red until somebody disables it.
+
+    The **gate** runs `npm audit --omit=dev --audit-level=high` on each workspace and fails the build. That threshold is chosen to match the scope rule in [SECURITY.md](../SECURITY.md#scope): a vulnerable dependency counts here when it has a demonstrated exploit path *in this application*. Code that ships behind the API can have one; `eslint`, `vitest` and `playwright` are absent from the image entirely and cannot. Verified against a deliberately vulnerable tree — a runtime `lodash@4.17.15` fails the gate, a **critical** dev-only `minimist@0.0.8` does not, and the advisory step still reports it.
+
+    High rather than critical because this system handles money and patient-adjacent data, and because both trees measured **zero vulnerabilities at every severity** when this landed — the bar is set where it is meaningful *and* achievable, not where it would already be red.
+
+    A second step audits the whole tree, dev included, and never fails the build. Advisories in the toolchain are worth seeing; they are not worth blocking a bug fix over.
 15. Restrict customer-history reads by role if staff counts grow.
 16. Document key rotation for `JWT_SECRET` and database credentials.

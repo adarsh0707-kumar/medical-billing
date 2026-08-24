@@ -255,50 +255,19 @@ These are the acceptance set for `createInvoice`. All values follow [PRD §8 BR-
 
 ---
 
-## 6. CI outline
+## 6. CI
 
-```yaml
-# .github/workflows/ci.yml
-name: CI
-on: [push, pull_request]
-jobs:
-  backend:
-    runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:15-alpine
-        env: { POSTGRES_USER: test, POSTGRES_PASSWORD: test, POSTGRES_DB: medicaldb_test }
-        options: >-
-          --health-cmd "pg_isready -U test" --health-interval 5s
-          --health-timeout 5s --health-retries 5
-        ports: ["5432:5432"]
-    env:
-      DATABASE_URL: postgresql://test:test@localhost:5432/medicaldb_test
-      JWT_SECRET: test-secret-not-used-anywhere-real
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: 20, cache: npm, cache-dependency-path: backend/package-lock.json }
-      - run: npm ci
-        working-directory: backend
-      - run: npx prisma migrate deploy && npx prisma generate
-        working-directory: backend
-      - run: npm test
-        working-directory: backend
+Four jobs in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml), plus CodeQL in its own workflow.
 
-  frontend:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: 20, cache: npm, cache-dependency-path: frontend/package-lock.json }
-      - run: npm ci --legacy-peer-deps
-        working-directory: frontend
-      - run: npm run lint
-        working-directory: frontend
-      - run: npm run build      # tsc -b catches type errors lint does not
-        working-directory: frontend
-```
+| Job | What it does | Why it is separate |
+| --- | --- | --- |
+| **Backend tests** | `npm run test:coverage` against a real PostgreSQL service container, applying migrations first | Coverage rather than plain `npm test`: the config gates `billing.controller.js` and `auth.middleware.js` at 90% |
+| **Frontend lint, test and build** | `npm run lint` → `npm test` → `npm run build` | Unit tests before the build because they take seconds, and the cart-maths cases guard [G-17](./08-gap-analysis.md#g-17). `tsc -b` runs inside the build and catches what lint does not |
+| **Dependency audit** | `npm audit --omit=dev --audit-level=high` per workspace, plus a full advisory report that never fails | Reads the lockfile without installing, so it costs seconds. The threshold matches SECURITY.md's scope rule — see [07 §10 P2-14](./07-security.md#10-hardening-backlog) |
+| **Browser smoke (Playwright)** | Brings the compose stack up, seeds, runs the six flows | The Chromium download costs about a minute and it needs the whole stack, so keeping it apart leaves the other three as the fast signal |
+
+> The workflow itself is the source of truth and is **not reproduced here**. An inline copy drifts — the version that used to sit in this section still claimed the backend job ran `npm test` long after it had moved to `npm run test:coverage`.
+
 
 **Gates to enforce on PRs:** backend tests green · frontend lint and build green · `billing.controller.js` and `auth.middleware.js` above 90% line coverage · no new `console.log` in backend `src/`.
 

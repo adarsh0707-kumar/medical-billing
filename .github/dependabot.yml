@@ -1,0 +1,57 @@
+# Dependency updates.
+#
+# The audit job in ci.yml is the alarm; this is the thing that answers it. An
+# alarm with no remedy behind it just goes red and stays red until somebody
+# disables it, which is how dependency hygiene usually dies.
+#
+# Weekly, not daily. This is a two-person project and a pull request nobody has
+# time to read is not an improvement. Security advisories are handled separately
+# by Dependabot's security updates (enabled in the repository's settings, not
+# here) and arrive as soon as they are published, whatever this schedule says.
+#
+# Updates are grouped so an ordinary week produces two or three reviewable pull
+# requests instead of twenty. Major versions are deliberately left ungrouped:
+# React 19 → 20 or Prisma 5 → 6 deserves its own PR, its own test run, and
+# someone reading the changelog.
+
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directory: /backend
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      backend-minor-and-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    commit-message:
+      prefix: "chore(backend)"
+    labels: ["dependencies", "backend"]
+
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      frontend-minor-and-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    commit-message:
+      prefix: "chore(frontend)"
+    labels: ["dependencies", "frontend"]
+
+  # The workflows pin actions/checkout@v4 and friends. A stale action is a
+  # supply-chain dependency like any other, and it is the one nobody thinks to
+  # look at.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "chore(ci)"
+    labels: ["dependencies", "ci"]
