@@ -117,6 +117,23 @@ const voidInvoiceSchema = z
       .trim()
       .min(3, "Give a reason of at least 3 characters")
       .max(500, "Reason is too long"),
+    // Absent means the whole invoice, which is what this endpoint did before
+    // partial returns existed — so every existing caller keeps working.
+    // Present means return exactly these units.
+    items: z
+      .array(
+        z
+          .object({
+            invoiceItemId: z.string().min(1, "invoiceItemId is required"),
+            quantity: z
+              .number()
+              .int("Return quantity must be a whole number")
+              .positive("Return quantity must be positive"),
+          })
+          .strict(),
+      )
+      .min(1, "Give at least one line to return")
+      .optional(),
   })
   .strict();
 
