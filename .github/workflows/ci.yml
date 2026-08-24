@@ -84,6 +84,62 @@ jobs:
       # tsc -b runs as part of the build and catches type errors lint does not.
       - run: npm run build
 
+  # Dependency advisories. CodeQL analyses the code we write; nothing looked at
+  # the tree it pulls in, and both are large — the frontend alone brings React
+  # 19, Radix, recharts and Playwright.
+  #
+  # Two steps on purpose, because they answer different questions.
+  #
+  # THE GATE runs against production dependencies only (--omit=dev) and fails on
+  # high or critical. That threshold is chosen to match the scope rule already in
+  # SECURITY.md: a vulnerable dependency matters here when it has a demonstrated
+  # exploit path in this application. Code that ships and runs behind the API can
+  # have one. eslint, vitest and playwright cannot — they are absent from the
+  # image entirely — so a ReDoS in a config parser used at build time would fail
+  # the build for a risk that does not exist, and a gate that cries wolf gets
+  # switched off. That is worse than no gate.
+  #
+  # High rather than critical because this system handles money and
+  # patient-adjacent data, and both trees were measured at zero vulnerabilities
+  # at every severity when this landed. The bar is set where it is achievable
+  # today, not where it would already be red.
+  #
+  # THE REPORT audits everything, dev included, and never fails. Advisories in
+  # the toolchain are worth seeing — they just are not worth blocking a
+  # pharmacist's bug fix over.
+  #
+  # Neither step installs anything: npm audit reads package-lock.json and asks
+  # the registry, so this job costs seconds.
+  dependencies:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+
+    strategy:
+      # Report both workspaces even when one fails; knowing about only half the
+      # tree is how the second half gets forgotten.
+      fail-fast: false
+      matrix:
+        workspace: [backend, frontend]
+
+    defaults:
+      run:
+        working-directory: ${{ matrix.workspace }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Audit production dependencies (fails on high or critical)
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Full tree including dev dependencies (advisory only)
+        if: always()
+        continue-on-error: true
+        run: npm audit
+
   # Its own job: the browser download costs about a minute, and the smoke needs
   # the whole stack up. Keeping it separate leaves lint, unit tests and the
   # backend suite as the fast signal on every push.
