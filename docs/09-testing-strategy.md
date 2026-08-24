@@ -96,7 +96,9 @@ Measured 2026-08-22: **about 85% of statements** overall. The gate is deliberate
 - ~~Frontend unit tests — §5.6~~ **done 2026-08-20**: 67 cases across cart maths, the POS stock guards, `ProtectedRoute`, the sidebar role filter, the 401 interceptor and notification severity.
 - ~~Wiring `npm test` into the frontend CI job~~ **done** — it runs before the build, and a broken cart rounding now turns CI red.
 - ~~A Playwright browser smoke test — §5.7~~ **done 2026-08-20**, all six flows, in its own CI job.
-- Component coverage beyond the §5.6 screens, and a second browser besides Chromium.
+- ~~Component coverage beyond the §5.6 screens, and a second browser besides Chromium~~ — **done 2026-08-24**: Settings, Inventory, Customers, Suppliers and Reports now have component tests (97 frontend cases across 13 files), and Firefox runs the CSV download flow as its own Playwright project.
+- The browser suite could not pass on a freshly seeded database between the password-change work and 2026-08-24 — the seeded admin carries `mustChangePassword`, so every flow's `signIn` landed on `/change-password`. `apiLogin` now completes that change idempotently. A CI job that only ever runs against a fresh seed is exactly where this class of breakage hides; worth remembering before adding another bootstrap step.
+- Two icon-only controls have no accessible name (the Customers pager) and `Field` in `Inventory.tsx` renders a `Label` not associated with its input, so those tests reach for placeholders and DOM position. Worth fixing for screen readers, not only for tests.
 - ~~Query-parameter validation cases, once the API validates them~~ — **done 2026-08-20**, `tests/api/query-validation.test.js` (44 cases)
 
 ## 2. Target shape
@@ -236,13 +238,47 @@ These are the acceptance set for `createInvoice`. All values follow [PRD §8 BR-
 
 ### 5.6 Frontend — P2
 
+**Scope.** These assert what only the component layer can see: which request a screen makes, when it makes it, and which guards fire before it does. Business rules are proven below this layer and are not repeated here — see the note in [CONTRIBUTING](../CONTRIBUTING.md#the-frontend-suites).
+
+*Billing / POS*
+
 - Cart line total matches the server fixture set (§4) for the same inputs.
 - Quantity cannot exceed the batch `stock` shown in search results.
 - Adding a `batchId: null` (no-stock) search result is prevented.
+- A plain click takes the FEFO batch; the override picker appears only when there is more than one batch, and the chosen batch carries its own price and its own stock ceiling (FR-BILL-19).
+
+*Auth and shell*
+
 - `ProtectedRoute` redirects an unauthenticated visitor to `/login`.
 - The sidebar hides Settings for non-admins.
 - A 401 response clears `localStorage` and redirects.
 - `useNotifications` marks a batch expiring in 5 days as `danger` and one at 25 days as `warning`.
+
+*Settings — user management*
+
+- The delete button asks first, and answering no sends nothing.
+- A confirmed delete calls `DELETE /api/users/:id` and then **re-reads** the list rather than splicing the row out locally.
+
+*Inventory — Add Stock*
+
+- `mfgDate` reaches the request body when filled, and is **absent** rather than `""` when blank ([G-04](./08-gap-analysis.md#g-04)).
+- The mfg date input is capped at the expiry date.
+- Submit stays disabled until every required field is set.
+- Choosing a medicine clears the search dropdown immediately, not after the debounce.
+
+*Customers*
+
+- Paging asks for the page the user moved to; the search term reaches the request.
+- A customer profile is not fetched until its dialog is opened.
+
+*Suppliers*
+
+- Saving posts the form and then re-reads the list.
+
+*Reports — CSV export (FR-RPT-09)*
+
+- The export button is disabled on an empty report — a header-only file is indistinguishable from a failed download.
+- The button requests `…/export` as a blob for the period on screen. The file's *contents* are asserted server-side in `backend/tests/reports/`; the client is only ever asked to prove it did not compute them itself ([G-21](./08-gap-analysis.md#g-21)).
 
 ### 5.7 E2E (Playwright) — P3
 
@@ -252,6 +288,13 @@ These are the acceptance set for `createInvoice`. All values follow [PRD §8 BR-
 4. Oversell attempt → visible error, stock unchanged.
 5. Daily report reflects the new invoice.
 6. A cashier account sees no Settings link and receives 403 when calling `/api/users` directly.
+7. The GST export downloads a CSV through the proxy, named by the server's `Content-Disposition`, BOM intact.
+
+Flow 7 is the only one added since the original six, and it is here because it is the only flow built on *browser* machinery rather than ours: a blob URL, a programmatic anchor click, and a filename that has to survive nginx. The unit test mocks axios and the API test reads the header off a Supertest response that never passed through the proxy — neither can see what this does. It asserts the header row and the BOM, and deliberately no money: those figures are pinned to the paisa in `backend/tests/reports/`.
+
+**Browsers.** Chromium runs all seven. A second engine, **Firefox**, runs flow 7 and nothing else — configured as its own project in [`playwright.config.ts`](../frontend/playwright.config.ts). Running everything twice would roughly double a job whose cost is mostly browser downloads, for almost no signal: the other six exercise our React, our proxy and our API, none of which vary by engine in ways a smoke test catches. Firefox rather than WebKit because it installs and runs on a plain Linux box without extra system libraries, so the project is verifiable before pushing rather than only in CI; WebKit needs `libicu`, `libxml2` and `libflite` on the host.
+
+> Measured cost: the Firefox binary is ~108 MB on top of Chromium's, and the extra flow adds about 16 seconds. The whole suite runs in about 1m20s.
 
 ---
 
