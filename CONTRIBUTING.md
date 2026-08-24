@@ -194,13 +194,18 @@ docker compose exec \
 
 ```bash
 cd frontend
-npm test          # 67 unit tests, seconds
-npm run test:e2e  # 6 browser flows — needs `docker compose up -d` first
+npm test          # 97 component and unit tests, seconds
+npm run test:e2e  # 7 browser flows — needs `docker compose up -d` first
 ```
 
-Both run on CI. The browser smoke has its own job because installing Chromium
-costs about a minute, so lint, unit tests and the backend suite stay the fast
-signal.
+Both run on CI. The browser smoke has its own job because the browser downloads
+dominate it — Chromium costs about a minute and Firefox adds ~108 MB on top — so
+lint, unit tests and the backend suite stay the fast signal.
+
+Chromium runs all seven flows. Firefox runs exactly one: the CSV download, the
+only flow built on browser machinery (a blob URL, a programmatic anchor click, a
+`Content-Disposition` filename) rather than on ours. Running the rest twice would
+double the job for no signal.
 
 **What the browser layer is not for.** It catches wiring the other layers cannot
 see — the proxy, the token round trip, the built client reaching the real API.
@@ -209,9 +214,9 @@ Business rules are proven cheaper and more precisely below it: GST arithmetic in
 `invoice-concurrency.test.js`. Adding an arithmetic assertion to a browser test
 makes the suite slower without making it more truthful.
 
-Still open: component coverage beyond the screens listed in
-[`docs/09` §5.6](./docs/09-testing-strategy.md), and a second browser besides
-Chromium. For UI changes outside those paths, run the
+Every screen now has component coverage — the list is in
+[`docs/09` §5.6](./docs/09-testing-strategy.md). For UI changes outside those
+paths, run the
 [manual QA checklist](./docs/09-testing-strategy.md#7-manual-qa-checklist) and
 say in the PR what you saw.
 

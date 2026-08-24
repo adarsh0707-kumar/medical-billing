@@ -10,7 +10,7 @@ import { toCsv, money } from "../../src/utils/csv.js";
  * integration test that only checks a 200.
  */
 
-const rows = (csv) => csv.replace(/^﻿/, "").trim().split("\r\n");
+const rows = (csv) => csv.replace(/^\uFEFF/, "").trim().split("\r\n");
 
 describe("CSV money serialisation", () => {
   // The reason this module exists rather than reusing res.json.
@@ -73,7 +73,7 @@ describe("CSV escaping", () => {
     const csv = toCsv(text, [{ name: "Line1\nLine2" }]);
     // Two physical lines, still one logical record: the split on CRLF sees the
     // header and one row, because the embedded break is a bare LF inside quotes.
-    expect(csv.replace(/^﻿/, "").trim().split("\r\n")).toHaveLength(2);
+    expect(csv.replace(/^\uFEFF/, "").trim().split("\r\n")).toHaveLength(2);
     expect(csv).toContain('"Line1\nLine2"');
   });
 

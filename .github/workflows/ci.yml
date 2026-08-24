@@ -177,9 +177,14 @@ jobs:
         working-directory: frontend
         run: npm ci --legacy-peer-deps
 
-      - name: Install Chromium
+      # Firefox is scoped to a single flow (see playwright.config.ts): the CSV
+      # download is the one path built on browser machinery rather than ours.
+      # The binary is ~108 MB on top of Chromium's, and the extra flow adds about
+      # 16 seconds of run time — which is why this job is separate from the fast
+      # lint/unit/backend signal.
+      - name: Install browsers
         working-directory: frontend
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps chromium firefox
 
       - name: Run the smoke suite
         working-directory: frontend

@@ -28,11 +28,18 @@ export async function downloadCsv(url: string, fallbackName: string) {
   const link = document.createElement("a");
   link.href = href;
   link.download = filenameFrom(res.headers["content-disposition"]) ?? fallbackName;
-  // Firefox will not follow a click on a node outside the document.
+  // Attaching before the click is a habit from engines that would not follow a
+  // programmatic click on a detached node. Measured on 2026-08-24: current
+  // Chromium and Firefox both download fine without it (the e2e flow passes with
+  // this line removed), so treat it as cheap insurance for older engines rather
+  // than a requirement — and do not repeat the claim that Firefox needs it.
   document.body.appendChild(link);
   link.click();
   link.remove();
-  // Released on the next tick: revoking synchronously can cancel the download
-  // in WebKit before it has read the blob.
+  // Released on the next tick rather than immediately. Revoking a blob URL in
+  // the same task as the click can cancel the download in some engines before
+  // they have read it. Not reproduced here — Chromium and Firefox are both
+  // happy either way — so this is deliberately conservative, not a fix for an
+  // observed bug.
   setTimeout(() => URL.revokeObjectURL(href), 0);
 }
