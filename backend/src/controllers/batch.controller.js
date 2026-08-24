@@ -1,4 +1,5 @@
 const prisma = require("../config/db");
+const { toCsv, sendCsv } = require("../utils/csv");
 const { setReason } = require("../config/audit-context");
 
 const getAll = async (req, res, next) => {
@@ -52,44 +53,118 @@ const getAll = async (req, res, next) => {
   }
 };
 
+/**
+ * Batches expiring inside the window, shared by the screen and the CSV export so
+ * the two cannot drift apart.
+ */
+const expiringData = async ({ days }) => {
+  const futureDate = new Date();
+  futureDate.setDate(futureDate.getDate() + days);
+
+  const batches = await prisma.batch.findMany({
+    where: {
+      expiryDate: { lte: futureDate, gte: new Date() },
+      quantity: { gt: 0 },
+    },
+    include: {
+      medicine: { select: { name: true, unit: true } },
+      supplier: { select: { name: true } },
+    },
+    orderBy: { expiryDate: "asc" },
+  });
+
+  return { days, batches };
+};
+
 const getExpiring = async (req, res, next) => {
   try {
-    const { days } = req.validatedQuery;
-    const futureDate = new Date();
-    futureDate.setDate(futureDate.getDate() + days);
-
-    const batches = await prisma.batch.findMany({
-      where: {
-        expiryDate: { lte: futureDate, gte: new Date() },
-        quantity: { gt: 0 },
-      },
-      include: {
-        medicine: { select: { name: true, unit: true } },
-        supplier: { select: { name: true } },
-      },
-      orderBy: { expiryDate: "asc" },
-    });
-
+    const { batches } = await expiringData(req.validatedQuery);
     res.json({ success: true, data: batches });
   } catch (err) {
     next(err);
   }
 };
 
+/** Same split, same reason, for the low-stock report. */
+const lowStockData = async ({ threshold }) => {
+  const batches = await prisma.batch.findMany({
+    where: { quantity: { lte: threshold, gt: 0 } },
+    include: {
+      medicine: { select: { name: true, unit: true, category: true } },
+      supplier: { select: { name: true } },
+    },
+    orderBy: { quantity: "asc" },
+  });
+
+  return { threshold, batches };
+};
+
 const getLowStock = async (req, res, next) => {
   try {
-    const { threshold } = req.validatedQuery;
-
-    const batches = await prisma.batch.findMany({
-      where: { quantity: { lte: threshold, gt: 0 } },
-      include: {
-        medicine: { select: { name: true, unit: true, category: true } },
-        supplier: { select: { name: true } },
-      },
-      orderBy: { quantity: "asc" },
-    });
-
+    const { batches } = await lowStockData(req.validatedQuery);
     res.json({ success: true, data: batches });
+  } catch (err) {
+    next(err);
+  }
+};
+
+const DAY_MS = 86400000;
+
+/**
+ * `daysToExpiry` is computed here rather than left to the reader. A date alone
+ * makes the reader do the arithmetic that decides whether to act, and the point
+ * of pulling this into a spreadsheet is to sort by urgency.
+ */
+const EXPIRING_COLUMNS = [
+  { header: "Medicine", get: (b) => b.medicine?.name ?? "" },
+  { header: "Batch No", get: (b) => b.batchNumber },
+  { header: "Expiry", kind: "date", get: (b) => b.expiryDate },
+  {
+    header: "Days To Expiry",
+    kind: "number",
+    get: (b) =>
+      Math.ceil((new Date(b.expiryDate).getTime() - Date.now()) / DAY_MS),
+  },
+  { header: "Quantity", kind: "number", get: (b) => b.quantity },
+  { header: "Unit", get: (b) => b.medicine?.unit ?? "" },
+  { header: "Selling Price", kind: "money", get: (b) => b.sellingPrice },
+  // What walking away from it would cost, at what the shop paid.
+  {
+    header: "Stock Value At Cost",
+    kind: "money",
+    get: (b) => b.purchasePrice.times(b.quantity),
+  },
+  { header: "Supplier", get: (b) => b.supplier?.name ?? "" },
+];
+
+const LOW_STOCK_COLUMNS = [
+  { header: "Medicine", get: (b) => b.medicine?.name ?? "" },
+  { header: "Category", get: (b) => b.medicine?.category?.name ?? "" },
+  { header: "Batch No", get: (b) => b.batchNumber },
+  { header: "Quantity", kind: "number", get: (b) => b.quantity },
+  { header: "Unit", get: (b) => b.medicine?.unit ?? "" },
+  { header: "Expiry", kind: "date", get: (b) => b.expiryDate },
+  { header: "Selling Price", kind: "money", get: (b) => b.sellingPrice },
+  { header: "Supplier", get: (b) => b.supplier?.name ?? "" },
+];
+
+const exportExpiring = async (req, res, next) => {
+  try {
+    const { days, batches } = await expiringData(req.validatedQuery);
+    sendCsv(res, `expiring-${days}-days.csv`, toCsv(EXPIRING_COLUMNS, batches));
+  } catch (err) {
+    next(err);
+  }
+};
+
+const exportLowStock = async (req, res, next) => {
+  try {
+    const { threshold, batches } = await lowStockData(req.validatedQuery);
+    sendCsv(
+      res,
+      `low-stock-at-${threshold}.csv`,
+      toCsv(LOW_STOCK_COLUMNS, batches),
+    );
   } catch (err) {
     next(err);
   }
@@ -135,7 +210,6 @@ const update = async (req, res, next) => {
     next(err);
   }
 };
-
 
 // ─── Adjust stock ──────────────────────────────────────
 // FR-BATCH-11. Until now `Batch.quantity` moved in exactly two places — batch
@@ -204,4 +278,13 @@ const adjust = async (req, res, next) => {
   }
 };
 
-module.exports = { getAll, getExpiring, getLowStock, create, update, adjust };
+module.exports = {
+  getAll,
+  getExpiring,
+  exportExpiring,
+  getLowStock,
+  exportLowStock,
+  create,
+  update,
+  adjust,
+};

@@ -71,6 +71,7 @@ Severity: 🔴 causes data corruption or a security exposure · 🟠 causes inco
 | [G-16](#g-16) | 🟡 Open         | Data fetching sets state synchronously inside effects                   |
 | [G-19](#g-19) | ✅ Fixed        | Query validation silently disabled the batch filters                    |
 | [G-20](#g-20) | ✅ Fixed        | FEFO auto-selected expired batches, blocking the sale                   |
+| [G-21](#g-21) | ✅ Fixed        | The GST CSV export invented its tax columns                             |
 
 ---
 
@@ -589,6 +590,39 @@ The two conditions had to meet before this could bite — an expiry guard that r
 **Fix.** The search now excludes any batch whose expiry is before local midnight today, the same boundary the sale itself applies, so the two can never disagree about what is on offer. Expired batches are excluded rather than listed-and-disabled: they are not a choice the API would honour. Their count is returned separately as `expiredBatches`, so the POS can say *Stock Expired* over a full shelf instead of *No Stock*, which would send someone to reorder what they already have.
 
 The regression guard asserts the default: given an expired batch and a good one, search must offer only the good one and must not make the expired one the default. A companion test pins the boundary — a batch expiring **today** is still offered, matching FR-BATCH-09.
+
+---
+
+### <a id="g-21"></a>G-21 ✅ FIXED — The GST CSV export invented its tax columns
+
+**Where:** [`frontend/src/pages/Reports.tsx`](../frontend/src/pages/Reports.tsx) — the former client-side `exportCSV`
+
+**Problem.** The GST report had an *Export CSV* button, and it built the file in the browser:
+
+```js
+(inv.totalAmount * 0.8).toFixed(2),   // "Taxable Amount"
+(inv.totalAmount * 0.1).toFixed(2),   // CGST
+(inv.totalAmount * 0.1).toFixed(2),   // SGST
+```
+
+Those three columns are not derived from anything. They hardcode a 25% tax rate — taxable at 80% of the total, CGST and SGST at 10% each — applied to every invoice regardless of what it was actually charged. The system charges 0, 5, 12 or 18, and every invoice already carries the real `subtotal`, `cgst` and `sgst` it was written with. The exporter ignored all three and multiplied.
+
+Measured against the live dataset for one month:
+
+| Figure       | Stored (correct) | Browser export | Error           |
+| -------------- | ------------------ | ---------------- | ----------------- |
+| CGST         | ₹61,277.58      | ₹114,541.37   | +87%            |
+| Taxable value | ₹1,024,160.58   | ₹916,330.99   | −₹107,829.59 |
+
+A single ₹939.68 invoice with a real CGST of ₹50.34 was exported claiming ₹93.97. This is the one file in the product whose entire purpose is to be filed with a tax authority.
+
+The same function had no CSV escaping at all — `rows.map((r) => r.join(","))` — so a customer named `Kumar, R` silently shifted every column after it on that row; no BOM, so non-ASCII names mangled in Excel; and no formula guard, so an operator-entered `=…` executed on open.
+
+**Fix.** Deleted, and replaced with four server-side endpoints ([§9b](./04-api-reference.md)) that send the stored values. The client's job is now to ask for the bytes and save them under the name the server chose.
+
+The deeper point is not that the arithmetic was wrong but that it existed: the client does not own these figures, and docs/09 §4 treats them as a contract. Re-deriving a number you were already given is how two sources of truth get created. The export and the screen are now served by one query — `gstReportData` — so drift is structurally impossible rather than merely tested for.
+
+**Guards.** Money is asserted to leave as the exact stored 2 dp string (six tests fail if it is routed through a Number); the CSV's per-invoice columns are asserted to sum to the JSON report's totals to the paisa; and the formula-injection guard is asserted on `=`, `+`, `-`, `@` and tab, while a negative credit-note total is asserted to stay numeric.
 
 ---
 

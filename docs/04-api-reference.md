@@ -139,7 +139,7 @@ The rule is uniform: **absent means use the default; present but unparseable or 
 | `startDate`, `endDate`     | invoices                                  | Dates. Both must be present for the filter to apply                                                                                                                                                     |
 | `paymentMode`                | invoices                                  | `CASH` · `UPI` · `CARD` · `CREDIT`                                                                                                                                                           |
 | `paymentStatus`              | invoices                                  | `PAID` · `PENDING` · `PARTIAL`                                                                                                                                                                  |
-| `date`                       | invoices/daily-summary                    | Date. Default today                                                                                                                                                                                     |
+| `date`                       | invoices/daily-summary (+ /export)        | Date. Default today                                                                                                                                                                                     |
 | `month`, `year`            | invoices/gst-report                       | **Both required.** `month` 1–12, `year` 2000–2100                                                                                                                                           |
 | `days`                       | batches/expiring                          | Integer 1–365. Default`30`                                                                                                                                                                           |
 | `threshold`                  | batches/low-stock                         | Integer 1–100000. Default`10`                                                                                                                                                                        |
@@ -895,6 +895,35 @@ The `summary` and `trend` blocks follow the same counting rules as `GET /api/bil
 **This endpoint replaced thirteen requests**, not six: the six panel calls plus seven `daily-summary` calls for the chart. Two of the six existed only to read a number — `?limit=1` on medicines and customers, fetching a row to throw it away and keep `pagination.total`. Measured: **794 KB / 159 ms → 6 KB / 19 ms** ([G-08](./08-gap-analysis.md#g-08)).
 
 > Open to every authenticated role, matching the panels it replaced — which means a cashier can see whole-day store revenue. That was already true of `daily-summary` and is flagged as an open question in [07 §3](./07-security.md#3-authorisation).
+
+---
+
+## 9b. CSV exports — `FR-RPT-09`
+
+Four endpoints, one per report. Each takes **the same query parameters, the same validation and the same roles** as the JSON report it mirrors, and is served by the same query — the screen and the file cannot report different figures because there is only one source for both.
+
+| Endpoint                                                        | Mirrors                    | Roles             |
+| ----------------------------------------------------------------- | ---------------------------- | ------------------- |
+| `GET /api/billing/invoices/daily-summary/export?date=`        | `daily-summary`          | any role          |
+| `GET /api/billing/invoices/gst-report/export?month=&year=`    | `gst-report`             | ADMIN, PHARMACIST |
+| `GET /api/inventory/batches/expiring/export?days=`            | `batches/expiring`       | any role          |
+| `GET /api/inventory/batches/low-stock/export?threshold=`      | `batches/low-stock`      | any role          |
+
+**200** `text/csv; charset=utf-8` with `Content-Disposition: attachment`. The server names the file after the period it covers — `daily-summary-2026-08-24.csv`, `gst-report-2026-08.csv`, `expiring-90-days.csv`, `low-stock-at-20.csv` — and clients should use that name rather than deriving their own.
+
+### Serialisation rules
+
+These are the reason the CSV is built server-side rather than in the browser, and they are not negotiable:
+
+- **Money is the stored 2 dp string, never a number.** The app sets a `json replacer` that unwraps `Prisma.Decimal` to a JavaScript number for the API, which is right there — the client does arithmetic on those values. It is wrong for a file that gets filed. These endpoints bypass it entirely by using `res.send`, so `500` leaves as `500.00` and a value past 2⁵³ survives intact. `0.1 + 0.2` is a curiosity in a browser and an error in a GST return.
+- **RFC 4180 quoting**, CRLF line endings, and a **UTF-8 BOM** so Excel on Windows does not mangle non-ASCII medicine names.
+- **Formula injection is neutralised.** A text cell opening with `=`, `+`, `-`, `@`, tab or CR is prefixed with `'`, because a spreadsheet would otherwise execute it and every text column here is operator-entered. Money and numeric columns are exempt: a credit note is negative and opens with `-`, and guarding it would turn the column the accountant has to sum into text.
+- **No totals row.** The totals *are* the sum of the rows, so a spreadsheet recomputes them and a disagreement becomes visible instead of being asserted by a row nobody can check. It also keeps the file one parseable table.
+- **A header row is always written**, even for an empty report — an empty file is indistinguishable from a failed download.
+
+Credit notes appear as ordinary rows with negative money, so a month nets out.
+
+> Built server-side after the browser-side version was found to be inventing its tax columns ([G-21](./08-gap-analysis.md#g-21)).
 
 ---
 

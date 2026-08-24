@@ -33,6 +33,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
 import api from "@/lib/api";
+import { downloadCsv } from "@/lib/download";
 import { toast } from "sonner";
 
 // ─── Types ─────────────────────────────────────────────
@@ -143,6 +144,22 @@ function DailyReport() {
   const [summary, setSummary] = useState<DailySummary | null>(null);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(false);
+  const [exporting, setExporting] = useState(false);
+
+  const exportDaily = async () => {
+    setExporting(true);
+    try {
+      await downloadCsv(
+        `/api/billing/invoices/daily-summary/export?date=${date}`,
+        `daily-summary-${date}.csv`,
+      );
+      toast.success("Daily summary exported");
+    } catch {
+      toast.error("Failed to export daily summary");
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const fetchDaily = async () => {
     setLoading(true);
@@ -189,6 +206,20 @@ function DailyReport() {
           className="bg-teal-600 hover:bg-teal-500 text-white"
         >
           {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Refresh"}
+        </Button>
+        <Button
+          onClick={exportDaily}
+          size="sm"
+          variant="outline"
+          disabled={invoices.length === 0 || exporting}
+          className="border-slate-600 text-slate-300 hover:bg-slate-700 ml-auto"
+        >
+          {exporting ? (
+            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+          ) : (
+            <Download className="w-4 h-4 mr-2" />
+          )}
+          Export CSV
         </Button>
       </div>
 
@@ -333,6 +364,7 @@ function GstReport() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [totals, setTotals] = useState<GstTotals | null>(null);
   const [loading, setLoading] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const fetchGst = async () => {
     setLoading(true);
@@ -353,35 +385,33 @@ function GstReport() {
     fetchGst();
   }, [month, year]);
 
-  const exportCSV = () => {
-    const rows = [
-      [
-        "Invoice No",
-        "Date",
-        "Customer",
-        "Taxable Amount",
-        "CGST",
-        "SGST",
-        "Total",
-      ],
-      ...invoices.map((inv) => [
-        inv.invoiceNumber,
-        new Date(inv.date).toLocaleDateString("en-IN"),
-        inv.customer?.name || "Walk-in",
-        (inv.totalAmount * 0.8).toFixed(2),
-        (inv.totalAmount * 0.1).toFixed(2),
-        (inv.totalAmount * 0.1).toFixed(2),
-        inv.totalAmount.toFixed(2),
-      ]),
-    ];
-    const csv = rows.map((r) => r.join(",")).join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `GST_Report_${year}_${String(month).padStart(2, "0")}.csv`;
-    a.click();
-    toast.success("GST report exported!");
+  /**
+   * The export is generated server-side (FR-RPT-09).
+   *
+   * This used to build the CSV here, and the tax columns were invented:
+   * `totalAmount * 0.8` for taxable and `* 0.1` for each of CGST and SGST — a
+   * hardcoded 25% rate applied to every invoice, when the system charges 0, 5,
+   * 12 or 18 and the invoice already carries the real `subtotal`, `cgst` and
+   * `sgst` it was written with. On live data that overstated a month's CGST by
+   * 87%, in the one file that exists to be filed ([G-21](docs/08)).
+   *
+   * The fix is not better arithmetic here. The client does not own these
+   * figures, so it should not be deriving them: the server sends the stored
+   * values as exact 2 dp strings.
+   */
+  const exportCSV = async () => {
+    setExporting(true);
+    try {
+      await downloadCsv(
+        `/api/billing/invoices/gst-report/export?month=${month}&year=${year}`,
+        `gst-report-${year}-${String(month).padStart(2, "0")}.csv`,
+      );
+      toast.success("GST report exported");
+    } catch {
+      toast.error("Failed to export GST report");
+    } finally {
+      setExporting(false);
+    }
   };
 
   return (
@@ -426,10 +456,15 @@ function GstReport() {
           onClick={exportCSV}
           size="sm"
           variant="outline"
-          disabled={invoices.length === 0}
+          disabled={invoices.length === 0 || exporting}
           className="border-slate-600 text-slate-300 hover:bg-slate-700 ml-auto"
         >
-          <Download className="w-4 h-4 mr-2" /> Export CSV
+          {exporting ? (
+            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+          ) : (
+            <Download className="w-4 h-4 mr-2" />
+          )}
+          Export CSV
         </Button>
       </div>
 
@@ -579,6 +614,34 @@ function StockAlerts() {
   const [lowStock, setLowStock] = useState<Batch[]>([]);
   const [loading, setLoading] = useState(true);
   const [days, setDays] = useState(30);
+  const [exporting, setExporting] = useState<"expiring" | "low" | null>(null);
+
+  // One flag naming which report is downloading, rather than two booleans: the
+  // two buttons sit side by side and only one can be in flight per click.
+  const runExport = async (which: "expiring" | "low") => {
+    setExporting(which);
+    const [url, name, label] =
+      which === "expiring"
+        ? [
+            `/api/inventory/batches/expiring/export?days=${days}`,
+            `expiring-${days}-days.csv`,
+            "Expiring stock",
+          ]
+        : [
+            "/api/inventory/batches/low-stock/export?threshold=20",
+            "low-stock-at-20.csv",
+            "Low stock",
+          ];
+    try {
+      await downloadCsv(url, name);
+      toast.success(`${label} exported`);
+    } catch {
+      toast.error(`Failed to export ${label.toLowerCase()}`);
+    } finally {
+      setExporting(null);
+    }
+  };
+
   // Reading the clock during render is impure. Days-left is a day-granularity
   // figure, so one mount-time reading keeps every row in a render measured against
   // the same instant.
@@ -640,6 +703,18 @@ function StockAlerts() {
                 <Badge className="bg-yellow-900 text-yellow-400">
                   {expiring.length}
                 </Badge>
+                <button
+                  onClick={() => runExport("expiring")}
+                  disabled={expiring.length === 0 || exporting !== null}
+                  aria-label="Export expiring stock CSV"
+                  className="text-slate-400 hover:text-white disabled:opacity-40 disabled:hover:text-slate-400"
+                >
+                  {exporting === "expiring" ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Download className="w-4 h-4" />
+                  )}
+                </button>
               </div>
             </div>
           </CardHeader>
@@ -698,9 +773,23 @@ function StockAlerts() {
                 <Package className="w-4 h-4 text-red-400" />
                 Low Stock
               </CardTitle>
-              <Badge className="bg-red-900 text-red-400">
-                {lowStock.length}
-              </Badge>
+              <div className="flex items-center gap-2">
+                <Badge className="bg-red-900 text-red-400">
+                  {lowStock.length}
+                </Badge>
+                <button
+                  onClick={() => runExport("low")}
+                  disabled={lowStock.length === 0 || exporting !== null}
+                  aria-label="Export low stock CSV"
+                  className="text-slate-400 hover:text-white disabled:opacity-40 disabled:hover:text-slate-400"
+                >
+                  {exporting === "low" ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Download className="w-4 h-4" />
+                  )}
+                </button>
+              </div>
             </div>
           </CardHeader>
           <CardContent className="p-0 max-h-96 overflow-y-auto">

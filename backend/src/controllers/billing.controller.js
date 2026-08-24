@@ -1,4 +1,5 @@
 const prisma = require("../config/db");
+const { toCsv, sendCsv } = require("../utils/csv");
 const { Prisma } = require("@prisma/client");
 const {
   generateInvoiceNumber,
@@ -664,108 +665,112 @@ const getOne = async (req, res, next) => {
 };
 
 // ─── Daily Summary ─────────────────────────────────────
+/**
+ * The day's figures, shared by the screen and the CSV export.
+ *
+ * One source deliberately: docs/09 section 4 treats these totals as a contract,
+ * and a second query written to serve the export would be free to disagree with
+ * the screen the moment either changed.
+ */
+const dailySummaryData = async (query) => {
+  // Absent means today; a garbage date is a 400 from validateQuery rather than
+  // an Invalid Date that silently matched nothing.
+  const date = query.date ?? new Date();
+
+  // Each boundary is set on its own copy. `date` is the object validateQuery
+  // parsed onto the request, and calling setHours on it directly rewrote it in
+  // place — leaving req.validatedQuery.date at 23:59:59.999 for anything that
+  // read it afterwards. Nothing does today, which is the only reason that was
+  // survivable: G-01 was this same shape, and became a real bug precisely when
+  // a second consumer read the mutated value. A controller should not be
+  // rewriting what the validation layer put on the request.
+  const startOfDay = new Date(date);
+  startOfDay.setHours(0, 0, 0, 0);
+  const endOfDay = new Date(date);
+  endOfDay.setHours(23, 59, 59, 999);
+
+  const period = { date: { gte: startOfDay, lte: endOfDay } };
+
+  const [invoices, totalStats] = await Promise.all([
+    prisma.invoice.findMany({
+      where: period,
+      include: { customer: { select: { name: true } } },
+      orderBy: { date: "desc" },
+    }),
+    // Money only. Summed across every document in the period, sales and credit
+    // notes alike, so a day's takings are net of anything reversed that day.
+    prisma.invoice.aggregate({
+      where: period,
+      _sum: { totalAmount: true, cgst: true, sgst: true },
+    }),
+  ]);
+
+  // Grouped by type as well as mode, so one query answers three questions: the
+  // net money per mode, how many sales were raised, and how many were reversed.
+  const byModeAndType = await prisma.invoice.groupBy({
+    by: ["paymentMode", "type"],
+    where: period,
+    _sum: { totalAmount: true },
+    _count: { id: true },
+  });
+
+  const countOf = (type) =>
+    byModeAndType.reduce((n, r) => (r.type === type ? n + r._count.id : n), 0);
+
+  // One row per mode, in the shape clients already read: the money is the net,
+  // the count is sales only — so the "N bills" under each mode adds up to the
+  // headline count instead of exceeding it by the number of voids.
+  const byPaymentMode = [
+    ...new Set(byModeAndType.map((r) => r.paymentMode)),
+  ].map((paymentMode) => {
+    const rows = byModeAndType.filter((r) => r.paymentMode === paymentMode);
+    return {
+      paymentMode,
+      _sum: {
+        // .plus, never +: these are Decimals and + concatenates them.
+        totalAmount: rows.reduce(
+          (sum, r) => sum.plus(r._sum.totalAmount ?? 0),
+          new D(0),
+        ),
+      },
+      _count: {
+        id: rows.reduce((n, r) => (r.type === "SALE" ? n + r._count.id : n), 0),
+      },
+    };
+  });
+
+  // Prisma returns Decimal (or null on an empty day) — add with Decimal
+  // arithmetic, not `+`, which would concatenate the objects as strings.
+  const totalCgst = totalStats._sum.cgst ?? new D(0);
+  const totalSgst = totalStats._sum.sgst ?? new D(0);
+
+  return {
+    date: startOfDay,
+    invoices,
+    summary: {
+      // Sales raised in the period, whatever became of them since. A sale
+      // voided next week was still raised today, and dropping it from
+      // today's count later would rewrite a period after the fact — the one
+      // thing the void design exists to prevent (docs/03 section 8).
+      totalInvoices: countOf("SALE"),
+      // Reversals issued in the period. The money above is already net of
+      // them; this is what makes that netting legible rather than a day
+      // that mysteriously took less than its invoices add up to.
+      creditNotes: countOf("CREDIT_NOTE"),
+
+      totalSales: totalStats._sum.totalAmount ?? new D(0),
+      totalCgst,
+      totalSgst,
+      totalGst: totalCgst.plus(totalSgst),
+      byPaymentMode,
+    },
+  };
+};
+
 const getDailySummary = async (req, res, next) => {
   try {
-    // Absent means today; a garbage date is a 400 from validateQuery rather than
-    // an Invalid Date that silently matched nothing.
-    const date = req.validatedQuery.date ?? new Date();
-
-    // Each boundary is set on its own copy. `date` is the object validateQuery
-    // parsed onto the request, and calling setHours on it directly rewrote it in
-    // place — leaving req.validatedQuery.date at 23:59:59.999 for anything that
-    // read it afterwards. Nothing does today, which is the only reason that was
-    // survivable: G-01 was this same shape, and became a real bug precisely when
-    // a second consumer read the mutated value. A controller should not be
-    // rewriting what the validation layer put on the request.
-    const startOfDay = new Date(date);
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date(date);
-    endOfDay.setHours(23, 59, 59, 999);
-
-    const period = { date: { gte: startOfDay, lte: endOfDay } };
-
-    const [invoices, totalStats] = await Promise.all([
-      prisma.invoice.findMany({
-        where: period,
-        include: { customer: { select: { name: true } } },
-        orderBy: { date: "desc" },
-      }),
-      // Money only. Summed across every document in the period, sales and credit
-      // notes alike, so a day's takings are net of anything reversed that day.
-      prisma.invoice.aggregate({
-        where: period,
-        _sum: { totalAmount: true, cgst: true, sgst: true },
-      }),
-    ]);
-
-    // Grouped by type as well as mode, so one query answers three questions: the
-    // net money per mode, how many sales were raised, and how many were reversed.
-    const byModeAndType = await prisma.invoice.groupBy({
-      by: ["paymentMode", "type"],
-      where: period,
-      _sum: { totalAmount: true },
-      _count: { id: true },
-    });
-
-    const countOf = (type) =>
-      byModeAndType.reduce(
-        (n, r) => (r.type === type ? n + r._count.id : n),
-        0,
-      );
-
-    // One row per mode, in the shape clients already read: the money is the net,
-    // the count is sales only — so the "N bills" under each mode adds up to the
-    // headline count instead of exceeding it by the number of voids.
-    const byPaymentMode = [
-      ...new Set(byModeAndType.map((r) => r.paymentMode)),
-    ].map((paymentMode) => {
-      const rows = byModeAndType.filter((r) => r.paymentMode === paymentMode);
-      return {
-        paymentMode,
-        _sum: {
-          // .plus, never +: these are Decimals and + concatenates them.
-          totalAmount: rows.reduce(
-            (sum, r) => sum.plus(r._sum.totalAmount ?? 0),
-            new D(0),
-          ),
-        },
-        _count: {
-          id: rows.reduce(
-            (n, r) => (r.type === "SALE" ? n + r._count.id : n),
-            0,
-          ),
-        },
-      };
-    });
-
-    // Prisma returns Decimal (or null on an empty day) — add with Decimal
-    // arithmetic, not `+`, which would concatenate the objects as strings.
-    const totalCgst = totalStats._sum.cgst ?? new D(0);
-    const totalSgst = totalStats._sum.sgst ?? new D(0);
-
-    res.json({
-      success: true,
-      data: {
-        invoices,
-        summary: {
-          // Sales raised in the period, whatever became of them since. A sale
-          // voided next week was still raised today, and dropping it from
-          // today's count later would rewrite a period after the fact — the one
-          // thing the void design exists to prevent (docs/03 section 8).
-          totalInvoices: countOf("SALE"),
-          // Reversals issued in the period. The money above is already net of
-          // them; this is what makes that netting legible rather than a day
-          // that mysteriously took less than its invoices add up to.
-          creditNotes: countOf("CREDIT_NOTE"),
-
-          totalSales: totalStats._sum.totalAmount ?? new D(0),
-          totalCgst,
-          totalSgst,
-          totalGst: totalCgst.plus(totalSgst),
-          byPaymentMode,
-        },
-      },
-    });
+    const { invoices, summary } = await dailySummaryData(req.validatedQuery);
+    res.json({ success: true, data: { invoices, summary } });
   } catch (err) {
     next(err);
   }
@@ -823,32 +828,83 @@ const getTrend = async (req, res, next) => {
 };
 
 // ─── GST Report ────────────────────────────────────────
+/**
+ * The month's filing figures, shared by the screen and the CSV export. Same
+ * reasoning as `dailySummaryData`: one query, so the two cannot disagree.
+ */
+const gstReportData = async ({ month, year }) => {
+  const startDate = new Date(year, month - 1, 1);
+  const endDate = new Date(year, month, 0, 23, 59, 59);
+
+  const invoices = await prisma.invoice.findMany({
+    where: {
+      date: { gte: startDate, lte: endDate },
+      paymentStatus: "PAID",
+    },
+    include: { items: true },
+    orderBy: { date: "asc" },
+  });
+
+  const totals = invoices.reduce(
+    (acc, inv) => ({
+      taxable: acc.taxable.plus(inv.subtotal),
+      cgst: acc.cgst.plus(inv.cgst),
+      sgst: acc.sgst.plus(inv.sgst),
+      total: acc.total.plus(inv.totalAmount),
+    }),
+    { taxable: new D(0), cgst: new D(0), sgst: new D(0), total: new D(0) },
+  );
+
+  return { month, year, invoices, totals };
+};
+
 const getGstReport = async (req, res, next) => {
   try {
-    const { month, year } = req.validatedQuery;
-    const startDate = new Date(year, month - 1, 1);
-    const endDate = new Date(year, month, 0, 23, 59, 59);
-
-    const invoices = await prisma.invoice.findMany({
-      where: {
-        date: { gte: startDate, lte: endDate },
-        paymentStatus: "PAID",
-      },
-      include: { items: true },
-      orderBy: { date: "asc" },
-    });
-
-    const totals = invoices.reduce(
-      (acc, inv) => ({
-        taxable: acc.taxable.plus(inv.subtotal),
-        cgst: acc.cgst.plus(inv.cgst),
-        sgst: acc.sgst.plus(inv.sgst),
-        total: acc.total.plus(inv.totalAmount),
-      }),
-      { taxable: new D(0), cgst: new D(0), sgst: new D(0), total: new D(0) },
-    );
-
+    const { invoices, totals } = await gstReportData(req.validatedQuery);
     res.json({ success: true, data: { invoices, totals } });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * One row per document, sales and credit notes alike.
+ *
+ * No totals row. The report's own invariant is that the totals *are* the sum of
+ * these rows, so a spreadsheet recomputes them and any disagreement is visible
+ * rather than asserted by a row nobody can check. It also keeps the file a
+ * single table, which is what every parser downstream expects.
+ */
+const INVOICE_COLUMNS = [
+  { header: "Date", kind: "datetime", get: (i) => i.date },
+  { header: "Invoice No", get: (i) => i.invoiceNumber },
+  { header: "Type", get: (i) => i.type },
+  { header: "Status", get: (i) => i.status },
+  { header: "Customer", get: (i) => i.customer?.name ?? "Walk-in" },
+  { header: "Payment Mode", get: (i) => i.paymentMode },
+  { header: "Payment Status", get: (i) => i.paymentStatus },
+  { header: "Taxable", kind: "money", get: (i) => i.subtotal },
+  { header: "Discount", kind: "money", get: (i) => i.discountAmt },
+  { header: "CGST", kind: "money", get: (i) => i.cgst },
+  { header: "SGST", kind: "money", get: (i) => i.sgst },
+  { header: "Total", kind: "money", get: (i) => i.totalAmount },
+];
+
+const exportDailySummary = async (req, res, next) => {
+  try {
+    const { date, invoices } = await dailySummaryData(req.validatedQuery);
+    const day = date.toISOString().slice(0, 10);
+    sendCsv(res, `daily-summary-${day}.csv`, toCsv(INVOICE_COLUMNS, invoices));
+  } catch (err) {
+    next(err);
+  }
+};
+
+const exportGstReport = async (req, res, next) => {
+  try {
+    const { month, year, invoices } = await gstReportData(req.validatedQuery);
+    const period = `${year}-${String(month).padStart(2, "0")}`;
+    sendCsv(res, `gst-report-${period}.csv`, toCsv(INVOICE_COLUMNS, invoices));
   } catch (err) {
     next(err);
   }
@@ -859,6 +915,8 @@ module.exports = {
   getAll,
   getOne,
   getDailySummary,
+  exportDailySummary,
+  exportGstReport,
   getTrend,
   getGstReport,
   voidInvoice,

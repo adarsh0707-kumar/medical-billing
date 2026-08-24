@@ -49,6 +49,22 @@ router.get(
   validateQuery(gstReportQuerySchema),
   billingCtrl.getGstReport,
 );
+
+// ─── CSV exports (FR-RPT-09) ──────────────────────────
+// Same data, same query schemas, same roles as the JSON reports above — only
+// the serialisation differs. Money leaves as a 2 dp string rather than through
+// the Decimal-to-Number replacer; see utils/csv.js.
+router.get(
+  "/invoices/daily-summary/export",
+  validateQuery(dailySummaryQuerySchema),
+  billingCtrl.exportDailySummary,
+);
+router.get(
+  "/invoices/gst-report/export",
+  authorize("ADMIN", "PHARMACIST"),
+  validateQuery(gstReportQuerySchema),
+  billingCtrl.exportGstReport,
+);
 // Above /invoices/:id, or "trend" is read as an invoice id.
 router.get("/invoices/trend", validateQuery(trendQuerySchema), billingCtrl.getTrend);
 
