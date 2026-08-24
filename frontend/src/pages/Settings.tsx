@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import api from "@/lib/api";
+import type { UpdateUserInput } from "@/types/api.generated";
 import { useAuthStore } from "@/store/auth.store";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -487,7 +488,9 @@ function UsersTab() {
     setSubmitting(true);
     try {
       if (editing) {
-        const payload: Record<string, unknown> = {
+        // Was `Record<string, unknown>`, which accepted anything. Now the
+        // backend's `updateUserSchema` decides what this may carry (NFR-22).
+        const payload: UpdateUserInput = {
           name: form.name,
           email: form.email,
           role: form.role,

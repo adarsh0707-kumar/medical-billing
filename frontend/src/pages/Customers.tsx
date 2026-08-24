@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import api from "@/lib/api";
+import type { CustomerInput } from "@/types/api.generated";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -269,7 +270,18 @@ export default function Customers() {
   const [editing, setEditing] = useState<Customer | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [form, setForm] = useState({
+  // `gender` is the contract's enum plus `""` for "not chosen", rather than a
+  // bare string. The Select hands back whatever its items carry, so this is
+  // where a value the API would reject has to be introduced deliberately.
+  type GenderChoice = NonNullable<CustomerInput["gender"]> | "";
+  const [form, setForm] = useState<{
+    name: string;
+    phone: string;
+    email: string;
+    address: string;
+    age: string;
+    gender: GenderChoice;
+  }>({
     name: "",
     phone: "",
     email: "",
@@ -330,7 +342,7 @@ export default function Customers() {
       email: c.email || "",
       address: c.address || "",
       age: c.age ? String(c.age) : "",
-      gender: c.gender || "",
+      gender: (c.gender ?? "") as GenderChoice,
     });
     setShowForm(true);
   };
@@ -340,7 +352,7 @@ export default function Customers() {
     setSubmitting(true);
     try {
       // Prepare data, only include age and gender if they have values
-      const data = {
+      const data: CustomerInput = {
         name: form.name,
         phone: form.phone,
         email: form.email,
@@ -563,7 +575,9 @@ export default function Customers() {
               <Field label="Gender">
                 <Select
                   value={form.gender}
-                  onValueChange={(v) => setForm({ ...form, gender: v })}
+                  onValueChange={(v) =>
+                    setForm({ ...form, gender: v as GenderChoice })
+                  }
                 >
                   <SelectTrigger className="bg-slate-700 border-slate-600 text-white h-9">
                     <SelectValue placeholder="Select" />
