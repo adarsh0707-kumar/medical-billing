@@ -231,7 +231,7 @@ What it would take to build it properly, recorded so a future decision starts fr
 | ~~Block sale of expired batches~~          | FR-BATCH-09                                         | **Done 2026-08-24.** Guarded inside the invoice transaction; expiring today still sells; no override |
 | Prescription capture for Schedule H        | FR-MED-12                                           | Compliance-driven; depends on[Q4](./01-product-requirements.md#14-open-questions)                   |
 | CSV/Excel export on all reports            | FR-RPT-09                                           | Most-requested reporting gap                                                                       |
-| Audit log for stock and price changes      | NFR-17                                              | Prisma middleware can capture this centrally                                                       |
+| ~~Audit log for stock and price changes~~ | NFR-17 | **Done 2026-08-22.** Prisma middleware; reads deliberately not logged |
 | Password reset by email                    | FR-AUTH-11                                          | Requires an SMTP dependency the stack does not have                                                |
 | Server-side logout / token revocation      | FR-AUTH-09                                          | Needs somewhere to record revocation. 11.1 is not applicable and there is no cache store, so a`tokenVersion` column compared against the token's `iat` is the cheaper route |
 | Shared API types between client and server | NFR-22                                              | Zod schemas → inferred TS types in a shared package                                               |

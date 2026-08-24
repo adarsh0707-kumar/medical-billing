@@ -38,4 +38,27 @@ const setActor = ({ id, email }) => {
   store.email = email ?? null;
 };
 
-module.exports = { auditContext, runWithActor, currentActor, setActor };
+/**
+ * Records why this request is writing.
+ *
+ * Most writes have no answer worth storing — before/after already says a price
+ * became 31.75. A manual stock adjustment is the case where it does: breakage,
+ * theft and a miscount produce identical before/after values and are entirely
+ * different events (FR-BATCH-11).
+ *
+ * Set on the same per-request store as the actor, so the reason reaches the
+ * Prisma middleware the same way and any future endpoint can annotate its own
+ * writes without touching the middleware.
+ */
+const setReason = (reason) => {
+  const store = auditContext.getStore();
+  if (store) store.reason = reason ?? null;
+};
+
+module.exports = {
+  auditContext,
+  runWithActor,
+  currentActor,
+  setActor,
+  setReason,
+};

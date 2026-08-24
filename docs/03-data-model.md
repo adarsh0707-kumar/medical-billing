@@ -353,6 +353,7 @@ This is the only raw SQL in the codebase; the atomicity guarantee is the reason.
 | `recordId`   | String?   | Indexed with`model` — "the history of this batch" is the second query                               |
 | `before`     | Json?     | Prior state. Null on a create                                                                          |
 | `after`      | Json?     | Resulting state. Null on a delete                                                                      |
+| `reason`     | String?   | Why, when the handler supplied one. Most writes have nothing to add beyond before/after; a manual stock adjustment is meaningless without it, so that endpoint requires one |
 | `requestId`  | String?   | The`X-Request-Id` of the causing request, so a row joins to that request's log lines                 |
 
 **No relation to `User`.** A foreign key would either block deleting an account or null the column out, and a trail that forgets who did something the moment their account is removed is not a trail. `actorId` and `actorEmail` are therefore copies.
@@ -369,7 +370,7 @@ This is the only raw SQL in the codebase; the atomicity guarantee is the reason.
 | `RefreshToken`             | Churns by design — a 30-minute access token means each device rotates one about 48 times a day, which would bury everything worth reading  |
 | `InvoiceCounter`           | A serial allocator, not business data                                                                                                       |
 | `AuditLog`                 | Auditing the audit log does not terminate                                                                                                   |
-| `updateMany` / `deleteMany` | The one that matters is the stock decrement inside invoice creation, which is attributable through its invoice. It is also the only write inside a long transaction, and the audit row cannot join that transaction — so a rolled-back sale would leave a row claiming stock moved |
+| `updateMany` / `deleteMany` **unless a reason is declared** | The one that matters is the stock decrement inside invoice creation, which is attributable through its invoice. A handler that calls `setReason` is stating the write is worth recording, which opts it back in — that is how manual stock adjustment (FR-BATCH-11) is audited while the sale stays out. The resulting state is read back, since a bulk write returns a count rather than a row. It is also the only write inside a long transaction, and the audit row cannot join that transaction — so a rolled-back sale would leave a row claiming stock moved |
 
 **`password` and `tokenVersion` are stripped** from both `before` and `after`. An audit row must never become a second place credential material lives.
 
@@ -473,6 +474,7 @@ These must hold at all times. Any new write path must preserve them.
 | `20260824032314_add_customer_anonymised_at` | 2026-08-24 | Adds`Customer.anonymisedAt` and its index — the erasure and retention path (PRD Q6). See §8                                                               |
 | `20260824105655_add_prescription`           | 2026-08-24 | Adds the`Prescription` table — the Schedule H register (FR-MED-12, PRD Q4). See §3.11                                                                     |
 | `20260824111521_drop_purchases`      | 2026-08-24 | **Drops** `Purchase` and `PurchaseItem` — modelled in the initial migration, never given a write path (PRD Q7). Verified empty first |
+| `20260824112334_add_audit_reason`        | 2026-08-24 | Adds`AuditLog.reason` — the "why" behind an audited write, required by manual stock adjustment (FR-BATCH-11) |
 
 All eight are applied — confirmed against `_prisma_migrations` on 2026-08-22. Two of them contain SQL that exists **only** in migration history and cannot be reproduced from `schema.prisma`; see the note in §4 before rebuilding a database with `db push`.
 

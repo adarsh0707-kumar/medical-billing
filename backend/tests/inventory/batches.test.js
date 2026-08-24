@@ -159,3 +159,135 @@ describe("expiry and low-stock alerts", () => {
     expect(res.body.data.map((b) => b.batchNumber)).toEqual(["AT"]);
   });
 });
+
+// FR-BATCH-11. The counterpart to the G-05 guard above: stock still cannot move
+// through the general edit, but breakage, theft and miscounts are real and need
+// a path that leaves a trace.
+describe("POST /api/inventory/batches/:id/adjust", () => {
+  const adjust = (token, id, body) =>
+    request(app)
+      .post(`/api/inventory/batches/${id}/adjust`)
+      .set("Authorization", `Bearer ${token}`)
+      .send(body);
+
+  const aBatch = async (quantity = 40) => {
+    const { medicine, supplier } = await makeMedicine();
+    return makeBatch({ medicineId: medicine.id, supplierId: supplier.id, quantity });
+  };
+
+  it("removes stock and records who, what and why", async () => {
+    const { token, user } = await signIn(app, "PHARMACIST");
+    const batch = await aBatch(40);
+
+    const res = await adjust(token, batch.id, {
+      delta: -3,
+      reason: "Three strips crushed when the shelf collapsed",
+    });
+
+    expect(res.status).toBe(200);
+    expect((await prisma.batch.findUnique({ where: { id: batch.id } })).quantity).toBe(37);
+
+    // The whole point of the requirement: 40 → 37 on its own is not an audit
+    // trail, because breakage, theft and a miscount look identical.
+    const entry = await prisma.auditLog.findFirst({
+      where: { model: "Batch", recordId: batch.id, action: "UPDATE" },
+      orderBy: { at: "desc" },
+    });
+    expect(entry.actorEmail).toBe(user.email);
+    expect(entry.reason).toMatch(/shelf collapsed/);
+    expect(entry.before.quantity).toBe(40);
+    expect(entry.after.quantity).toBe(37);
+  });
+
+  it("adds stock too, for a miscount the other way", async () => {
+    const { token } = await signIn(app, "PHARMACIST");
+    const batch = await aBatch(40);
+
+    const res = await adjust(token, batch.id, {
+      delta: 5,
+      reason: "Recount after stocktake — five strips were behind the box",
+    });
+
+    expect(res.status).toBe(200);
+    expect((await prisma.batch.findUnique({ where: { id: batch.id } })).quantity).toBe(45);
+  });
+
+  it("refuses to take stock below zero, cleanly", async () => {
+    const { token } = await signIn(app, "PHARMACIST");
+    const batch = await aBatch(2);
+
+    const res = await adjust(token, batch.id, {
+      delta: -5,
+      reason: "Attempting to write off more than we hold",
+    });
+
+    // A 400 explaining itself, not a 500 from the database CHECK constraint
+    // (Batch_quantity_non_negative) — the constraint is the backstop, not the
+    // user-facing rule.
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/cannot go negative/i);
+    expect((await prisma.batch.findUnique({ where: { id: batch.id } })).quantity).toBe(2);
+  });
+
+  it("takes a batch to exactly zero", async () => {
+    const { token } = await signIn(app, "PHARMACIST");
+    const batch = await aBatch(2);
+
+    const res = await adjust(token, batch.id, {
+      delta: -2,
+      reason: "Both remaining strips expired and were destroyed",
+    });
+
+    expect(res.status).toBe(200);
+    expect((await prisma.batch.findUnique({ where: { id: batch.id } })).quantity).toBe(0);
+  });
+
+  it.each([
+    ["no reason at all", { delta: -1 }],
+    ["a reason too short to mean anything", { delta: -1, reason: "oops" }],
+    ["a zero adjustment", { delta: 0, reason: "Nothing actually happened here" }],
+    ["a fractional adjustment", { delta: -1.5, reason: "Half a strip went missing" }],
+    ["an unknown field", { delta: -1, reason: "Padding out the reason field", quantity: 5 }],
+  ])("refuses %s", async (_label, body) => {
+    const { token } = await signIn(app, "PHARMACIST");
+    const batch = await aBatch(40);
+
+    expect((await adjust(token, batch.id, body)).status).toBe(400);
+    expect((await prisma.batch.findUnique({ where: { id: batch.id } })).quantity).toBe(40);
+  });
+
+  it("is closed to cashiers", async () => {
+    const { token: pharmacist } = await signIn(app, "PHARMACIST");
+    const batch = await aBatch(40);
+    const { token: cashier } = await signIn(app, "CASHIER");
+
+    expect(
+      (await adjust(cashier, batch.id, { delta: -1, reason: "Should not be permitted" })).status,
+    ).toBe(403);
+    expect((await prisma.batch.findUnique({ where: { id: batch.id } })).quantity).toBe(40);
+    // The pharmacist who does handle stock still can.
+    expect(
+      (await adjust(pharmacist, batch.id, { delta: -1, reason: "Damaged in transit from the store room" })).status,
+    ).toBe(200);
+  });
+
+  it("404s for a batch that does not exist", async () => {
+    const { token } = await signIn(app, "PHARMACIST");
+    expect((await adjust(token, "nope", { delta: -1, reason: "No such batch exists" })).status).toBe(404);
+  });
+
+  it("does not weaken the G-05 guard on the update route", async () => {
+    const { token } = await signIn(app, "PHARMACIST");
+    const batch = await aBatch(40);
+
+    // Adding an adjustment path must not make the general edit permissive: the
+    // two exist precisely so stock cannot move without a stated reason.
+    const res = await request(app)
+      .put(`/api/inventory/batches/${batch.id}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ quantity: 99999 });
+
+    expect(res.status).toBe(400);
+    expect((await prisma.batch.findUnique({ where: { id: batch.id } })).quantity).toBe(40);
+  });
+});

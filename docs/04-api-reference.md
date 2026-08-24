@@ -522,7 +522,34 @@ The server sets `initialQty = quantity`. **409** if `(medicineId, batchNumber)` 
 
 Accepts only `batchNumber`, `expiryDate`, `purchasePrice` and `sellingPrice`, all optional. The schema is **strict**: any other field — including `quantity`, `initialQty`, `medicineId` and `supplierId` — is rejected with a `400`, not silently ignored.
 
-> **Stock is not adjustable through this route.** Quantity changes only via batch creation and invoice creation, so stock always has a traceable cause. A manual-adjustment endpoint with an audit trail is [FR-BATCH-11](./01-product-requirements.md#65-stock--batches--fr-batch).
+> **Stock is not adjustable through this route.** Quantity moves through batch creation, a sale, a void, or the adjustment endpoint below — never through a general edit, so it always has a stated cause ([G-05](./08-gap-analysis.md#g-05)).
+
+#### `POST /api/inventory/batches/:id/adjust` — ADMIN, PHARMACIST
+
+Manual stock adjustment for breakage, theft, a miscount, or expired stock coming off the shelf (FR-BATCH-11).
+
+```json
+{ "delta": -3, "reason": "Three strips crushed when the shelf collapsed" }
+```
+
+| Field | Rule |
+| --- | --- |
+| `delta` | Signed whole number, non-zero. **Relative, not absolute** |
+| `reason` | Required, 10–500 characters |
+
+`.strict()` — an unrecognised field, `quantity` included, is a `400`.
+
+**Why a delta rather than "set it to 47".** An absolute quantity loses a race a shop actually hits: if a sale commits between the operator reading the screen and pressing save, an absolute write silently erases that sale's deduction. A delta composes with a concurrent decrement instead of clobbering it.
+
+| Outcome | Status |
+|---|---|
+| Adjusted | `200` with the updated batch |
+| Would take stock below zero | `400` naming the batch and what is actually in stock — not a `500` from the `Batch_quantity_non_negative` constraint, which is the backstop rather than the user-facing rule |
+| Missing or too-short reason, zero or fractional delta, unknown field | `400` |
+| Caller is a CASHIER | `403` |
+| No such batch | `404` |
+
+> **This is not a way to reverse a sale.** That is a [void](#post-apibillinginvoicesidvoid--admin-only), which issues a credit note, returns the exact units to the batches they came from, and leaves the tax period intact. An adjustment that added the units back would leave the invoice standing and the money uncorrected. Nothing here can stop an administrator misusing it — the defence is that the reason is mandatory and the adjustment is attributed, which is the point of the requirement.
 
 ### 8.5 Suppliers
 
