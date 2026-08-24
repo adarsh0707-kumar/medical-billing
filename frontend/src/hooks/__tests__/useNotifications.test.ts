@@ -4,6 +4,7 @@ import MockAdapter from "axios-mock-adapter";
 import api from "@/lib/api";
 import { useNotifications } from "@/hooks/useNotifications";
 import { useNotificationStore } from "@/store/notification.store";
+import { createQueryWrapper } from "@/test/query-wrapper";
 
 /**
  * docs/09 §5.6 — a batch expiring in 5 days is `danger`, one at 25 days is
@@ -62,7 +63,7 @@ describe("useNotifications — expiry severity", () => {
   it("marks a batch expiring in 5 days as danger", async () => {
     stubAlerts({ expiring: [expiringBatch("b1", 5)] });
 
-    renderHook(() => useNotifications());
+    renderHook(() => useNotifications(), { wrapper: createQueryWrapper() });
 
     await waitFor(() => expect(notifications()).toHaveLength(1));
     expect(notifications()[0].type).toBe("danger");
@@ -72,7 +73,7 @@ describe("useNotifications — expiry severity", () => {
   it("marks a batch expiring in 25 days as warning", async () => {
     stubAlerts({ expiring: [expiringBatch("b2", 25)] });
 
-    renderHook(() => useNotifications());
+    renderHook(() => useNotifications(), { wrapper: createQueryWrapper() });
 
     await waitFor(() => expect(notifications()).toHaveLength(1));
     expect(notifications()[0].type).toBe("warning");
@@ -86,7 +87,7 @@ describe("useNotifications — expiry severity", () => {
       expiring: [expiringBatch("at-7", 7), expiringBatch("at-8", 8)],
     });
 
-    renderHook(() => useNotifications());
+    renderHook(() => useNotifications(), { wrapper: createQueryWrapper() });
 
     await waitFor(() => expect(notifications()).toHaveLength(2));
     const byId = Object.fromEntries(
@@ -107,7 +108,7 @@ describe("useNotifications — expiry severity", () => {
       ],
     });
 
-    renderHook(() => useNotifications());
+    renderHook(() => useNotifications(), { wrapper: createQueryWrapper() });
 
     await waitFor(() => expect(notifications()).toHaveLength(1));
     expect(notifications()[0].type).toBe("danger");
@@ -122,7 +123,7 @@ describe("useNotifications — expiry severity", () => {
       ],
     });
 
-    renderHook(() => useNotifications());
+    renderHook(() => useNotifications(), { wrapper: createQueryWrapper() });
 
     await waitFor(() => expect(notifications()).toHaveLength(2));
     expect(notifications().map((n) => n.id)).toEqual(
@@ -136,7 +137,7 @@ describe("useNotifications — expiry severity", () => {
     // deliberate rather than becoming an accident.
     mock.onGet(/batches/).reply(500);
 
-    renderHook(() => useNotifications());
+    renderHook(() => useNotifications(), { wrapper: createQueryWrapper() });
 
     await new Promise((r) => setTimeout(r, 50));
     expect(notifications()).toHaveLength(0);
