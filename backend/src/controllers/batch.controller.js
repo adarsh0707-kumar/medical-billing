@@ -1,4 +1,5 @@
 const prisma = require("../config/db");
+const { setReason } = require("../config/audit-context");
 
 const getAll = async (req, res, next) => {
   try {
@@ -135,4 +136,72 @@ const update = async (req, res, next) => {
   }
 };
 
-module.exports = { getAll, getExpiring, getLowStock, create, update };
+
+// ─── Adjust stock ──────────────────────────────────────
+// FR-BATCH-11. Until now `Batch.quantity` moved in exactly two places — batch
+// creation and a sale — and `PUT /batches/:id` refused to touch it (G-05),
+// because rewriting stock through a general edit bypasses every accounting path.
+// That is still true: this is a separate endpoint with a separate schema, not a
+// widening of the update.
+//
+// What it is for: breakage, theft, a miscount, expired stock coming off the
+// shelf. Physical reality disagreeing with the record.
+//
+// What it is **not** for: reversing a sale. That is a void, which issues a
+// credit note, restores the exact units to the batches they came from and keeps
+// the tax period intact. An adjustment that happened to add three units back
+// would leave the invoice standing and the money uncorrected. Nothing here can
+// stop an administrator misusing it, so the defence is that the reason is
+// mandatory and the whole thing is attributed — the point of FR-BATCH-11.
+const adjust = async (req, res, next) => {
+  try {
+    const { delta, reason } = req.body;
+
+    // Published on the request before the write, so the audit middleware picks
+    // it up along with the actor.
+    setReason(reason);
+
+    // Conditional update, the same shape as the sale's decrement: a negative
+    // adjustment that would take stock below zero matches no rows instead of
+    // reaching the database CHECK and surfacing as a 500. Two operators writing
+    // off the same last unit cannot both succeed.
+    const { count } = await prisma.batch.updateMany({
+      where: {
+        id: req.params.id,
+        ...(delta < 0 && { quantity: { gte: -delta } }),
+      },
+      data: { quantity: { increment: delta } },
+    });
+
+    if (count === 0) {
+      const batch = await prisma.batch.findUnique({
+        where: { id: req.params.id },
+        select: { quantity: true, batchNumber: true },
+      });
+      if (!batch) {
+        return res
+          .status(404)
+          .json({ success: false, message: "Batch not found" });
+      }
+      return res.status(400).json({
+        success: false,
+        message: `Cannot remove ${-delta} from batch ${batch.batchNumber}: only ${batch.quantity} in stock. Stock cannot go negative.`,
+      });
+    }
+
+    const batch = await prisma.batch.findUnique({
+      where: { id: req.params.id },
+      include: { medicine: { select: { name: true, unit: true } } },
+    });
+
+    res.json({
+      success: true,
+      message: `Stock adjusted by ${delta > 0 ? "+" : ""}${delta}. Recorded against ${req.user.email}.`,
+      data: batch,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+module.exports = { getAll, getExpiring, getLowStock, create, update, adjust };

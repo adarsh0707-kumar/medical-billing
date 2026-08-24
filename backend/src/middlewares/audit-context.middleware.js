@@ -17,6 +17,8 @@ const auditContextMiddleware = (req, res, next) => {
       // Ties an audit row to the log lines for the same request. pino-http sets
       // this header before any route runs.
       requestId: res.getHeader("X-Request-Id") ?? null,
+      // Filled in by any handler that has something to say; see setReason.
+      reason: null,
     },
     next,
   );

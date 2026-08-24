@@ -10,6 +10,7 @@ const {
   medicineSchema,
   batchSchema,
   batchUpdateSchema,
+  batchAdjustSchema,
   supplierSchema,
   medicineListQuerySchema,
   medicineSearchQuerySchema,
@@ -115,6 +116,15 @@ router.put(
   authorize("ADMIN", "PHARMACIST"),
   validate(batchUpdateSchema),
   batchCtrl.update,
+);
+// FR-BATCH-11. Its own verb and its own schema, deliberately — `quantity` stays
+// rejected by the update above (G-05), so stock never moves through a general
+// edit. ADMIN and PHARMACIST: the people who handle physical stock.
+router.post(
+  "/batches/:id/adjust",
+  authorize("ADMIN", "PHARMACIST"),
+  validate(batchAdjustSchema),
+  batchCtrl.adjust,
 );
 
 // ─── Suppliers ────────────────────────────────────────

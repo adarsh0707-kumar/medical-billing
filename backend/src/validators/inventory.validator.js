@@ -67,6 +67,33 @@ const batchSchema = z
 //
 // .strict() so an unrecognised field is a 400 rather than a silent no-op, which
 // is the failure mode that hid the mfgDate bug.
+// FR-BATCH-11. Deliberately a separate schema from batchUpdateSchema, which
+// still rejects `quantity` outright (G-05) — stock does not move through a
+// general-purpose edit.
+//
+// A **delta**, not a new absolute quantity. "Set it to 47" reads more naturally
+// but loses a race that a shop actually hits: if a sale commits between the
+// operator reading the screen and pressing save, an absolute write silently
+// erases that sale's deduction. A delta composes with a concurrent decrement
+// instead of clobbering it.
+const batchAdjustSchema = z
+  .object({
+    delta: z
+      .number({ invalid_type_error: "delta must be a number" })
+      .int("delta must be a whole number of units")
+      .refine((n) => n !== 0, "delta must not be zero"),
+    // Mandatory, and long enough to be a sentence rather than a keystroke. An
+    // adjustment without a reason is the untracked stock rewrite this endpoint
+    // exists to replace — "40 became 37" is not an audit trail when breakage,
+    // theft and a miscount all look identical.
+    reason: z
+      .string()
+      .trim()
+      .min(10, "Give a reason — what happened to this stock, in a sentence")
+      .max(500),
+  })
+  .strict();
+
 const batchUpdateSchema = z
   .object({
     batchNumber: z.string().min(1, "Batch number is required").optional(),
@@ -151,6 +178,7 @@ module.exports = {
   medicineSchema,
   batchSchema,
   batchUpdateSchema,
+  batchAdjustSchema,
   supplierSchema,
   medicineListQuerySchema,
   medicineSearchQuerySchema,
