@@ -15,13 +15,10 @@ erDiagram
     Manufacturer ||--o{ Medicine : "produces"
     Medicine ||--o{ Batch : "stocked as"
     Supplier ||--o{ Batch : "supplied"
-    Supplier ||--o{ Purchase : "sells to us"
     Customer ||--o{ Invoice : "billed on"
     Invoice ||--|{ InvoiceItem : "contains"
     Invoice ||--o| Prescription : "dispensed against"
     Batch ||--o{ InvoiceItem : "sold from"
-    Purchase ||--|{ PurchaseItem : "contains"
-    Batch ||--o{ PurchaseItem : "received into"
 
     User {
         string id PK
@@ -104,19 +101,6 @@ erDiagram
         decimal discount
         decimal gstPercent
         decimal totalPrice
-    }
-    Purchase {
-        string id PK
-        string purchaseNumber UK
-        string supplierId FK
-        decimal totalAmount
-    }
-    PurchaseItem {
-        string id PK
-        string purchaseId FK
-        string batchId FK
-        int quantity
-        decimal costPrice
     }
     RefreshToken {
         string id PK
@@ -259,7 +243,7 @@ Relations: `medicine`, `supplier`, `invoiceItems`, `purchaseItems`.
 | `address`     | String?  | optional                              |
 | `createdAt`   | DateTime | auto                                  |
 
-Relations: `batches Batch[]`, `purchases Purchase[]`. Hard delete; fails with an FK error once any batch references the supplier.
+Relations: `batches Batch[]`. Hard delete; fails with an FK error once any batch references the supplier.
 
 ### 3.7 `Customer`
 
@@ -407,28 +391,13 @@ The POS search fires on every keystroke, and the dashboard reads batches on ever
 
 The honest mitigation for T-9 is **restricting who can read customer history** ([07 §3](./07-security.md#3-authorisation)), not recording that everyone did. Revisit if staff numbers grow past the point where "everyone here can see everything" stops being an accurate description of the shop.
 
-### 3.13 `Purchase` / `PurchaseItem` — 🟡 modelled, unreachable
+### 3.13 `Purchase` / `PurchaseItem` — removed
 
-| `Purchase`             | Type          | Notes                  |
-| ------------------------ | ------------- | ---------------------- |
-| `id`                   | String        | PK                     |
-| `purchaseNumber`       | String        | unique,`POyymm-nnnn` |
-| `supplierId`           | String        | FK → Supplier         |
-| `date` / `createdAt` | DateTime      |                        |
-| `totalAmount`          | Decimal(12,2) |                        |
-| `notes`                | String?       |                        |
+Both tables existed from the initial migration and never acquired a write path: no controller, no route, no validator, no UI. `generatePurchaseNumber()` was written and never called. The only code that referenced them made `GET /api/inventory/suppliers/:id` return a `purchases` array that was always empty — a false claim rather than a true one about a supplier with no history.
 
-| `PurchaseItem` | Type           |
-| ---------------- | -------------- |
-| `id`           | String PK      |
-| `purchaseId`   | FK → Purchase |
-| `batchId`      | FK → Batch    |
-| `quantity`     | Int            |
-| `costPrice`    | Decimal(12,2)  |
+**Decided 2026-08-24 (PRD Q7): the schema was deleted, not built.** The control it looked like it would provide already existed — `Batch` carries `supplierId` and `purchasePrice`, and the audit log records who created it, so stock already has a traceable cause and a cost. What Phase 10 would add on top is purchase-level grouping, supplier payables and margin reporting: features nobody asked for in the four months since 1.0.0. The design survives in git history and in this document, so procurement can be built later against real requirements rather than an April 2026 guess.
 
-No route, controller, validator or UI touches these tables. `generatePurchaseNumber()` in `invoice.utils.js` is written but never called. `GET /api/inventory/suppliers/:id` includes a `purchases` array that is always empty. Decision needed — see [PRD Q7](./01-product-requirements.md#14-open-questions).
-
----
+Dropped in migration `20260824111521_drop_purchases`, verified empty (0 rows in both) beforehand.
 
 ## 4. Indexes and constraints
 
@@ -503,6 +472,7 @@ These must hold at all times. Any new write path must preserve them.
 | `20260822154410_add_audit_log`            | 2026-08-22 | Adds the`AuditLog` table — attribution for every write to master data (NFR-17, threat T-12). See §3.11                                                     |
 | `20260824032314_add_customer_anonymised_at` | 2026-08-24 | Adds`Customer.anonymisedAt` and its index — the erasure and retention path (PRD Q6). See §8                                                               |
 | `20260824105655_add_prescription`           | 2026-08-24 | Adds the`Prescription` table — the Schedule H register (FR-MED-12, PRD Q4). See §3.11                                                                     |
+| `20260824111521_drop_purchases`      | 2026-08-24 | **Drops** `Purchase` and `PurchaseItem` — modelled in the initial migration, never given a write path (PRD Q7). Verified empty first |
 
 All eight are applied — confirmed against `_prisma_migrations` on 2026-08-22. Two of them contain SQL that exists **only** in migration history and cannot be reproduced from `schema.prisma`; see the note in §4 before rebuilding a database with `db push`.
 

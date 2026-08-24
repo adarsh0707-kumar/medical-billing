@@ -13,8 +13,6 @@ const TABLES = [
   "Prescription",
   "InvoiceItem",
   "Invoice",
-  "PurchaseItem",
-  "Purchase",
   "Batch",
   "Medicine",
   "Category",
