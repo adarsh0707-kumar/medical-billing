@@ -46,9 +46,20 @@ const createInvoice = async (req, res, next) => {
       notes,
     } = req.body;
 
-    // Step 1 — Verify stock availability for all items.
+    // A medicine is good *through* the date printed on it, so a batch expiring
+    // today still sells and one that expired yesterday does not. Local midnight,
+    // not UTC and not `now()`: the store's day is what a shopkeeper means by
+    // "today", and comparing against the current instant would make a batch
+    // stop being sellable partway through its own last day.
+    //
+    // Derived once, from an immutable source. The daily summary draws its
+    // boundaries the same way.
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+
+    // Step 1 — Verify stock availability and expiry for all items.
     // Advisory only: it fails fast with a friendly message before any work is
-    // done, but the authoritative check is the guarded decrement in Step 3.
+    // done, but the authoritative checks are the guarded decrement in Step 3.
     for (const item of items) {
       const batch = await prisma.batch.findUnique({
         where: { id: item.batchId },
@@ -57,6 +68,15 @@ const createInvoice = async (req, res, next) => {
         return res.status(404).json({
           success: false,
           message: `Batch not found for ${item.medicineName}`,
+        });
+      }
+      if (batch.expiryDate < startOfToday) {
+        // No role can override this, deliberately — see FR-BATCH-09. Selling
+        // expired medicine is not a permission an administrator should hold;
+        // taking it off the shelf is a write-off (FR-BATCH-11), not a sale.
+        return res.status(400).json({
+          success: false,
+          message: `${item.medicineName} (batch ${batch.batchNumber}) expired on ${batch.expiryDate.toISOString().slice(0, 10)} and cannot be sold. Remove it from stock.`,
         });
       }
       if (batch.quantity < item.quantity) {
@@ -175,19 +195,38 @@ const createInvoice = async (req, res, next) => {
           // rows and rolls the whole invoice back.
           for (const item of items) {
             const { count } = await tx.batch.updateMany({
-              where: { id: item.batchId, quantity: { gte: item.quantity } },
+              where: {
+                id: item.batchId,
+                quantity: { gte: item.quantity },
+                // Expiry joins the same atomic statement as the quantity guard,
+                // for the reason G-09 gives about stock: a check made before the
+                // transaction is a statement about the past. A batch can expire
+                // between the cart being built and the sale committing — over a
+                // midnight, or on a till left open — and the only check that
+                // cannot be overtaken is the one in the write itself
+                // (FR-BATCH-09).
+                expiryDate: { gte: startOfToday },
+              },
               data: { quantity: { decrement: item.quantity } },
             });
 
             if (count === 0) {
+              // Zero rows means one of three things. Re-read to say which,
+              // because "insufficient stock" and "this is expired" send the
+              // operator to completely different actions.
               const batch = await tx.batch.findUnique({
                 where: { id: item.batchId },
-                select: { quantity: true },
+                select: { quantity: true, expiryDate: true, batchNumber: true },
               });
               if (!batch) {
                 throw new StockConflictError(
                   `Batch not found for ${item.medicineName}`,
                   404,
+                );
+              }
+              if (batch.expiryDate < startOfToday) {
+                throw new StockConflictError(
+                  `${item.medicineName} (batch ${batch.batchNumber}) expired on ${batch.expiryDate.toISOString().slice(0, 10)} and cannot be sold. Remove it from stock.`,
                 );
               }
               throw new StockConflictError(

@@ -120,13 +120,23 @@ export async function makeBatch({
 }
 
 // A medicine with one batch in stock — the usual starting point for a sale.
-export async function makeSellable({ gstPercent = 12, sellingPrice = 24.5, quantity = 100 } = {}) {
+export async function makeSellable({
+  gstPercent = 12,
+  sellingPrice = 24.5,
+  quantity = 100,
+  // Lets a test put a batch either side of the expiry boundary. Defaults to
+  // makeBatch's far-future date, so every existing caller is unaffected.
+  expiryDate,
+  batchNumber,
+} = {}) {
   const { medicine, category, manufacturer, supplier } = await makeMedicine({ gstPercent });
   const batch = await makeBatch({
     medicineId: medicine.id,
     supplierId: supplier.id,
     sellingPrice,
     quantity,
+    ...(expiryDate && { expiryDate }),
+    ...(batchNumber && { batchNumber }),
   });
   return { medicine, batch, category, manufacturer, supplier };
 }

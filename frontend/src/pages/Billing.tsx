@@ -349,6 +349,15 @@ export default function Billing() {
       toast.error(`${med.name} has no stock available!`);
       return;
     }
+    // The API refuses this outright and no role can override it, so stopping
+    // here saves the cashier building a cart that cannot be sold. The server is
+    // still the boundary — this is a courtesy, not the control.
+    if (isExpired(med.expiryDate)) {
+      toast.error(
+        `${med.name} expired on ${new Date(med.expiryDate).toLocaleDateString("en-IN")} and cannot be sold. Remove it from stock.`,
+      );
+      return;
+    }
     if (med.isScheduledH) {
       toast.warning(
         `${med.name} is a Schedule H drug — prescription required!`,
@@ -472,6 +481,19 @@ export default function Billing() {
     return diff <= 30;
   };
 
+  // Mirrors the server rule (FR-BATCH-09): a medicine is good *through* the date
+  // printed on it, so a batch expiring today still sells and one that expired
+  // yesterday does not. Compared against local midnight, exactly as
+  // billing.controller.js does — a stricter client would refuse sales the API
+  // would happily take, and a looser one would let the cashier build a cart that
+  // fails on submit.
+  const isExpired = (date: string) => {
+    if (!date) return false;
+    const startOfToday = new Date(nowMs);
+    startOfToday.setHours(0, 0, 0, 0);
+    return new Date(date).getTime() < startOfToday.getTime();
+  };
+
   // ─── Render ───────────────────────────────────────────
   return (
     <div className="flex gap-4 h-[calc(130vh-112px)]">
@@ -525,11 +547,21 @@ export default function Billing() {
                             Sch-H
                           </Badge>
                         )}
-                        {med.expiryDate && isExpiringSoon(med.expiryDate) && (
-                          <Badge className="text-xs px-1.5 py-0 bg-yellow-600">
-                            Expiring Soon
+                        {med.expiryDate && isExpired(med.expiryDate) && (
+                          <Badge
+                            variant="destructive"
+                            className="text-xs px-1.5 py-0"
+                          >
+                            Expired
                           </Badge>
                         )}
+                        {med.expiryDate &&
+                          !isExpired(med.expiryDate) &&
+                          isExpiringSoon(med.expiryDate) && (
+                            <Badge className="text-xs px-1.5 py-0 bg-yellow-600">
+                              Expiring Soon
+                            </Badge>
+                          )}
                         {!med.batchId && (
                           <Badge className="text-xs px-1.5 py-0 bg-slate-600 text-slate-400">
                             No Stock
