@@ -31,6 +31,10 @@ router.get(
 router.get("/customers/:id", customerCtrl.getOne);
 router.post("/customers", validate(customerSchema), customerCtrl.create);
 router.put("/customers/:id", validate(customerSchema), customerCtrl.update);
+// Erasure, not deletion — the row survives because invoices reference it and are
+// tax records. ADMIN only: this is irreversible and removes data the shop may be
+// obliged to have had. See docs/07 section 8.
+router.delete("/customers/:id", authorize("ADMIN"), customerCtrl.erase);
 
 // ─── Invoices ─────────────────────────────────────────
 router.get("/invoices", validateQuery(invoiceListQuerySchema), billingCtrl.getAll);

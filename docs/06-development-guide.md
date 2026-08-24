@@ -125,6 +125,7 @@ All `.env` files are gitignored. Never commit one.
 | `npm run dev`             | nodemon on`src/index.js`                                                                                                                                            |
 | `npm start`               | plain node                                                                                                                                                            |
 | `npm run seed`            | Upsert the admin user                                                                                                                                                 |
+| `npm run purge:customers` | Retention sweep — reports what it would erase. Add`-- --apply` to do it. Never runs itself; see [§ Customer retention](#customer-retention)                       |
 | `npm run prisma:generate` | Regenerate the Prisma client (after any schema edit)                                                                                                                  |
 | `npm run prisma:migrate`  | `prisma migrate dev` — author and apply a migration                                                                                                                |
 | `npm run prisma:studio`   | Database browser on :5555                                                                                                                                             |
@@ -349,6 +350,26 @@ Then open `https://localhost`. The seeded admin can sign in and do exactly one t
 `/health` is liveness — is the process up? It is deliberately cheap and touches nothing, so a database outage cannot cause an orchestrator to kill an otherwise healthy process and turn an incident into a restart loop.
 
 `/health/ready` is readiness — can it actually serve? It runs `SELECT 1` and returns **503** with the reason when the database is unreachable. That is what a load balancer needs in order to route around an instance.
+
+### Customer retention
+
+Customer details are erased after 36 months without a purchase; invoices are untouched and keep 8 years as books of account ([03 §8](./03-data-model.md#8-data-lifecycle--retention)).
+
+```bash
+# What would be erased — changes nothing.
+docker compose -f docker-compose.prod.yml --env-file .env.prod exec backend npm run purge:customers
+
+# Actually erase.
+docker compose -f docker-compose.prod.yml --env-file .env.prod exec backend npm run purge:customers -- --apply
+```
+
+**Nothing runs it for you.** There is no background worker in this stack by design, so schedule it — a nightly entry in the host's crontab is enough:
+
+```cron
+15 2 * * *  cd /srv/medical-billing && docker compose -f docker-compose.prod.yml --env-file .env.prod exec -T backend npm run purge:customers -- --apply >> /var/log/medbill-retention.log 2>&1
+```
+
+Override the window with `CUSTOMER_RETENTION_MONTHS` if the shop's policy differs. The dry run is the default precisely because a purge cannot be undone.
 
 ### Backups
 

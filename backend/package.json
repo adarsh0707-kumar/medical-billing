@@ -14,7 +14,8 @@
     "seed": "node src/utils/seed.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "prisma:studio": "prisma studio"
+    "prisma:studio": "prisma studio",
+    "purge:customers": "node src/utils/retention.js"
   },
   "dependencies": {
     "@prisma/client": "^5.10.0",

@@ -73,6 +73,8 @@ The 500 row matters to clients. Token verification and the user reload are check
 | Create / update categories, manufacturers, medicines, batches, suppliers |  ✅  |     ✅     |        |
 | Delete categories, manufacturers, medicines, suppliers                   |  ✅  |            |        |
 | Read customers, create / update customers                                |  ✅  |     ✅     |   ✅   |
+| Read a customer's**purchase history**                              |  ✅  |     ✅     |        |
+| Erase a customer's personal data                                         |  ✅  |            |        |
 | Read invoices, create invoices, daily summary, sales trend               |  ✅  |     ✅     |   ✅   |
 | Dashboard stats                                                          |  ✅  |     ✅     |   ✅   |
 | Void an invoice                                                          |  ✅  |            |        |
@@ -573,7 +575,9 @@ All routes require authentication.
 
 #### `GET /api/billing/customers/:id` — any role
 
-The customer plus their 10 most recent invoices (`id, invoiceNumber, date, totalAmount, paymentMode, paymentStatus`). **404** `Customer not found`.
+The customer, plus their 10 most recent invoices (`id, invoiceNumber, date, totalAmount, paymentMode, paymentStatus`). **404** `Customer not found`.
+
+> **`invoices` is returned only to ADMIN and PHARMACIST.** For a CASHIER the key is **absent** — not an empty array, which would assert the customer had never bought anything. Purchase history in a pharmacy reveals health conditions, and a cashier needs to bill someone, not to browse what they have been treated for (threat T-9). Customer lookup, search and billing are unaffected.
 
 #### `POST /api/billing/customers` — any role
 
@@ -595,7 +599,20 @@ The customer plus their 10 most recent invoices (`id, invoiceNumber, date, total
 
 Same schema. Sends all fields; omitted optional fields are written as `null`.
 
-There is **no delete endpoint** for customers.
+#### `DELETE /api/billing/customers/:id` — ADMIN
+
+**Erasure, not deletion.** The row survives — `Invoice.customerId` is a foreign key and invoices are append-only tax records — but `name`, `phone`, `email`, `address`, `age` and `gender` are blanked and `anonymisedAt` is stamped. Every invoice keeps its number, date and totals, so a GST return filed against them still reconciles.
+
+It also **redacts that customer's audit-log entries**, replacing the before/after payloads with a marker while keeping the attribution. Erasing the customer and leaving a full copy in the audit trail would not be an erasure.
+
+| Outcome | Status |
+|---|---|
+| Erased | `200` |
+| Already erased | `200`, with the date it happened. Idempotent, and re-running repairs a half-finished erasure |
+| No such customer | `404` |
+| Caller is not an ADMIN | `403` |
+
+Bulk retention is a separate, operator-run job rather than an endpoint — `npm run purge:customers` — described in [03 §8](./03-data-model.md#8-data-lifecycle--retention).
 
 ### 9.2 Invoices — `/api/billing/invoices`
 

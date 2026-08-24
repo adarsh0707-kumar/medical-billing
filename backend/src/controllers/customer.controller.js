@@ -1,4 +1,5 @@
 const prisma = require("../config/db");
+const { eraseCustomer } = require("../utils/erase-customer");
 
 const getAll = async (req, res, next) => {
   try {
@@ -38,30 +39,50 @@ const getAll = async (req, res, next) => {
   }
 };
 
+// Purchase history in a pharmacy reveals health conditions, so who may read it
+// is a real decision rather than a default (threat T-9, docs/07 section 3).
+//
+// A cashier needs to find a customer and attach them to a sale — name, phone,
+// contact details — and the POS is unaffected by this. A cashier does not need
+// to browse what somebody has been buying, and until now every role could, with
+// nothing recording that they had.
+//
+// One line to reverse if the shop decides otherwise; see docs/07 section 3.
+const HISTORY_ROLES = ["ADMIN", "PHARMACIST"];
+
 const getOne = async (req, res, next) => {
   try {
+    const mayReadHistory = HISTORY_ROLES.includes(req.user.role);
+
     const customer = await prisma.customer.findUnique({
       where: { id: req.params.id },
       include: {
-        invoices: {
-          orderBy: { date: "desc" },
-          take: 10,
-          select: {
-            id: true,
-            invoiceNumber: true,
-            date: true,
-            totalAmount: true,
-            paymentMode: true,
-            paymentStatus: true,
-          },
-        },
+        invoices: mayReadHistory
+          ? {
+              orderBy: { date: "desc" },
+              take: 10,
+              select: {
+                id: true,
+                invoiceNumber: true,
+                date: true,
+                totalAmount: true,
+                paymentMode: true,
+                paymentStatus: true,
+              },
+            }
+          : false,
       },
     });
     if (!customer)
       return res
         .status(404)
         .json({ success: false, message: "Customer not found" });
-    res.json({ success: true, data: customer });
+    // Absent rather than empty: an empty array would read as "this customer has
+    // never bought anything", which is a different and false statement.
+    res.json({
+      success: true,
+      data: mayReadHistory ? customer : { ...customer, invoices: undefined },
+    });
   } catch (err) {
     next(err);
   }
@@ -108,4 +129,33 @@ const update = async (req, res, next) => {
   }
 };
 
-module.exports = { getAll, getOne, create, update };
+// ─── Erase (right to erasure) ──────────────────────────
+// Not a delete: invoices reference this row and are append-only tax records, so
+// the personal fields are blanked in place instead (PRD Q6). ADMIN only.
+const erase = async (req, res, next) => {
+  try {
+    const result = await eraseCustomer(req.params.id);
+
+    if (!result.found) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Customer not found" });
+    }
+    if (result.alreadyErased) {
+      return res.json({
+        success: true,
+        message: `This customer's details were already erased on ${result.at.toISOString().slice(0, 10)}.`,
+      });
+    }
+
+    res.json({
+      success: true,
+      message:
+        "Customer details erased. Their invoices are unchanged — they remain tax records and still reconcile.",
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+module.exports = { getAll, getOne, create, update, erase };
