@@ -176,8 +176,17 @@ model Customer {
   age       Int?
   gender    Gender?
   createdAt DateTime  @default(now())
+  /// Set when the personal fields above have been blanked, either on request or
+  /// by the retention purge. The row itself stays: invoices are append-only and
+  /// reference it, and a tax document must not lose its counterparty. So erasure
+  /// here means the person is no longer identifiable, not that the sale is gone.
+  anonymisedAt DateTime?
 
   invoices  Invoice[]
+
+  /// The retention sweep looks for customers whose last invoice predates the
+  /// window, and skips anyone already done.
+  @@index([anonymisedAt])
 }
 
 enum Gender {
