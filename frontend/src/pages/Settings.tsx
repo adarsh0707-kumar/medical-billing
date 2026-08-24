@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   User,
   Lock,
@@ -427,8 +428,7 @@ function PasswordTab() {
 
 function UsersTab() {
   const { user: currentUser } = useAuthStore();
-  const [users, setUsers] = useState<AppUser[]>([]);
-  const [loading, setLoading] = useState(true);
+
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<AppUser | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -441,21 +441,22 @@ function UsersTab() {
     isActive: true,
   });
 
-  const fetchUsers = async () => {
-    setLoading(true);
-    try {
-      const res = await api.get("/api/users");
-      setUsers(res.data.data);
-    } catch {
-      toast.error("Failed to fetch users");
-    } finally {
-      setLoading(false);
-    }
-  };
+  const queryClient = useQueryClient();
 
-  useEffect(() => {
-    fetchUsers();
-  }, []);
+  const { data: users = [], isLoading: loading } = useQuery<AppUser[]>({
+    queryKey: ["users"],
+    queryFn: async ({ signal }) => {
+      const res = await api.get("/api/users", { signal });
+      return res.data.data;
+    },
+    meta: { errorMessage: "Failed to fetch users" },
+  });
+
+  // The three write handlers below used to call `fetchUsers()` directly. Asking
+  // the cache to refetch instead means any other view of the same list updates
+  // with them, rather than only this component's copy.
+  const refreshUsers = () =>
+    queryClient.invalidateQueries({ queryKey: ["users"] });
 
   const openAdd = () => {
     setEditing(null);
@@ -503,7 +504,7 @@ function UsersTab() {
         toast.success("User created!");
       }
       setShowForm(false);
-      fetchUsers();
+      refreshUsers();
     } catch (err: unknown) {
       const e = err as { response?: { data?: { message?: string } } };
       toast.error(e.response?.data?.message || "Failed to save user");
@@ -517,7 +518,7 @@ function UsersTab() {
     try {
       await api.delete(`/api/users/${u.id}`);
       toast.success("User deleted");
-      fetchUsers();
+      refreshUsers();
     } catch (err: unknown) {
       const e = err as { response?: { data?: { message?: string } } };
       toast.error(e.response?.data?.message || "Failed to delete user");
@@ -528,7 +529,7 @@ function UsersTab() {
     try {
       await api.put(`/api/users/${u.id}`, { ...u, isActive: !u.isActive });
       toast.success(u.isActive ? "User deactivated" : "User activated");
-      fetchUsers();
+      refreshUsers();
     } catch {
       toast.error("Failed to update user");
     }
