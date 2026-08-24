@@ -24,7 +24,14 @@ const getOne = async (req, res, next) => {
   try {
     const supplier = await prisma.supplier.findUnique({
       where: { id: req.params.id },
-      include: { purchases: { take: 10, orderBy: { date: "desc" } } },
+      // No `purchases` include. It returned an array that was always empty —
+      // not because this supplier had never sold us anything, but because no
+      // code path has ever written a Purchase. An empty array is a claim, and
+      // that one was false. If a goods-receipt flow is built, it comes back
+      // with something real in it.
+      include: {
+        _count: { select: { batches: true } },
+      },
     });
     if (!supplier)
       return res

@@ -23,7 +23,7 @@ timeline
         Phase 7 : Correctness & integrity
         Phase 8 : Production readiness
         Phase 9 : Test & CI foundation
-        Phase 10 : Purchases & procurement
+        Phase 10 : Purchases (cancelled)
         Phase 11 : Performance & scale
 ```
 
@@ -190,19 +190,23 @@ The honest read as of **2026-08-20**: the correctness gaps that made v1.0.0 unsa
 
 **Exit criteria:** CI green on every PR; the Phase 7 concurrency fixes are proven by failing-then-passing tests.
 
-### Phase 10 — Purchases & procurement 🟡
+### Phase 10 — Purchases & procurement ❌ *(cancelled 2026-08-24)*
 
-**Why:** the schema is already there and half-referenced by the supplier endpoint. Either build it or delete it.
+**The schema was deleted rather than built out** (PRD Q7, [G-13](./08-gap-analysis.md#g-13)). `Purchase` and `PurchaseItem` had existed since the initial migration with no controller, route, validator or UI, and `generatePurchaseNumber()` was written and never called.
 
-| #    | Work                                                                                 |
+The deciding argument: the traceability this phase looked like it would provide already exists. `Batch` carries `supplierId` and `purchasePrice`, and since 2026-08-22 the audit log records who created it — so stock already has a recorded cause and a cost. What Phase 10 would have added on top is purchase-level grouping of a delivery, supplier payables, and the margin report (FR-RPT-08): useful features, but nobody asked for them in the four months after 1.0.0, and a modelled-but-unbuilt table is not a head start. It is a thing that misleads every reader of the schema and makes an endpoint return an empty array that is not true.
+
+What it would take to build it properly, recorded so a future decision starts from something:
+
+| # | Work |
 | ---- | ------------------------------------------------------------------------------------ |
-| 10.1 | `purchase.controller.js` + routes; wire up `generatePurchaseNumber()`            |
-| 10.2 | Goods receipt: a purchase line creates or tops up a`Batch` in one transaction      |
-| 10.3 | Purchases UI under Inventory; supplier detail shows real purchase history            |
-| 10.4 | Supplier payables: purchase totals vs payments                                       |
-| 10.5 | Purchase vs sales margin report (`purchasePrice` vs `sellingPrice`) — FR-RPT-08 |
+| 10.1 | `Purchase` / `PurchaseItem` models and a migration, then a controller and routes |
+| 10.2 | Goods receipt: a purchase line creates or tops up a `Batch` in one transaction |
+| 10.3 | `generatePurchaseNumber()` on the `InvoiceCounter` pattern — the old count-based version was a read-then-write race, exactly the one [G-01](./08-gap-analysis.md#g-01) took two attempts to fix |
+| 10.4 | Purchases UI under Inventory; real supplier history on `GET /suppliers/:id` |
+| 10.5 | Supplier payables, and the purchase-vs-sales margin report (FR-RPT-08) |
 
-**Exit criteria:** stock enters the system only through a recorded purchase, and `GET /api/inventory/suppliers/:id` returns real history.
+**Exit criterion, if it is ever revived:** stock enters the system only through a recorded purchase.
 
 ### Phase 11 — Performance & scale ✅ *(delivered 2026-08-20, except 11.2)*
 
@@ -246,7 +250,7 @@ Semantic versioning, per `CHANGELOG.md`.
 | **1.1.0** | Phase 7                          | Concurrency and money-precision proofs pass                                             |
 | **1.2.0** | Phase 8                          | HTTPS, no default credentials, rehearsed restore                                        |
 | **1.3.0** | Phase 9                          | CI green, critical-path coverage                                                        |
-| **1.4.0** | Phase 10                         | Purchase → batch flow live                                                             |
+| ~~**1.4.0**~~ | ~~Phase 10~~                 | **Cancelled 2026-08-24** — the schema was dropped rather than built (PRD Q7)     |
 | **2.0.0** | Phase 11 + breaking API cleanups | Any route re-grouping (e.g. moving customers out of`/api/billing`) is a major version |
 
 > Moving customers to `/api/customers`, suppliers to `/api/suppliers` and medicines to `/api/medicines` would make the API match every reader's expectation — but it breaks clients. Bundle it into 2.0.0 rather than dribbling it out.

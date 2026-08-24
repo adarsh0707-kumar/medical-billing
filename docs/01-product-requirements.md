@@ -233,9 +233,9 @@ Status legend: `✅` implemented · `🟡` partial · `⬜` planned. "Roles" is 
 
 | ID        | Requirement                                           | Roles             | Status                                                                                                                |
 | --------- | ----------------------------------------------------- | ----------------- | --------------------------------------------------------------------------------------------------------------------- |
-| FR-PUR-01 | Record a purchase from a supplier with line items     | ADMIN, PHARMACIST | 🟡`Purchase` + `PurchaseItem` tables and `generatePurchaseNumber()` exist; **no route, controller or UI** |
-| FR-PUR-02 | Goods receipt creates the stock batches automatically | —                | ⬜                                                                                                                    |
-| FR-PUR-03 | Supplier payable / outstanding tracking               | ADMIN             | ⬜                                                                                                                    |
+| ~~FR-PUR-01~~ | ~~Record a purchase from a supplier with line items~~ | — | **Removed 2026-08-24.** The tables and `generatePurchaseNumber()` were dropped rather than built out; see Q7 |
+| ~~FR-PUR-02~~ | ~~Goods receipt creates the stock batches automatically~~ | — | Not built. Stock enters through `POST /api/inventory/batches`, which records supplier and cost per batch |
+| ~~FR-PUR-03~~ | ~~Supplier payable / outstanding tracking~~ | — | Not built, and no longer modelled |
 
 ---
 
@@ -404,4 +404,4 @@ A **cancelled invoice stays in the month it was issued in**, and the credit note
 | ~~Q4~~ | ~~What must a prescription record contain for Schedule H sales?~~ **Answered 2026-08-24:** prescriber name, council registration number, prescription date and patient name — the particulars Rule 65(11) asks for that the invoice does not already carry. One record per invoice. **No image**: the rules permit a register in lieu of the paper, this stack has no file storage, and a scan would be a second copy of patient data with its own retention obligations | FR-MED-12 |
 | Q5 | How many concurrent billing counters must be supported?                                                | Invoice numbering rewrite ([G-01](./08-gap-analysis.md#g-01)) |
 | ~~Q6~~ | ~~What is the data retention period for customer records?~~ **Answered 2026-08-24:** customer details are erased after 36 months without a purchase; invoices keep 8 years as books of account. Erasure anonymises the row rather than deleting it, because invoices reference it. Cashiers no longer see purchase history. The purge is an operator-run command, not a scheduled job | Privacy posture |
-| Q7 | Is the Purchases module in the next release, or is the schema to be dropped?                           | FR-PUR, schema cleanliness                                   |
+| ~~Q7~~ | ~~Is the Purchases module in the next release, or is the schema to be dropped?~~ **Answered 2026-08-24: dropped.** The control it looked like it would provide already existed — `Batch` carries `supplierId` and `purchasePrice`, and the audit log records who created it, so stock already has a traceable cause and a cost. What Phase 10 would add on top is purchase-level grouping, supplier payables and margin reporting: features nobody asked for in the four months since 1.0.0. The design survives in git history and in this document, so procurement can be built later against real requirements rather than an April 2026 guess. | FR-PUR |

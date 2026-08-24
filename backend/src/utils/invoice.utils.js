@@ -66,20 +66,6 @@ const generateCreditNoteNumber = async (client = prisma, now = new Date()) => {
   return `CRN${dayKey(now)}-${String(seq).padStart(4, "0")}`;
 };
 
-// POyymm-nnnn. Still count-based: no purchase write path exists yet, so there
-// is nothing to race. Give it the same counter treatment when one is built.
-const generatePurchaseNumber = async (client = prisma, now = new Date()) => {
-  const prefix = `PO${String(now.getFullYear()).slice(-2)}${twoDigit(
-    now.getMonth() + 1,
-  )}`;
-
-  const count = await client.purchase.count({
-    where: { createdAt: { gte: startOfMonth(now) } },
-  });
-
-  return `${prefix}-${String(count + 1).padStart(4, "0")}`;
-};
-
 // True when a write lost the race for a document number to a transaction that
 // committed first. The counter makes this unreachable in normal operation; it
 // stays as the backstop for numbers created before the counter existed.
@@ -89,6 +75,5 @@ const isDuplicateNumber = (err, field) =>
 module.exports = {
   generateInvoiceNumber,
   generateCreditNoteNumber,
-  generatePurchaseNumber,
   isDuplicateNumber,
 };

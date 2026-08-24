@@ -543,7 +543,9 @@ Accepts only `batchNumber`, `expiryDate`, `purchasePrice` and `sellingPrice`, al
 
 `name` is required (≥ 2 chars); everything else is optional. `email` must be a valid address **or** an empty string.
 
-`GET /:id` includes the 10 most recent `purchases` — always an empty array, because no purchase-creation path exists. **404** `Supplier not found`.
+`GET /:id` returns the supplier with `_count.batches` — how many stock batches have been received from them. **404** `Supplier not found`.
+
+> It used to include a `purchases` array that was always empty, because nothing could ever write one. The tables were dropped on 2026-08-24 ([PRD Q7](./01-product-requirements.md#14-open-questions)).
 
 Deleting a supplier that still has batches returns **409** `This record is still in use by other data and cannot be deleted.` ([G-12](./08-gap-analysis.md#g-12)). Suppliers are hard-deleted, and batches reference them permanently, so in practice a supplier you have ever received stock from cannot be removed.
 
