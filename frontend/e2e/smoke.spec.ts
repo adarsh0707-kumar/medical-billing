@@ -17,7 +17,22 @@ import { test, expect, type APIRequestContext, type Page } from "@playwright/tes
  * the error, reading the report, and what a cashier is shown.
  */
 
-const ADMIN = { email: "admin@medstore.com", password: "admin123" };
+const ADMIN_EMAIL = "admin@medstore.com";
+
+/**
+ * The seed creates this account with `mustChangePassword: true` — the published
+ * credential can sign in and do exactly one thing, replace itself. So the suite
+ * has to complete that change before any flow can reach a screen; without it
+ * every `signIn` lands on `/change-password` and every test fails.
+ *
+ * Not in the blocklist, over the 12-character floor, and free of the account's
+ * own name and address, all of which `passwordProblem` enforces.
+ */
+const SEEDED_PASSWORD = "admin123";
+const ADMIN_PASSWORD =
+  process.env.E2E_ADMIN_PASSWORD ?? "Kaveri counter till 2026";
+
+const ADMIN = { email: ADMIN_EMAIL, password: ADMIN_PASSWORD };
 
 // Random first: Date.now() in base 36 shares its leading characters across runs
 // in the same window, and the POS search returns only ten hits — a fixture whose
@@ -25,10 +40,51 @@ const ADMIN = { email: "admin@medstore.com", password: "admin123" };
 const unique = () =>
   Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
 
-async function apiLogin(request: APIRequestContext, creds = ADMIN) {
+async function tryLogin(
+  request: APIRequestContext,
+  creds: { email: string; password: string },
+) {
   const res = await request.post("/api/auth/login", { data: creds });
-  expect(res.ok(), "seed admin must exist — run `npm run seed`").toBeTruthy();
-  return (await res.json()).data.token as string;
+  return res.ok() ? ((await res.json()).data as { token: string }) : null;
+}
+
+/**
+ * An admin token, bootstrapping the forced password change on a fresh database.
+ *
+ * Idempotent on purpose: the first run finds the seeded credential and replaces
+ * it, every later run finds the replacement already in place. A retry against a
+ * database the previous attempt already changed must not fail.
+ */
+async function apiLogin(request: APIRequestContext, creds = ADMIN) {
+  const direct = await tryLogin(request, creds);
+  if (direct) return direct.token;
+
+  // Only the admin has a seeded credential to fall back to.
+  expect(
+    creds.email,
+    `${creds.email} could not sign in`,
+  ).toBe(ADMIN_EMAIL);
+
+  const seeded = await tryLogin(request, {
+    email: ADMIN_EMAIL,
+    password: SEEDED_PASSWORD,
+  });
+  expect(seeded, "seed admin must exist — run `npm run seed`").toBeTruthy();
+
+  const changed = await request.put("/api/auth/change-password", {
+    headers: { Authorization: `Bearer ${seeded!.token}` },
+    data: {
+      currentPassword: SEEDED_PASSWORD,
+      newPassword: ADMIN_PASSWORD,
+    },
+  });
+  expect(changed.ok(), await changed.text()).toBeTruthy();
+
+  // Changing a password bumps `tokenVersion`, which retires the token that made
+  // the change — so the one to carry forward comes from a fresh sign-in.
+  const fresh = await tryLogin(request, ADMIN);
+  expect(fresh, "the new admin password should work immediately").toBeTruthy();
+  return fresh!.token;
 }
 
 /** Creates a sellable medicine with a known stock level, over the API. */
@@ -88,11 +144,26 @@ async function batchStock(
 }
 
 async function signIn(page: Page, creds = ADMIN) {
+  // A flow that only drives the UI still needs the forced change done first.
+  if (creds === ADMIN) await apiLogin(page.request);
+
   await page.goto("/login");
   await page.getByPlaceholder("admin@medstore.com").fill(creds.email);
   await page.getByPlaceholder("••••••••").fill(creds.password);
   await page.getByRole("button", { name: "Sign In" }).click();
+  // Naming the wrong destination explicitly: landing here means an account still
+  // carries `mustChangePassword`, which is what broke every flow in this file
+  // once before.
+  await expect(page, "signed in but was sent to the password-change screen")
+    .not.toHaveURL(/\/change-password/);
   await expect(page).toHaveURL(/\/dashboard/);
+}
+
+/** Reads a completed download off disk as text. */
+async function readDownload(download: import("@playwright/test").Download) {
+  const path = await download.path();
+  expect(path, "the download should have been written to disk").toBeTruthy();
+  return (await import("node:fs/promises")).readFile(path!, "utf8");
 }
 
 /** Searches the POS and adds the first result to the cart. */
@@ -244,4 +315,72 @@ test("a cashier sees no Settings link and is refused by /api/users", async ({
     headers: { Authorization: `Bearer ${cashierToken}` },
   });
   expect(direct.status()).toBe(403);
+});
+
+// ─── 7 ───────────────────────────────────────────────────
+
+test("the GST export downloads a CSV through the proxy, named by the server", async ({
+  page,
+  request,
+}) => {
+  const token = await apiLogin(request);
+
+  // A sale so the month has something in it — the export button is deliberately
+  // disabled on an empty report, and a header-only file is indistinguishable
+  // from a failed download once it is sitting in someone's Downloads folder.
+  const { batch, medicine } = await seedSellable(request, token, { quantity: 5 });
+  const sale = await request.post("/api/billing/invoices", {
+    headers: { Authorization: `Bearer ${token}` },
+    data: {
+      items: [
+        {
+          batchId: batch.id,
+          medicineId: medicine.id,
+          medicineName: medicine.name,
+          quantity: 1,
+          unitPrice: 24.5,
+          discount: 0,
+          gstPercent: 12,
+        },
+      ],
+      paymentMode: "CASH",
+      paymentStatus: "PAID",
+    },
+  });
+  expect(sale.ok(), await sale.text()).toBeTruthy();
+
+  await signIn(page);
+  await page.goto("/reports");
+  await page.getByRole("tab", { name: /GST Report/i }).click();
+
+  const button = page.getByRole("button", { name: /Export CSV/i });
+  await expect(button).toBeEnabled();
+
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    button.click(),
+  ]);
+
+  // The filename comes from the server's Content-Disposition, which has to
+  // survive the nginx proxy to get here. Nothing below this layer can prove it
+  // does: the unit test mocks axios, and the API test reads the header off a
+  // Supertest response that never passed through nginx.
+  const now = new Date();
+  const period = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  expect(download.suggestedFilename()).toBe(`gst-report-${period}.csv`);
+
+  const body = await readDownload(download);
+
+  // Deliberately only the header row and that rows exist. The *figures* are the
+  // server's and are asserted to the paisa in `backend/tests/reports/`; a money
+  // assertion here would be slower and no more truthful (CONTRIBUTING).
+  const lines = body.replace(/^\uFEFF/, "").trim().split("\r\n");
+  expect(lines[0]).toBe(
+    "Date,Invoice No,Type,Status,Customer,Payment Mode,Payment Status,Taxable,Discount,CGST,SGST,Total",
+  );
+  expect(lines.length).toBeGreaterThan(1);
+
+  // The BOM is what stops Excel mangling non-ASCII medicine names, and it is a
+  // byte the proxy could plausibly eat.
+  expect(body.charCodeAt(0)).toBe(0xfeff);
 });

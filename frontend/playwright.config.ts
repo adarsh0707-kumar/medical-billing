@@ -38,5 +38,34 @@ export default defineConfig({
   },
   projects: [
     { name: "chromium", use: { ...devices["Desktop Chrome"] } },
+
+    /**
+     * A second engine, deliberately scoped to one flow.
+     *
+     * Running all seven flows twice would roughly double a job that already
+     * costs about a minute just to download a browser, and it would buy almost
+     * nothing: the other six exercise our React, our proxy and our API, none of
+     * which vary by engine in ways a smoke test would catch.
+     *
+     * The CSV download is the exception, and it is the whole reason this project
+     * exists. Saving a file is the one thing in this app built on browser
+     * machinery rather than ours — a blob URL, a programmatic anchor click, and a
+     * `Content-Disposition` filename — and it is genuinely where engines differ.
+     * `lib/download.ts` carries two claims about that (Firefox will not follow a
+     * click on a detached anchor; WebKit can cancel the download if the blob URL
+     * is revoked synchronously) which were, until this project, unverified
+     * assertions in a comment.
+     *
+     * Firefox rather than WebKit: it is the second engine that can actually be
+     * installed and run on a plain Linux box without extra system libraries, so
+     * this project is verifiable by whoever is changing it and not only by CI.
+     * WebKit needs `libicu`, `libxml2` and `libflite` on the host, which makes
+     * it a browser nobody runs before pushing.
+     */
+    {
+      name: "firefox-download",
+      use: { ...devices["Desktop Firefox"] },
+      grep: /downloads a CSV through the proxy/,
+    },
   ],
 });

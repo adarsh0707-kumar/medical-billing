@@ -27,7 +27,7 @@ const get = (token, path) =>
   request(app).get(path).set("Authorization", `Bearer ${token}`);
 
 const parse = (text) => {
-  const body = text.replace(/^﻿/, "").trim().split("\r\n");
+  const body = text.replace(/^\uFEFF/, "").trim().split("\r\n");
   return { header: body[0].split(","), rows: body.slice(1) };
 };
 
