@@ -62,6 +62,23 @@ If you're picking up a `G-nn` item, reference it in your PR. If you disagree wit
 
 These are the things that have actually caused defects in this codebase. Each is cheap to avoid and expensive to miss.
 
+### Changing a schema regenerates the client's types
+
+Every request contract is a Zod schema in `backend/src/validators/`, and the
+frontend's request types are **generated** from them into
+`frontend/src/types/api.generated.ts`. Edit a schema and run:
+
+```bash
+cd backend && npm run types:generate   # then commit the result
+```
+
+`npm run types:check` runs in CI and fails if the committed file is stale, so a
+contract change that skips this turns the build red instead of turning a request
+into a 400. Do not hand-edit the generated file.
+
+It generates `z.input`, not `z.infer` — what a client *sends*, before defaults
+and coercions are applied. A field the schema defaults is optional there.
+
 ### Zod strips unknown keys
 
 `validate(schema)` replaces `req.body` with the parsed output, and `z.object()` drops anything not in the schema. A field you forget to declare doesn't error — it **silently vanishes**.

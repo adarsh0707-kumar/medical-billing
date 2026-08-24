@@ -49,6 +49,14 @@ jobs:
       - run: npm ci
       - run: npx prisma generate
 
+      # The frontend's request types are generated from these Zod schemas
+      # (NFR-22). Checked here rather than in the frontend job because the
+      # generator needs the backend's node_modules — zod and the validators —
+      # and reads the committed file out of the same checkout. A schema change
+      # that was not regenerated fails here instead of becoming a 400 at
+      # runtime.
+      - run: npm run types:check
+
       # The suite's global setup applies migrations itself; running it here too
       # keeps a schema failure separate from a test failure in the log.
       - run: npx prisma migrate deploy

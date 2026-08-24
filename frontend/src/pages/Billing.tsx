@@ -1,4 +1,5 @@
 import api from "@/lib/api";
+import type { CreateInvoiceInput } from "@/types/api.generated";
 import { calcItemTotal, calcCartTotals } from "@/lib/cart-math";
 import { toast } from "sonner";
 import { useState, useEffect, useRef } from "react";
@@ -324,7 +325,12 @@ export default function Billing() {
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [customerSearch, setCustomerSearch] = useState("");
   const [customerResults, setCustomerResults] = useState<Customer[]>([]);
-  const [paymentMode, setPaymentMode] = useState("CASH");
+  // Narrowed to the contract's four modes rather than `string`. The Select is
+  // uncontrolled as far as TypeScript is concerned — it hands back whatever
+  // string its items carry — so this is where a fifth mode would have to be
+  // added deliberately instead of arriving by typo.
+  const [paymentMode, setPaymentMode] =
+    useState<NonNullable<CreateInvoiceInput["paymentMode"]>>("CASH");
   const [extraDiscount, setExtraDiscount] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   // The Schedule H register entry (FR-MED-12). Kept beside the cart because it
@@ -521,7 +527,10 @@ export default function Billing() {
     }
     setSubmitting(true);
     try {
-      const payload = {
+      // Typed against the backend's `createInvoiceSchema` (NFR-22). A field
+      // renamed or newly required in the schema now fails `tsc` here rather than
+      // coming back as a 400 in front of a customer.
+      const payload: CreateInvoiceInput = {
         customerId: customer?.id,
         paymentMode,
         paymentStatus: "PAID",
@@ -1099,7 +1108,12 @@ export default function Billing() {
             {/* Payment Mode */}
             <div className="space-y-1.5">
               <Label className="text-slate-400 text-xs">Payment Mode</Label>
-              <Select value={paymentMode} onValueChange={setPaymentMode}>
+              <Select
+                value={paymentMode}
+                onValueChange={(v) =>
+                  setPaymentMode(v as CreateInvoiceInput["paymentMode"] & string)
+                }
+              >
                 <SelectTrigger className="bg-slate-700 border-slate-600 text-white h-9">
                   <SelectValue />
                 </SelectTrigger>

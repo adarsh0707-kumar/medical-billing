@@ -20,6 +20,11 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import api from "@/lib/api";
+import type {
+  BatchInput,
+  CategoryInput,
+  ManufacturerInput,
+} from "@/types/api.generated";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -708,7 +713,10 @@ function BatchesTab() {
     e.preventDefault();
     setSubmitting(true);
     try {
-      await api.post("/api/inventory/batches", {
+      // Typed against `batchSchema` (NFR-22). This is the payload the `mfgDate`
+      // bug lived in (G-04): the field is optional in the contract, so the type
+      // permits omitting it and forbids sending it as `""`.
+      const payload: BatchInput = {
         medicineId: form.medicineId,
         supplierId: form.supplierId,
         batchNumber: form.batchNumber,
@@ -717,7 +725,8 @@ function BatchesTab() {
         purchasePrice: Number(form.purchasePrice),
         sellingPrice: Number(form.sellingPrice),
         quantity: Number(form.quantity),
-      });
+      };
+      await api.post("/api/inventory/batches", payload);
       toast.success("Batch added to stock!");
       setShowForm(false);
       setForm({
@@ -1144,7 +1153,9 @@ function CategoriesTab() {
     e.preventDefault();
     setSubmittingCat(true);
     try {
-      await api.post("/api/inventory/categories", { name: catName });
+      await api.post("/api/inventory/categories", {
+        name: catName,
+      } satisfies CategoryInput);
       toast.success("Category added!");
       setCatName("");
       fetchAll();
@@ -1159,7 +1170,9 @@ function CategoriesTab() {
     e.preventDefault();
     setSubmittingMfr(true);
     try {
-      await api.post("/api/inventory/manufacturers", { name: mfrName });
+      await api.post("/api/inventory/manufacturers", {
+        name: mfrName,
+      } satisfies ManufacturerInput);
       toast.success("Manufacturer added!");
       setMfrName("");
       fetchAll();
