@@ -71,7 +71,7 @@ export default function Suppliers() {
     queryKey: ['suppliers', search],
     queryFn: async ({ signal }) => {
       const params = search ? `?search=${search}` : ''
-      const res = await api.get(`/api/inventory/suppliers${params}`, { signal })
+      const res = await api.get(`/api/suppliers${params}`, { signal })
       return res.data.data
     },
     meta: { errorMessage: 'Failed to fetch suppliers' },
@@ -98,10 +98,10 @@ export default function Suppliers() {
     setSubmitting(true)
     try {
       if (editing) {
-        await api.put(`/api/inventory/suppliers/${editing.id}`, form)
+        await api.put(`/api/suppliers/${editing.id}`, form)
         toast.success('Supplier updated!')
       } else {
-        await api.post('/api/inventory/suppliers', form)
+        await api.post('/api/suppliers', form)
         toast.success('Supplier added!')
       }
       setShowForm(false)

@@ -105,8 +105,8 @@ async function seedSellable(
 
   const category = await post("/api/inventory/categories", { name: `Cat ${tag}` });
   const manufacturer = await post("/api/inventory/manufacturers", { name: `Mfr ${tag}` });
-  const supplier = await post("/api/inventory/suppliers", { name: `Sup ${tag}` });
-  const medicine = await post("/api/inventory/medicines", {
+  const supplier = await post("/api/suppliers", { name: `Sup ${tag}` });
+  const medicine = await post("/api/medicines", {
     name,
     categoryId: category.id,
     manufacturerId: manufacturer.id,

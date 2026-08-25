@@ -151,7 +151,7 @@ function DailyReport() {
     queryKey: ["daily-summary", date],
     queryFn: async ({ signal }) => {
       const res = await api.get(
-        `/api/billing/invoices/daily-summary?date=${date}`,
+        `/api/reports/daily-summary?date=${date}`,
         { signal },
       );
       return {
@@ -169,7 +169,7 @@ function DailyReport() {
     setExporting(true);
     try {
       await downloadCsv(
-        `/api/billing/invoices/daily-summary/export?date=${date}`,
+        `/api/reports/daily-summary/export?date=${date}`,
         `daily-summary-${date}.csv`,
       );
       toast.success("Daily summary exported");
@@ -372,7 +372,7 @@ function GstReport() {
     queryKey: ["gst-report", month, year],
     queryFn: async ({ signal }) => {
       const res = await api.get(
-        `/api/billing/invoices/gst-report?month=${month}&year=${year}`,
+        `/api/reports/gst?month=${month}&year=${year}`,
         { signal },
       );
       return {
@@ -404,7 +404,7 @@ function GstReport() {
     setExporting(true);
     try {
       await downloadCsv(
-        `/api/billing/invoices/gst-report/export?month=${month}&year=${year}`,
+        `/api/reports/gst/export?month=${month}&year=${year}`,
         `gst-report-${year}-${String(month).padStart(2, "0")}.csv`,
       );
       toast.success("GST report exported");
@@ -621,12 +621,12 @@ function StockAlerts() {
     const [url, name, label] =
       which === "expiring"
         ? [
-            `/api/inventory/batches/expiring/export?days=${days}`,
+            `/api/reports/expiring/export?days=${days}`,
             `expiring-${days}-days.csv`,
             "Expiring stock",
           ]
         : [
-            "/api/inventory/batches/low-stock/export?threshold=20",
+            "/api/reports/low-stock/export?threshold=20",
             "low-stock-at-20.csv",
             "Low stock",
           ];
@@ -652,7 +652,7 @@ function StockAlerts() {
   const { data: expiring = [], isLoading: expiringLoading } = useQuery<Batch[]>({
     queryKey: ["batches", "expiring", days],
     queryFn: async ({ signal }) => {
-      const res = await api.get(`/api/inventory/batches/expiring?days=${days}`, {
+      const res = await api.get(`/api/reports/expiring?days=${days}`, {
         signal,
       });
       return res.data.data;
@@ -663,7 +663,7 @@ function StockAlerts() {
   const { data: lowStock = [], isLoading: lowLoading } = useQuery<Batch[]>({
     queryKey: ["batches", "low-stock", 20],
     queryFn: async ({ signal }) => {
-      const res = await api.get("/api/inventory/batches/low-stock?threshold=20", {
+      const res = await api.get("/api/reports/low-stock?threshold=20", {
         signal,
       });
       return res.data.data;
@@ -857,7 +857,7 @@ function SalesTrend() {
       // One grouped query on the server instead of seven daily-summary
       // requests, each of which fetched a whole day of invoices with the
       // customer joined and then read two integers off it (G-08).
-      const res = await api.get("/api/billing/invoices/trend?days=7", {
+      const res = await api.get("/api/reports/trend?days=7", {
         signal,
       });
       // Shaped for the chart here, in the query, so every consumer of this key

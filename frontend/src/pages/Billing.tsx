@@ -115,7 +115,7 @@ function AddCustomerDialog({ onAdd }: { onAdd: (c: Customer) => void }) {
     e.preventDefault();
     setLoading(true);
     try {
-      const res = await api.post("/api/billing/customers", form);
+      const res = await api.post("/api/customers", form);
       onAdd(res.data.data);
       toast.success("Customer added!");
       setOpen(false);
@@ -361,7 +361,7 @@ export default function Billing() {
     const timer = setTimeout(() => {
       setSearching(true);
       api
-        .get(`/api/inventory/medicines/search?q=${query}`)
+        .get(`/api/medicines/search?q=${query}`)
         .then((res) => setResults(res.data.data))
         .catch(() => toast.error("Search failed"))
         .finally(() => setSearching(false));
@@ -374,7 +374,7 @@ export default function Billing() {
     if (customerSearch.length < 2) return;
     const timer = setTimeout(() => {
       api
-        .get(`/api/billing/customers?search=${customerSearch}`)
+        .get(`/api/customers?search=${customerSearch}`)
         .then((res) => setCustomerResults(res.data.data))
         .catch(() => {});
     }, 300);

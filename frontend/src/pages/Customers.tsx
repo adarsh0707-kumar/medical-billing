@@ -111,7 +111,7 @@ function CustomerDetailDialog({
     queryKey: ["customer", customerId],
     enabled: Boolean(customerId) && open,
     queryFn: async ({ signal }) => {
-      const res = await api.get(`/api/billing/customers/${customerId}`, {
+      const res = await api.get(`/api/customers/${customerId}`, {
         signal,
       });
       return res.data.data;
@@ -304,7 +304,7 @@ export default function Customers() {
         limit: "12",
         ...(search && { search }),
       });
-      const res = await api.get(`/api/billing/customers?${params}`, { signal });
+      const res = await api.get(`/api/customers?${params}`, { signal });
       return {
         customers: res.data.data as Customer[],
         totalPages: res.data.pagination.pages as number,
@@ -362,10 +362,10 @@ export default function Customers() {
       };
 
       if (editing) {
-        await api.put(`/api/billing/customers/${editing.id}`, data);
+        await api.put(`/api/customers/${editing.id}`, data);
         toast.success("Customer updated!");
       } else {
-        await api.post("/api/billing/customers", data);
+        await api.post("/api/customers", data);
         toast.success("Customer added!");
       }
       setShowForm(false);

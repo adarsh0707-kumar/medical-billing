@@ -55,7 +55,7 @@ export const useSuppliers = <T extends Master = Master>() =>
   useQuery<T[]>({
     queryKey: ["suppliers", ""],
     queryFn: async ({ signal }) => {
-      const res = await api.get("/api/inventory/suppliers", { signal });
+      const res = await api.get("/api/suppliers", { signal });
       return res.data.data;
     },
     staleTime: MASTER_STALE_TIME,

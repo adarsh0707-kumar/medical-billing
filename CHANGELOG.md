@@ -7,9 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [1.1.0] - Unreleased
+## [2.0.0] - 2026-08-24
 
-Not yet tagged. Everything below is on `main`, which [SECURITY.md](./SECURITY.md) currently recommends deploying in preference to 1.0.0 — several of these are correctness and security fixes rather than features.
+The first release since 1.0.0. Versions 1.1.0 through 1.3.0 appear in the roadmap but were never tagged, so everything that accumulated on `main` since 1.0.0 is recorded here rather than back-dated into releases that did not ship.
+
+The major bump is for one change: **the API is now grouped by resource**. Everything else below is additive or a fix.
+
+### Changed — BREAKING
+
+#### Routes are grouped by resource, not by module
+
+Customers were reachable only at `/api/billing/customers`, medicines and suppliers only under `/api/inventory/`, and the five reports were filed under whichever table each one happened to read. It was the single most common source of client confusion, and every document under `docs/` carried a warning about it.
+
+| Was                                            | Now                                 |
+| ------------------------------------------------ | ------------------------------------- |
+| `/api/billing/customers`                       | `/api/customers`                    |
+| `/api/inventory/medicines`                     | `/api/medicines`                    |
+| `/api/inventory/suppliers`                     | `/api/suppliers`                    |
+| `/api/billing/invoices/daily-summary`          | `/api/reports/daily-summary`        |
+| `/api/billing/invoices/gst-report`             | `/api/reports/gst`                  |
+| `/api/billing/invoices/trend`                  | `/api/reports/trend`                |
+| `/api/inventory/batches/expiring`              | `/api/reports/expiring`             |
+| `/api/inventory/batches/low-stock`             | `/api/reports/low-stock`            |
+
+Each report's `/export` moved with it. Report names drop the qualifier the path now supplies — `gst-report` under `/api/reports` was saying it twice.
+
+**Every old path still works.** They are deprecated for one minor version and removed in **2.1.0**. Each responds with `Deprecation: true`, a `Sunset` date and `Link: <successor>; rel="successor-version"`, and logs a warning carrying the request id and the calling user — so 2.1.0 can be scheduled on evidence about who is still calling, rather than on a guess.
+
+An alias and its successor run the **same controller function**, not a copy, so the two cannot answer differently; `backend/tests/api/route-layout.test.js` asserts that on the response body of all nine pairs.
+
+**What did not move:** batches, categories and manufacturers stay under `/api/inventory` — they are stock-keeping concerns reached through the medicine they belong to. Invoices stay under `/api/billing`, because billing is what they are.
+
+`customer.routes.js`, `medicine.routes.js`, `report.routes.js` and `supplier.routes.js` now exist. Four zero-byte placeholders with exactly those names were deleted in 2026-08 ([G-13](./docs/08-gap-analysis.md#g-13)) for implying routers that did not exist.
+
+### Everything below shipped on `main` between 1.0.0 and this release
+
+[SECURITY.md](./SECURITY.md) recommended deploying `main` in preference to 1.0.0 throughout that period — several of these are correctness and security fixes rather than features.
 
 Each item links to its entry in [`docs/08-gap-analysis.md`](./docs/08-gap-analysis.md), where the diagnosis and the verification are recorded.
 

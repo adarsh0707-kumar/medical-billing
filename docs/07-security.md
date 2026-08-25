@@ -71,7 +71,7 @@ The full permission matrix is in [04 §4](./04-api-reference.md#4-role-matrix).
 ### Design notes
 
 - **Client-side checks are cosmetic.** The role-filtered sidebar and `ProtectedRoute` improve UX; the server is the boundary. A cashier calling `GET /api/users` directly gets `403` regardless of what the UI shows.
-- **Read is broadly permitted, with one exception.** Every authenticated role can read inventory, customers and invoices, including other operators' invoices. Since 2026-08-24 a **cashier cannot read a customer's purchase history**: `GET /api/billing/customers/:id` returns the customer to every role but the attached invoices only to ADMIN and PHARMACIST. A cashier still needs to find someone and attach them to a sale, and the POS is unaffected — what they lose is the ability to browse what a named person has been buying, which in a pharmacy is health information. Reversing it is one constant in `customer.controller.js`.
+- **Read is broadly permitted, with one exception.** Every authenticated role can read inventory, customers and invoices, including other operators' invoices. Since 2026-08-24 a **cashier cannot read a customer's purchase history**: `GET /api/customers/:id` returns the customer to every role but the attached invoices only to ADMIN and PHARMACIST. A cashier still needs to find someone and attach them to a sale, and the POS is unaffected — what they lose is the ability to browse what a named person has been buying, which in a pharmacy is health information. Reversing it is one constant in `customer.controller.js`.
 - **The GST report is the only report gated by role** (ADMIN/PHARMACIST). The daily summary is open to cashiers — meaning a cashier can see whole-day store revenue. Confirm that is intended.
 - **Deletes are ADMIN-only** across categories, manufacturers, medicines, suppliers and users. Good.
 - **Customer writes are open to all roles**, including create and update. A cashier can alter any customer record. Low risk, but there is no audit trail.
@@ -86,7 +86,7 @@ The full permission matrix is in [04 §4](./04-api-reference.md#4-role-matrix).
 | ------------------------------------------------------------------------------------------ | :--------------------------------------------------------------------------------------------------------------: |
 | `POST/PUT /api/inventory/categories`, `/manufacturers`, `/medicines`, `/suppliers` |                                                        ✅                                                        |
 | `POST /api/inventory/batches`                                                            |                                                        ✅                                                        |
-| `POST/PUT /api/billing/customers`                                                        |                                                        ✅                                                        |
+| `POST/PUT /api/customers`                                                        |                                                        ✅                                                        |
 | `POST /api/billing/invoices`                                                             |                                                        ✅                                                        |
 | `PUT /api/inventory/batches/:id`                                                         | ✅ Strict narrow schema;`quantity`, `initialQty` and FK columns rejected — [G-05](./08-gap-analysis.md#g-05) |
 | `POST /api/auth/register`                                                                |                            ✅`createUserSchema` — [G-11](./08-gap-analysis.md#g-11)                            |
@@ -192,8 +192,8 @@ The system stores customer **name, phone, email, address, age, gender** and a co
 | Question | Decision |
 |---|---|
 | How long are customer details kept? | **36 months of inactivity.** Invoices are separate and keep 8 years as books of account (CGST §36). Rationale — recall reach, repeat prescriptions, and when a relationship is over — in [03 §8](./03-data-model.md#8-data-lifecycle--retention) |
-| Is there an erasure path? | **Yes — `DELETE /api/billing/customers/:id`, ADMIN only.** It *anonymises*: the row survives because invoices reference it and are tax records, but name, phone, email, address, age and gender are blanked and `anonymisedAt` is stamped. It also redacts that customer's audit-log payloads, so erasure is not undone by the trail that recorded it |
-| Do cashiers need purchase history? | **No.** A cashier can still find a customer and attach them to a sale — the POS is unaffected — but `GET /api/billing/customers/:id` returns invoice history only to ADMIN and PHARMACIST. This is the first real reduction in T-9's blast radius |
+| Is there an erasure path? | **Yes — `DELETE /api/customers/:id`, ADMIN only.** It *anonymises*: the row survives because invoices reference it and are tax records, but name, phone, email, address, age and gender are blanked and `anonymisedAt` is stamped. It also redacts that customer's audit-log payloads, so erasure is not undone by the trail that recorded it |
+| Do cashiers need purchase history? | **No.** A cashier can still find a customer and attach them to a sale — the POS is unaffected — but `GET /api/customers/:id` returns invoice history only to ADMIN and PHARMACIST. This is the first real reduction in T-9's blast radius |
 
 Still true, and not addressed here:
 

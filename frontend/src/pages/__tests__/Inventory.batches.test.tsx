@@ -38,14 +38,14 @@ beforeEach(() => {
     data: [],
     pagination: { pages: 1, total: 0 },
   });
-  mock.onGet("/api/inventory/suppliers").reply(200, { success: true, data: SUPPLIERS });
+  mock.onGet("/api/suppliers").reply(200, { success: true, data: SUPPLIERS });
   mock.onGet("/api/inventory/categories").reply(200, { success: true, data: [] });
   mock.onGet("/api/inventory/manufacturers").reply(200, { success: true, data: [] });
-  mock.onGet(/\/api\/inventory\/medicines\?search=/).reply(200, {
+  mock.onGet(/\/api\/medicines\?search=/).reply(200, {
     success: true,
     data: [MEDICINE],
   });
-  mock.onGet(/\/api\/inventory\/medicines\?/).reply(200, {
+  mock.onGet(/\/api\/medicines\?/).reply(200, {
     success: true,
     data: [],
     pagination: { pages: 1, total: 0 },

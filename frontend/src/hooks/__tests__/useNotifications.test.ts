@@ -40,10 +40,10 @@ const stubAlerts = ({
   lowStock = [],
 }: { expiring?: ExpiringStub[]; lowStock?: LowStockStub[] } = {}) => {
   mock
-    .onGet("/api/inventory/batches/expiring?days=30")
+    .onGet("/api/reports/expiring?days=30")
     .reply(200, { success: true, data: expiring });
   mock
-    .onGet("/api/inventory/batches/low-stock?threshold=10")
+    .onGet("/api/reports/low-stock?threshold=10")
     .reply(200, { success: true, data: lowStock });
 };
 

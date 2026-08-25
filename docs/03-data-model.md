@@ -202,7 +202,7 @@ Relations: `category`, `manufacturer`, `batches Batch[]`.
 
 **No unique constraint on `name`.** Two medicines with the same brand name from different manufacturers are legal — and intended.
 
-**Derived fields** returned by `GET /api/inventory/medicines` but *not stored*:
+**Derived fields** returned by `GET /api/medicines` but *not stored*:
 
 - `totalStock` — true stock across every in-stock batch, from a separate `groupBy` ([G-10](./08-gap-analysis.md#g-10)).
 - `nearestExpiry` — expiry of that batch.
@@ -394,7 +394,7 @@ The honest mitigation for T-9 is **restricting who can read customer history** (
 
 ### 3.13 `Purchase` / `PurchaseItem` — removed
 
-Both tables existed from the initial migration and never acquired a write path: no controller, no route, no validator, no UI. `generatePurchaseNumber()` was written and never called. The only code that referenced them made `GET /api/inventory/suppliers/:id` return a `purchases` array that was always empty — a false claim rather than a true one about a supplier with no history.
+Both tables existed from the initial migration and never acquired a write path: no controller, no route, no validator, no UI. `generatePurchaseNumber()` was written and never called. The only code that referenced them made `GET /api/suppliers/:id` return a `purchases` array that was always empty — a false claim rather than a true one about a supplier with no history.
 
 **Decided 2026-08-24 (PRD Q7): the schema was deleted, not built.** The control it looked like it would provide already existed — `Batch` carries `supplierId` and `purchasePrice`, and the audit log records who created it, so stock already has a traceable cause and a cost. What Phase 10 would add on top is purchase-level grouping, supplier payables and margin reporting: features nobody asked for in the four months since 1.0.0. The design survives in git history and in this document, so procurement can be built later against real requirements rather than an April 2026 guess.
 
@@ -534,7 +534,7 @@ Partial returns are not supported: a void reverses a whole invoice.
 | `byPaymentMode[]._count.id` | `type: SALE` of that mode | So the per-mode bill counts add up to `totalInvoices` instead of exceeding it by the number of voids |
 | Trend `invoices` / `sales` | Same split: sales counted, money netted | A bar reading "1 invoice, ₹0" is not a thing that can happen |
 
-Applies to `GET /api/billing/invoices/daily-summary`, `GET /api/billing/invoices/trend` and `GET /api/dashboard/stats`, which carry two implementations of the same aggregation and must agree.
+Applies to `GET /api/reports/daily-summary`, `GET /api/reports/trend` and `GET /api/dashboard/stats`, which carry two implementations of the same aggregation and must agree.
 
 The GST report is deliberately **not** in that list: it reports documents, not trade, and lists the cancelled original and its credit note as the separate filings they are.
 
@@ -547,7 +547,7 @@ The GST report is deliberately **not** in that list: it reports documents, not t
 
 **Why 36 months.** Long enough that a batch recall can still reach whoever bought the affected stock, since shelf life is rarely over three years and anything older cannot still be in a cupboard. Long enough that an annual repeat prescription does not erase the customer between visits. Short enough to treat three years of silence as the end of the relationship.
 
-**Erasure anonymises; it never deletes.** `Invoice.customerId` is a foreign key and invoices are append-only tax records, so the row has to survive. `POST`-ing a `DELETE /api/billing/customers/:id` (ADMIN only) blanks name, phone, email, address, age and gender, stamps `anonymisedAt`, and leaves every invoice exactly as issued — a GST return filed against them still reconciles afterwards.
+**Erasure anonymises; it never deletes.** `Invoice.customerId` is a foreign key and invoices are append-only tax records, so the row has to survive. `POST`-ing a `DELETE /api/customers/:id` (ADMIN only) blanks name, phone, email, address, age and gender, stamps `anonymisedAt`, and leaves every invoice exactly as issued — a GST return filed against them still reconciles afterwards.
 
 **One thing it does not reach: `Prescription.patientName`.** That register is a statutory record under Rule 65(11) and a right to erasure does not override an obligation to retain — the same reason the invoice survives. A customer's name is removed from `Customer` and from the audit trail, and remains in the register of any Schedule H medicine dispensed to them. Stated here rather than left to be discovered.
 

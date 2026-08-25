@@ -78,10 +78,12 @@ reading the source, and it is kept in step with the code.
 | [09 Testing strategy](./docs/09-testing-strategy.md) | What is tested, what is not, and the GST acceptance fixtures |
 | [10 Glossary](./docs/10-glossary.md) | Domain terms |
 
-The URL layout is grouped by module rather than by resource, which is not what
-you would guess — customers live under `/api/billing/`, medicines and suppliers
-under `/api/inventory/`, and there is no `/api/reports`. See
-[04](./docs/04-api-reference.md) before writing a client.
+Since **2.0.0** the URL layout is grouped by resource: `/api/customers`,
+`/api/medicines`, `/api/suppliers`, `/api/reports`. It used to be grouped by
+module — customers under `/api/billing/`, medicines and suppliers under
+`/api/inventory/` — which was the most common thing clients got wrong. Those
+paths still work, now marked deprecated, and are removed in 2.1.0. The mapping
+is in [04 §2a](./docs/04-api-reference.md).
 
 ---
 

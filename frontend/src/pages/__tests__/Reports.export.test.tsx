@@ -34,7 +34,7 @@ const INVOICE = {
 };
 
 const stubGst = (invoices: unknown[]) =>
-  mock.onGet(/gst-report\?/).reply(200, {
+  mock.onGet(/reports\/gst\?/).reply(200, {
     success: true,
     data: {
       invoices,
@@ -88,10 +88,10 @@ describe("Reports — CSV export", () => {
 
     await waitFor(() =>
       expect(
-        mock.history.get.some((r) => /gst-report\/export/.test(r.url ?? "")),
+        mock.history.get.some((r) => /gst\/export/.test(r.url ?? "")),
       ).toBe(true),
     );
-    const call = mock.history.get.find((r) => /gst-report\/export/.test(r.url ?? ""))!;
+    const call = mock.history.get.find((r) => /gst\/export/.test(r.url ?? ""))!;
     // A blob, not JSON: whatever bytes the server sent are what gets saved.
     expect(call.responseType).toBe("blob");
   });
@@ -107,7 +107,7 @@ describe("Reports — CSV export", () => {
 
     await waitFor(() => {
       const call = mock.history.get.find((r) =>
-        /gst-report\/export/.test(r.url ?? ""),
+        /gst\/export/.test(r.url ?? ""),
       );
       const now = new Date();
       expect(call!.url).toContain(`month=${now.getMonth() + 1}`);

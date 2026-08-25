@@ -11,6 +11,10 @@ const authRoutes = require("./routes/auth.routes");
 const { errorHandler, notFound } = require("./middlewares/error.middleware");
 const inventoryRoutes = require("./routes/inventory.routes");
 const billingRoutes = require("./routes/billing.routes");
+const customerRoutes = require("./routes/customer.routes");
+const medicineRoutes = require("./routes/medicine.routes");
+const supplierRoutes = require("./routes/supplier.routes");
+const reportRoutes = require("./routes/report.routes");
 const userRoutes = require("./routes/user.routes");
 const dashboardRoutes = require("./routes/dashboard.routes");
 const auditContextMiddleware = require("./middlewares/audit-context.middleware");
@@ -175,8 +179,22 @@ const createApp = ({
   // ─── Routes ────────────────────────────────────────────
   app.use("/api/auth", authRoutes);
   // add after auth route
+  // ─── 2.0.0 route layout ──────────────────────────────
+  // Grouped by resource. Until 2.0.0 the routers were grouped by *module*, so
+  // customers were reachable only at /api/billing/customers and medicines at
+  // /api/inventory/medicines — the single most common source of client
+  // confusion, and warned about in every document under docs/.
+  app.use("/api/customers", customerRoutes);
+  app.use("/api/medicines", medicineRoutes);
+  app.use("/api/suppliers", supplierRoutes);
+  app.use("/api/reports", reportRoutes);
+
+  // Batches, categories and manufacturers stay here: they are stock-keeping
+  // concerns rather than resources a client reasons about on its own.
   app.use("/api/inventory", inventoryRoutes);
-  app.use("/api/billing", billingRoutes); // ← add this
+  // Invoices, voids and credit notes. The customer and report routes it still
+  // carries are deprecated aliases — see deprecate.middleware.js.
+  app.use("/api/billing", billingRoutes);
   app.use("/api/users", userRoutes);
   app.use("/api/dashboard", dashboardRoutes);
 

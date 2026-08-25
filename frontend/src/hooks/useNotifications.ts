@@ -42,7 +42,7 @@ export const useNotifications = () => {
   const { data: expiringAlerts } = useQuery<AppNotification[]>({
     queryKey: ["batches", "expiring", 30],
     queryFn: async ({ signal }) => {
-      const res = await api.get("/api/inventory/batches/expiring?days=30", {
+      const res = await api.get("/api/reports/expiring?days=30", {
         signal,
       });
       const now = Date.now();
@@ -69,7 +69,7 @@ export const useNotifications = () => {
   const { data: lowStockAlerts } = useQuery<AppNotification[]>({
     queryKey: ["batches", "low-stock", 10],
     queryFn: async ({ signal }) => {
-      const res = await api.get("/api/inventory/batches/low-stock?threshold=10", {
+      const res = await api.get("/api/reports/low-stock?threshold=10", {
         signal,
       });
       const now = new Date();
