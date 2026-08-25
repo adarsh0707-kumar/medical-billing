@@ -39,15 +39,15 @@ afterEach(() => {
 
 describe("downloadCsv", () => {
   it("fetches the bytes from the server rather than building them", async () => {
-    mock.onGet(/gst-report\/export/).reply(200, "Date,Total\r\n2026-05-12,274.40\r\n");
+    mock.onGet(/gst\/export/).reply(200, "Date,Total\r\n2026-05-12,274.40\r\n");
 
     await downloadCsv(
-      "/api/billing/invoices/gst-report/export?month=5&year=2026",
+      "/api/reports/gst/export?month=5&year=2026",
       "fallback.csv",
     );
 
     expect(mock.history.get).toHaveLength(1);
-    expect(mock.history.get[0].url).toContain("/gst-report/export");
+    expect(mock.history.get[0].url).toContain("/reports/gst/export");
     // Whatever the server sent is what gets saved; nothing is recomputed here.
     expect(mock.history.get[0].responseType).toBe("blob");
     expect(clicked).toHaveLength(1);

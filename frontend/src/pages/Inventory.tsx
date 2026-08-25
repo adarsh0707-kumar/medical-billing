@@ -173,7 +173,7 @@ function MedicinesTab() {
         ...(search && { search }),
         ...(categoryFilter !== "all" && { categoryId: categoryFilter }),
       });
-      const res = await api.get(`/api/inventory/medicines?${params}`, {
+      const res = await api.get(`/api/medicines?${params}`, {
         signal,
       });
       return {
@@ -233,10 +233,10 @@ function MedicinesTab() {
     setSubmitting(true);
     try {
       if (editing) {
-        await api.put(`/api/inventory/medicines/${editing.id}`, form);
+        await api.put(`/api/medicines/${editing.id}`, form);
         toast.success("Medicine updated!");
       } else {
-        await api.post("/api/inventory/medicines", form);
+        await api.post("/api/medicines", form);
         toast.success("Medicine added!");
       }
       setShowForm(false);
@@ -252,7 +252,7 @@ function MedicinesTab() {
   const handleDelete = async (med: Medicine) => {
     if (!confirm(`Delete ${med.name}?`)) return;
     try {
-      await api.delete(`/api/inventory/medicines/${med.id}`);
+      await api.delete(`/api/medicines/${med.id}`);
       toast.success("Medicine deleted");
       refreshMedicines();
     } catch {
@@ -696,7 +696,7 @@ function BatchesTab() {
     enabled: debouncedMedSearch.length >= 2,
     queryFn: async ({ signal }) => {
       const res = await api.get(
-        `/api/inventory/medicines?search=${debouncedMedSearch}&limit=10`,
+        `/api/medicines?search=${debouncedMedSearch}&limit=10`,
         { signal },
       );
       return res.data.data;
@@ -1377,10 +1377,10 @@ function SuppliersTab() {
     setSubmitting(true);
     try {
       if (editing) {
-        await api.put(`/api/inventory/suppliers/${editing.id}`, form);
+        await api.put(`/api/suppliers/${editing.id}`, form);
         toast.success("Supplier updated!");
       } else {
-        await api.post("/api/inventory/suppliers", form);
+        await api.post("/api/suppliers", form);
         toast.success("Supplier added!");
       }
       setShowForm(false);

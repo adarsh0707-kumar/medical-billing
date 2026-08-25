@@ -27,8 +27,8 @@ const SUPPLIERS = [
 
 beforeEach(() => {
   mock = new MockAdapter(api);
-  mock.onGet(/\/api\/inventory\/suppliers/).reply(200, { success: true, data: SUPPLIERS });
-  mock.onPost("/api/inventory/suppliers").reply(201, { success: true, data: {} });
+  mock.onGet(/\/api\/suppliers/).reply(200, { success: true, data: SUPPLIERS });
+  mock.onPost("/api/suppliers").reply(201, { success: true, data: {} });
 });
 
 afterEach(() => {
@@ -37,7 +37,7 @@ afterEach(() => {
 });
 
 const listRequests = () =>
-  mock.history.get.filter((r) => /\/inventory\/suppliers/.test(r.url ?? ""));
+  mock.history.get.filter((r) => /\/suppliers/.test(r.url ?? ""));
 
 describe("Suppliers", () => {
   it("renders the suppliers the API returned", async () => {

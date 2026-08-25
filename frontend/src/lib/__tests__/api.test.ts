@@ -63,12 +63,12 @@ describe("api client — 401 handling", () => {
     // cost the user their session — if this ever starts signing people out on
     // 5xx, a database blip becomes a mass logout again.
     localStorage.setItem("token", "a-real-token");
-    mock.onGet("/api/inventory/medicines").reply(500, {
+    mock.onGet("/api/medicines").reply(500, {
       success: false,
       message: "connection terminated unexpectedly",
     });
 
-    await expect(api.get("/api/inventory/medicines")).rejects.toBeTruthy();
+    await expect(api.get("/api/medicines")).rejects.toBeTruthy();
 
     expect(localStorage.getItem("token")).toBe("a-real-token");
     expect(assignedHref).toBeUndefined();

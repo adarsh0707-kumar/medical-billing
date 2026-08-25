@@ -28,7 +28,7 @@ const page = (n: number) => ({
 
 beforeEach(() => {
   mock = new MockAdapter(api);
-  mock.onGet(/\/api\/billing\/customers\?/).reply((config) => {
+  mock.onGet(/\/api\/customers\?/).reply((config) => {
     const n = Number(new URL(config.url!, "http://x").searchParams.get("page"));
     return [200, page(n)];
   });
@@ -86,7 +86,7 @@ describe("Customers — profile dialog", () => {
 
   it("loads the profile when the dialog opens", async () => {
     const user = userEvent.setup();
-    mock.onGet("/api/billing/customers/c1").reply(200, {
+    mock.onGet("/api/customers/c1").reply(200, {
       success: true,
       data: { id: "c1", name: "Customer page 1", invoices: [] },
     });

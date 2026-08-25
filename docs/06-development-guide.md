@@ -167,7 +167,7 @@ The client is generated for `["native", "linux-musl-openssl-3.0.x"]`, so the sam
 
 ## 7. Recipe — adding an API endpoint
 
-Worked example: `GET /api/inventory/medicines/:id/batches`.
+Worked example: `GET /api/medicines/:id/batches`.
 
 **1. Controller** — `backend/src/controllers/medicine.controller.js`
 
@@ -209,7 +209,7 @@ Order matters: **literal paths before parameterised ones**. `/medicines/search` 
 **4. Frontend** — call it from a page
 
 ```ts
-const res = await api.get(`/api/inventory/medicines/${id}/batches`);
+const res = await api.get(`/api/medicines/${id}/batches`);
 setBatches(res.data.data);
 ```
 

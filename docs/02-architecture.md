@@ -107,7 +107,8 @@ backend/src/
 │   │                            to it reads as working code while silently doing nothing
 │   └── error.middleware.js      notFound() + errorHandler() incl. Prisma P2002/P2003/P2025
 ├── validators/                  Zod schemas — billing · common · inventory · user
-├── routes/                      auth · inventory · billing · user · dashboard  (5, all mounted)
+├── routes/                      auth · customer · medicine · supplier · report · inventory
+│                                · billing · user · dashboard  (9, all mounted)
 ├── controllers/                 auth · user · category · manufacturer · medicine · batch
 │                                · supplier · customer · billing · dashboard
 └── utils/
@@ -129,21 +130,28 @@ backend/tests/                   368 tests across 14 files — Vitest + Supertes
 
 ### Router mounting — the real map
 
-`app.js` mounts five routers. Resource grouping does **not** follow the file names:
+`app.js` mounts nine routers. **Since 2.0.0 the grouping is by resource**, so the URL a client wants is the one it would guess:
 
 | Mount              | Router file              | Resources served                                                            |
 | ------------------ | ------------------------ | --------------------------------------------------------------------------- |
 | `/api/auth`      | `auth.routes.js`       | login, register, me, change-password                                        |
 | `/api/users`     | `user.routes.js`       | user CRUD + own-profile update                                              |
-| `/api/inventory` | `inventory.routes.js`  | categories, manufacturers,**medicines**, batches, **suppliers** |
-| `/api/billing`   | `billing.routes.js`    | **customers**, invoices, void, daily summary, trend, GST report        |
+| `/api/customers` | `customer.routes.js`   | customer CRUD + erasure                                                     |
+| `/api/medicines` | `medicine.routes.js`   | medicine CRUD + the POS`/search`                                          |
+| `/api/suppliers` | `supplier.routes.js`   | supplier CRUD                                                               |
+| `/api/reports`   | `report.routes.js`     | daily summary, GST, trend, expiring, low stock — and each one's CSV export |
+| `/api/inventory` | `inventory.routes.js`  | categories, manufacturers, batches                                          |
+| `/api/billing`   | `billing.routes.js`    | invoices, void and credit notes                                             |
 | `/api/dashboard` | `dashboard.routes.js`  | `GET /stats` — every dashboard panel in one request ([G-08](./08-gap-analysis.md#g-08)) |
 
-Two consequences worth internalising before writing client code:
+**Before 2.0.0** the routers were grouped by *module*, and this was the single most common source of client confusion: customers were reachable only at `/api/billing/customers`, medicines and suppliers only under `/api/inventory/`, and the five reports were filed under whichever table each happened to read. Every one of those paths still works and is **deprecated** — they carry `Deprecation`, `Sunset` and `Link: rel="successor-version"` headers, log a warning naming the caller, and are removed in 2.1.0. See [`docs/04` §2a](./04-api-reference.md) for the full mapping.
 
-- **Customers live under `/api/billing/customers`**, not `/api/customers`.
-- **Suppliers and medicines live under `/api/inventory/`**, not at the top level.
-- There is no `customer.routes.js`, `medicine.routes.js`, `report.routes.js` or `supplier.routes.js`. Four zero-byte placeholders with those names were deleted on 2026-08-20 ([G-13](./08-gap-analysis.md#g-13)) because they implied routers that never existed. Re-grouping the URLs is queued for 2.0.0.
+What did **not** move, and why:
+
+- **Batches, categories and manufacturers** stay under `/api/inventory`. They are stock-keeping concerns rather than resources a client reasons about on its own — a batch is only ever reached through the medicine it belongs to.
+- **Invoices** stay under `/api/billing`. Billing is what they are, not the module that happens to own them.
+
+`customer.routes.js`, `medicine.routes.js`, `report.routes.js` and `supplier.routes.js` now exist. Four zero-byte placeholders with exactly those names were deleted on 2026-08-20 ([G-13](./08-gap-analysis.md#g-13)) because they implied routers that did not exist; 2.0.0 is where they became real.
 
 ### Middleware order (`app.js`)
 
@@ -156,7 +164,8 @@ helmet()  →  compression()  →  pino-http (correlation id → X-Request-Id)
   →  rateLimit(15 min / 500 req)          mounted on /api only
   →  rateLimit(15 min / 10 failures)      mounted on /api/auth/login, successes not counted
   →  GET /health  ·  GET /health/ready    (outside the rate limiter)
-  →  /api/auth  /api/inventory  /api/billing  /api/users  /api/dashboard
+  →  /api/auth  /api/customers  /api/medicines  /api/suppliers  /api/reports
+  →  /api/inventory  /api/billing  /api/users  /api/dashboard
   →  notFound  →  errorHandler
 ```
 
@@ -286,11 +295,13 @@ sequenceDiagram
 
 **Concurrency (fixed 2026-08-18).** The pre-transaction stock check is advisory — it fails fast with a friendly message. The authoritative guard is the decrement itself, a conditional `updateMany` inside the transaction that matches zero rows when another sale took the units, rolling the whole invoice back. The serial likewise comes from an atomic per-day `InvoiceCounter` upsert inside the same transaction, not from a `COUNT()`. See [G-09](./08-gap-analysis.md#g-09) and [G-01](./08-gap-analysis.md#g-01) for the before/after and the verification runs.
 
-### 6.3 Dashboard load
+### 6.3 Dashboard load — superseded
 
-Six requests fire in parallel via `Promise.all`:
+**One request:** `GET /api/dashboard/stats` returns every panel ([G-08](./08-gap-analysis.md#g-08)).
 
-| Call                                                   | Purpose                                         |
+It replaced the six parallel calls below, which are kept as the record of what the measurement was taken against — **794 KB / 159 ms → 6 KB / 19 ms**. The paths are the ones in use at the time; several moved in 2.0.0, and none of these calls is made any more:
+
+| Call (historical, pre-G-08)                            | Purpose                                         |
 | ------------------------------------------------------ | ----------------------------------------------- |
 | `GET /api/billing/invoices/daily-summary?date=today` | Today's sales, GST, payment-mode split          |
 | `GET /api/billing/invoices?limit=8&page=1`           | Recent invoices table                           |
@@ -299,7 +310,7 @@ Six requests fire in parallel via `Promise.all`:
 | `GET /api/inventory/medicines?limit=1`               | Total medicine count (from`pagination.total`) |
 | `GET /api/billing/customers?limit=1`                 | Total customer count (from`pagination.total`) |
 
-The last two fetch one row purely to read a count — cheap, but a dedicated `/stats` endpoint would be cleaner.
+The last two fetched one row purely to read a count out of `pagination.total` — which is what made "six calls" really thirteen once the seven-day chart was included.
 
 ### 6.4 Alert polling
 

@@ -125,15 +125,17 @@ Serials are allocated by an atomic upsert against `InvoiceCounter` **inside the 
 
 `/medicines/search` must be declared above `/medicines/:id`, or `search` is read as an id. Same for `/invoices/daily-summary` and `/invoices/gst-report` above `/invoices/:id`.
 
-### The URL layout is not what you'd guess
+### The URL layout changed in 2.0.0 — don't copy an old path
 
-Routers are grouped by module, not by resource:
+Routers are grouped by **resource** now. Customers are at `/api/customers`, medicines at `/api/medicines`, suppliers at `/api/suppliers`, and the five reports at `/api/reports/...`.
 
-- customers live under **`/api/billing/customers`**
-- medicines and suppliers live under **`/api/inventory/`**
-- there is no `/api/customers`, `/api/medicines`, `/api/suppliers` or `/api/reports`
+Before 2.0.0 they were grouped by *module* — customers only at `/api/billing/customers`, medicines and suppliers under `/api/inventory/`, reports filed under whichever table each one read. Those paths **still work and are deprecated**: they answer with `Deprecation`, `Sunset` and `Link: rel="successor-version"` headers, log a warning naming the caller, and are removed in **2.1.0**.
 
-Re-grouping them would be a breaking change and is queued for 2.0.0. Until then, follow the existing layout. Full map: [`docs/04-api-reference.md`](./docs/04-api-reference.md).
+So when you copy a path out of an old branch, an old ticket or a stale tab, check it against the mapping table in [`docs/04-api-reference.md` §2a](./docs/04-api-reference.md). A deprecated path works, which is exactly what makes it easy to leave in.
+
+Batches, categories and manufacturers stay under `/api/inventory`, and invoices under `/api/billing` — those are not oversights. A batch is reached through its medicine; an invoice is a billing document.
+
+New routes go on the resource router, never on an alias.
 
 ### Never select the password hash
 

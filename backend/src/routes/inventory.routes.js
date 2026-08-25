@@ -4,6 +4,7 @@ const { protect, authorize } = require("../middlewares/auth.middleware");
 const requirePasswordChange = require("../middlewares/password-change.middleware");
 const validate = require("../middlewares/validate.middleware");
 const validateQuery = require("../middlewares/validate-query.middleware");
+const { deprecate } = require("../middlewares/deprecate.middleware");
 const {
   categorySchema,
   manufacturerSchema,
@@ -67,41 +68,55 @@ router.delete(
   manufacturerCtrl.remove,
 );
 
-// ─── Medicines ────────────────────────────────────────
+// ─── Medicines — DEPRECATED, moved to /api/medicines in 2.0.0 ─────────
+const movedMedicines = deprecate("/api/medicines");
+
 router.get(
   "/medicines/search",
+  movedMedicines,
   validateQuery(medicineSearchQuerySchema),
   medicineCtrl.search,
-); // for POS billing search
+);
 router.get(
   "/medicines",
+  movedMedicines,
   validateQuery(medicineListQuerySchema),
   medicineCtrl.getAll,
 );
-router.get("/medicines/:id", medicineCtrl.getOne);
+router.get("/medicines/:id", movedMedicines, medicineCtrl.getOne);
 router.post(
   "/medicines",
+  movedMedicines,
   authorize("ADMIN", "PHARMACIST"),
   validate(medicineSchema),
   medicineCtrl.create,
 );
 router.put(
   "/medicines/:id",
+  movedMedicines,
   authorize("ADMIN", "PHARMACIST"),
   validate(medicineSchema),
   medicineCtrl.update,
 );
-router.delete("/medicines/:id", authorize("ADMIN"), medicineCtrl.remove);
+router.delete(
+  "/medicines/:id",
+  movedMedicines,
+  authorize("ADMIN"),
+  medicineCtrl.remove,
+);
 
 // ─── Batches / Stock ──────────────────────────────────
 router.get("/batches", validateQuery(batchListQuerySchema), batchCtrl.getAll);
+// ─── Stock reports — DEPRECATED, moved to /api/reports in 2.0.0 ───────
 router.get(
   "/batches/expiring",
+  deprecate("/api/reports/expiring"),
   validateQuery(expiringQuerySchema),
   batchCtrl.getExpiring,
 );
 router.get(
   "/batches/low-stock",
+  deprecate("/api/reports/low-stock"),
   validateQuery(lowStockQuerySchema),
   batchCtrl.getLowStock,
 );
@@ -109,11 +124,13 @@ router.get(
 // ─── CSV exports (FR-RPT-09) ──────────────────────────
 router.get(
   "/batches/expiring/export",
+  deprecate("/api/reports/expiring/export"),
   validateQuery(expiringQuerySchema),
   batchCtrl.exportExpiring,
 );
 router.get(
   "/batches/low-stock/export",
+  deprecate("/api/reports/low-stock/export"),
   validateQuery(lowStockQuerySchema),
   batchCtrl.exportLowStock,
 );
@@ -139,25 +156,35 @@ router.post(
   batchCtrl.adjust,
 );
 
-// ─── Suppliers ────────────────────────────────────────
+// ─── Suppliers — DEPRECATED, moved to /api/suppliers in 2.0.0 ─────────
+const movedSuppliers = deprecate("/api/suppliers");
+
 router.get(
   "/suppliers",
+  movedSuppliers,
   validateQuery(supplierListQuerySchema),
   supplierCtrl.getAll,
 );
-router.get("/suppliers/:id", supplierCtrl.getOne);
+router.get("/suppliers/:id", movedSuppliers, supplierCtrl.getOne);
 router.post(
   "/suppliers",
+  movedSuppliers,
   authorize("ADMIN", "PHARMACIST"),
   validate(supplierSchema),
   supplierCtrl.create,
 );
 router.put(
   "/suppliers/:id",
+  movedSuppliers,
   authorize("ADMIN", "PHARMACIST"),
   validate(supplierSchema),
   supplierCtrl.update,
 );
-router.delete("/suppliers/:id", authorize("ADMIN"), supplierCtrl.remove);
+router.delete(
+  "/suppliers/:id",
+  movedSuppliers,
+  authorize("ADMIN"),
+  supplierCtrl.remove,
+);
 
 module.exports = router;

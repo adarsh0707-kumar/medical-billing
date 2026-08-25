@@ -18,17 +18,55 @@ All paths below are absolute from the host root, e.g. `POST http://localhost:500
 
 ## 2. Router map
 
-Five routers are mounted. **Resource paths do not follow the obvious REST grouping** — read this table before writing a client.
+Nine routers are mounted. **Since 2.0.0 the paths are grouped by resource**, so the URL you would guess is the URL that works.
 
 | Prefix             | Resources                                                                           |
 | ------------------ | ----------------------------------------------------------------------------------- |
 | `/api/auth`      | login · register · me · change-password                                          |
 | `/api/users`     | user CRUD · own profile                                                            |
-| `/api/inventory` | categories · manufacturers ·**medicines** · batches · **suppliers** |
-| `/api/billing`   | **customers** · invoices · void · daily-summary · trend · gst-report   |
+| `/api/customers` | customer CRUD · erasure                                                            |
+| `/api/medicines` | medicine CRUD ·`search` (the POS lookup)                                          |
+| `/api/suppliers` | supplier CRUD                                                                       |
+| `/api/reports`   | daily-summary · gst · trend · expiring · low-stock, each with`/export`      |
+| `/api/inventory` | categories · manufacturers · batches                                              |
+| `/api/billing`   | invoices · void · credit notes                                                     |
 | `/api/dashboard` | `stats` — every dashboard panel in one request                                    |
 
-> Customers are under **`/api/billing/customers`**. Suppliers and medicines are under **`/api/inventory/`**. There is no `/api/customers`, `/api/medicines`, `/api/suppliers` or `/api/reports`.
+Batches, categories and manufacturers stay under `/api/inventory` because they are stock-keeping concerns rather than resources a client addresses on its own — a batch is reached through the medicine it belongs to. Invoices stay under `/api/billing` because billing is what they are.
+
+## 2a. Moved in 2.0.0 — deprecated paths
+
+Before 2.0.0 the routers were grouped by *module*, not resource. It was the single most common source of client confusion, and every document under `docs/` carried a warning about it.
+
+**Every path below still works** and will keep working until **2.1.0**. Each responds with:
+
+| Header                                   | Meaning                                            |
+| ------------------------------------------ | ---------------------------------------------------- |
+| `Deprecation: true`                      | RFC 8594 — this route is on its way out            |
+| `Sunset: Mon, 30 Nov 2026 00:00:00 GMT` | RFC 8594 — the date it stops working               |
+| `Link: <new-path>; rel="successor-version"` | RFC 8288 — where it went                       |
+
+The server also logs a `warn` line per call, carrying the request id and the caller's user id, so an operator can find out **who** is still on an old path before 2.1.0 removes it.
+
+| Deprecated path                                     | Use instead                          |
+| ----------------------------------------------------- | -------------------------------------- |
+| `/api/billing/customers`                            | `/api/customers`                     |
+| `/api/inventory/medicines`                          | `/api/medicines`                     |
+| `/api/inventory/medicines/search`                   | `/api/medicines/search`              |
+| `/api/inventory/suppliers`                          | `/api/suppliers`                     |
+| `/api/billing/invoices/daily-summary`               | `/api/reports/daily-summary`         |
+| `/api/billing/invoices/daily-summary/export`        | `/api/reports/daily-summary/export`  |
+| `/api/billing/invoices/gst-report`                  | `/api/reports/gst`                   |
+| `/api/billing/invoices/gst-report/export`           | `/api/reports/gst/export`            |
+| `/api/billing/invoices/trend`                       | `/api/reports/trend`                 |
+| `/api/inventory/batches/expiring`                   | `/api/reports/expiring`              |
+| `/api/inventory/batches/expiring/export`            | `/api/reports/expiring/export`       |
+| `/api/inventory/batches/low-stock`                  | `/api/reports/low-stock`             |
+| `/api/inventory/batches/low-stock/export`           | `/api/reports/low-stock/export`      |
+
+An old path and its successor run the **same controller function** — not a copy of it — so the two cannot answer differently. `backend/tests/api/route-layout.test.js` asserts that on the response body of every pair, and asserts the headers appear on the alias and not on the successor.
+
+The report names drop the qualifier the path now supplies: `gst-report` under `/api/reports` was saying it twice.
 
 ## 3. Authentication
 
@@ -168,7 +206,7 @@ All currency fields are `DECIMAL(12,2)` in the database and are computed with ex
 
 ### Pagination
 
-Supported by `GET /api/inventory/medicines`, `GET /api/billing/customers`, `GET /api/billing/invoices` via `?page=` (default 1) and `?limit=` (default 20).
+Supported by `GET /api/medicines`, `GET /api/customers`, `GET /api/billing/invoices` via `?page=` (default 1) and `?limit=` (default 20).
 
 **Not paginated** — batches, suppliers, categories, manufacturers and users return the full set.
 
@@ -354,11 +392,21 @@ Returns all users ordered by newest first: `id, name, email, role, isActive, cre
 
 ---
 
-## 8. Inventory
+## 8. Inventory & catalogue
+
+Grouped here by subject, not by mount — 2.0.0 moved two of these onto their own routers:
+
+| Subsection            | Mounted at         |
+| ----------------------- | -------------------- |
+| 8.1 Categories        | `/api/inventory`   |
+| 8.2 Manufacturers     | `/api/inventory`   |
+| 8.3 Medicines         | **`/api/medicines`** |
+| 8.4 Batches           | `/api/inventory`   |
+| 8.5 Suppliers         | **`/api/suppliers`** |
 
 All routes below require authentication (`router.use(protect)`).
 
-### 8.1 Categories
+### 8.1 Categories — `/api/inventory/categories`
 
 | Method | Path                              | Role              | Body         |
 | ------ | --------------------------------- | ----------------- | ------------ |
@@ -375,13 +423,13 @@ All routes below require authentication (`router.use(protect)`).
 
 Deleting a category still referenced by a medicine returns **409** `This record is still in use by other data and cannot be deleted.`, with a `field` key naming the constraint ([G-12](./08-gap-analysis.md#g-12)).
 
-### 8.2 Manufacturers
+### 8.2 Manufacturers — `/api/inventory/manufacturers`
 
 Identical contract at `/api/inventory/manufacturers` — same methods, same roles, same `{ name }` body, same `_count.medicines` shape.
 
-### 8.3 Medicines
+### 8.3 Medicines — `/api/medicines`
 
-#### `GET /api/inventory/medicines` — any role
+#### `GET /api/medicines` — any role
 
 | Query          | Default | Purpose                                             |
 | -------------- | ------- | --------------------------------------------------- |
@@ -414,7 +462,7 @@ Only `isActive: true` medicines are returned, ordered by name.
 
 `totalStock` is the sum across **every** in-stock batch. The single batch in `batches` is the FEFO one — what the POS would sell next — and it is where `nearestExpiry` and `sellingPrice` come from.
 
-#### `GET /api/inventory/medicines/search?q=<term>` — any role
+#### `GET /api/medicines/search?q=<term>` — any role
 
 The POS lookup. Returns `[]` when `q` is shorter than 2 characters. Max 10 results. Each result carries the FEFO batch flattened onto it **and** the full list of batches the operator may choose instead (FR-BILL-19):
 
@@ -448,11 +496,11 @@ The POS lookup. Returns `[]` when `q` is shorter than 2 characters. Max 10 resul
 
 When a medicine has no sellable stock, `batchId` is `null`, `batchNumber` is the string `"No Stock"`, `sellingPrice` is `0`, `stock` is `0` and `batches` is `[]`. Out-of-stock medicines are **still returned** — the client must guard against adding a null `batchId` to the cart. If `expiredBatches` is above zero in that state, the shelf is not empty; the stock on it is dead and should be pulled.
 
-#### `GET /api/inventory/medicines/:id` — any role
+#### `GET /api/medicines/:id` — any role
 
 Full record including category, manufacturer and **all** batches (each with its supplier) ordered by expiry. **404** `Medicine not found`.
 
-#### `POST /api/inventory/medicines` — ADMIN, PHARMACIST
+#### `POST /api/medicines` — ADMIN, PHARMACIST
 
 ```json
 {
@@ -478,15 +526,15 @@ Full record including category, manufacturer and **all** batches (each with its 
 
 **201** with the created medicine including its category and manufacturer. Unknown fields are silently stripped by Zod.
 
-#### `PUT /api/inventory/medicines/:id` — ADMIN, PHARMACIST
+#### `PUT /api/medicines/:id` — ADMIN, PHARMACIST
 
 Same schema as create — all fields required, so send the complete object.
 
-#### `DELETE /api/inventory/medicines/:id` — ADMIN
+#### `DELETE /api/medicines/:id` — ADMIN
 
 **Soft delete**: sets `isActive = false`. The record, its batches and its invoice history survive; it disappears from list and search. There is no un-delete endpoint.
 
-### 8.4 Batches (stock)
+### 8.4 Batches (stock) — `/api/inventory/batches`
 
 #### `GET /api/inventory/batches` — any role
 
@@ -498,11 +546,11 @@ Same schema as create — all fields required, so send the complete object.
 
 Ordered by expiry ascending, each batch including `medicine { name, unit }` and `supplier { name }`. Unpaginated.
 
-#### `GET /api/inventory/batches/expiring?days=30` — any role
+#### `GET /api/reports/expiring?days=30` — any role
 
 Batches expiring between now and +`days` **that still hold stock** (`quantity > 0`). Powers the dashboard panel, the Stock Alerts report and the notification tray.
 
-#### `GET /api/inventory/batches/low-stock?threshold=10` — any role
+#### `GET /api/reports/low-stock?threshold=10` — any role
 
 Batches with `0 < quantity ≤ threshold`, ordered by quantity ascending. Includes the medicine's category.
 
@@ -564,15 +612,15 @@ Manual stock adjustment for breakage, theft, a miscount, or expired stock coming
 
 > **This is not a way to reverse a sale.** That is a [void](#post-apibillinginvoicesidvoid--admin-only), which issues a credit note, returns the exact units to the batches they came from, and leaves the tax period intact. An adjustment that added the units back would leave the invoice standing and the money uncorrected. Nothing here can stop an administrator misusing it — the defence is that the reason is mandatory and the adjustment is attributed, which is the point of the requirement.
 
-### 8.5 Suppliers
+### 8.5 Suppliers — `/api/suppliers`
 
 | Method | Path                                 | Role              |
 | ------ | ------------------------------------ | ----------------- |
-| GET    | `/api/inventory/suppliers?search=` | any               |
-| GET    | `/api/inventory/suppliers/:id`     | any               |
-| POST   | `/api/inventory/suppliers`         | ADMIN, PHARMACIST |
-| PUT    | `/api/inventory/suppliers/:id`     | ADMIN, PHARMACIST |
-| DELETE | `/api/inventory/suppliers/:id`     | ADMIN             |
+| GET    | `/api/suppliers?search=` | any               |
+| GET    | `/api/suppliers/:id`     | any               |
+| POST   | `/api/suppliers`         | ADMIN, PHARMACIST |
+| PUT    | `/api/suppliers/:id`     | ADMIN, PHARMACIST |
+| DELETE | `/api/suppliers/:id`     | ADMIN             |
 
 `search` matches name (case-insensitive) or phone. Results ordered by name, unpaginated.
 
@@ -591,13 +639,15 @@ Deleting a supplier that still has batches returns **409** `This record is still
 
 ---
 
-## 9. Billing
+## 9. Billing & customers
+
+Customers moved to their own router in 2.0.0 and are documented here because a sale is where most clients meet them. Invoices remain under `/api/billing`.
 
 All routes require authentication.
 
-### 9.1 Customers — `/api/billing/customers`
+### 9.1 Customers — `/api/customers`
 
-#### `GET /api/billing/customers` — any role
+#### `GET /api/customers` — any role
 
 | Query      | Default                   |
 | ---------- | ------------------------- |
@@ -615,13 +665,13 @@ All routes require authentication.
 }
 ```
 
-#### `GET /api/billing/customers/:id` — any role
+#### `GET /api/customers/:id` — any role
 
 The customer, plus their 10 most recent invoices (`id, invoiceNumber, date, totalAmount, paymentMode, paymentStatus`). **404** `Customer not found`.
 
 > **`invoices` is returned only to ADMIN and PHARMACIST.** For a CASHIER the key is **absent** — not an empty array, which would assert the customer had never bought anything. Purchase history in a pharmacy reveals health conditions, and a cashier needs to bill someone, not to browse what they have been treated for (threat T-9). Customer lookup, search and billing are unaffected.
 
-#### `POST /api/billing/customers` — any role
+#### `POST /api/customers` — any role
 
 ```json
 { "name": "Ramesh Gupta", "phone": "9876543210", "email": "", "address": "MG Road", "age": 54, "gender": "MALE" }
@@ -637,11 +687,11 @@ The customer, plus their 10 most recent invoices (`id, invoiceNumber, date, tota
 
 **201** with the created customer. This is the endpoint behind the POS "add customer" dialog.
 
-#### `PUT /api/billing/customers/:id` — any role
+#### `PUT /api/customers/:id` — any role
 
 Same schema. Sends all fields; omitted optional fields are written as `null`.
 
-#### `DELETE /api/billing/customers/:id` — ADMIN
+#### `DELETE /api/customers/:id` — ADMIN
 
 **Erasure, not deletion.** The row survives — `Invoice.customerId` is a foreign key and invoices are append-only tax records — but `name`, `phone`, `email`, `address`, `age` and `gender` are blanked and `anonymisedAt` is stamped. Every invoice keeps its number, date and totals, so a GST return filed against them still reconciles.
 
@@ -779,7 +829,7 @@ Partial returns are not supported: a void reverses a whole invoice.
 
 Ordered newest first; each row carries the customer summary, `user.name` and `_count.items`.
 
-#### `GET /api/billing/invoices/daily-summary?date=YYYY-MM-DD` — any role
+#### `GET /api/reports/daily-summary?date=YYYY-MM-DD` — any role
 
 Defaults to today. Returns every invoice for the day plus aggregates:
 
@@ -808,7 +858,7 @@ Powers the dashboard, the Daily report, and — called seven times — the Sales
 
 `totalInvoices` counts **sales** raised that day, cancelled ones included; `creditNotes` counts the reversals issued that day; and every money figure sums **both**, so the takings are net. A sale voided the same day therefore reads `totalInvoices: 1, creditNotes: 1, totalSales: 0` — not `2`. The per-mode `_count.id` is likewise sales-only, so the mode counts add up to `totalInvoices`. The reasoning, and why a cancelled sale still counts in its own period, is in [03 §8](./03-data-model.md#8-data-lifecycle--retention).
 
-#### `GET /api/billing/invoices/trend?days=<1-90>` — any role
+#### `GET /api/reports/trend?days=<1-90>` — any role
 
 Daily sales totals for the last `days` days, ending today. `days` defaults to **7** and is validated by `trendQuerySchema`; out of range is a `400`.
 
@@ -835,7 +885,7 @@ This replaced seven `daily-summary` calls, one per day, each of which fetched ev
 
 > Declared **above** `/invoices/:id` in `billing.routes.js`, or `trend` would be read as an invoice id. Same rule as `daily-summary` and `gst-report`.
 
-#### `GET /api/billing/invoices/gst-report?month=<1-12>&year=<yyyy>` — ADMIN, PHARMACIST
+#### `GET /api/reports/gst?month=<1-12>&year=<yyyy>` — ADMIN, PHARMACIST
 
 Every **`PAID`** invoice in the month, ascending by date, with items, plus period totals:
 
@@ -890,7 +940,7 @@ Everything the dashboard renders, in one request. No query parameters; the windo
 
 Each batch in `expiring.items` / `lowStock.items` carries `id`, `batchNumber`, `expiryDate`, `quantity`, `sellingPrice`, `medicine { id, name, unit }` and `supplier { name }`.
 
-The `summary` and `trend` blocks follow the same counting rules as `GET /api/billing/invoices/daily-summary` and `GET /api/billing/invoices/trend` in §9.2 above; `trend` here is always 7 days.
+The `summary` and `trend` blocks follow the same counting rules as `GET /api/reports/daily-summary` and `GET /api/reports/trend` in §9.2 above; `trend` here is always 7 days.
 
 **This endpoint replaced thirteen requests**, not six: the six panel calls plus seven `daily-summary` calls for the chart. Two of the six existed only to read a number — `?limit=1` on medicines and customers, fetching a row to throw it away and keep `pagination.total`. Measured: **794 KB / 159 ms → 6 KB / 19 ms** ([G-08](./08-gap-analysis.md#g-08)).
 
@@ -904,10 +954,10 @@ Four endpoints, one per report. Each takes **the same query parameters, the same
 
 | Endpoint                                                        | Mirrors                    | Roles             |
 | ----------------------------------------------------------------- | ---------------------------- | ------------------- |
-| `GET /api/billing/invoices/daily-summary/export?date=`        | `daily-summary`          | any role          |
-| `GET /api/billing/invoices/gst-report/export?month=&year=`    | `gst-report`             | ADMIN, PHARMACIST |
-| `GET /api/inventory/batches/expiring/export?days=`            | `batches/expiring`       | any role          |
-| `GET /api/inventory/batches/low-stock/export?threshold=`      | `batches/low-stock`      | any role          |
+| `GET /api/reports/daily-summary/export?date=`        | `daily-summary`          | any role          |
+| `GET /api/reports/gst/export?month=&year=`    | `gst-report`             | ADMIN, PHARMACIST |
+| `GET /api/reports/expiring/export?days=`            | `batches/expiring`       | any role          |
+| `GET /api/reports/low-stock/export?threshold=`      | `batches/low-stock`      | any role          |
 
 **200** `text/csv; charset=utf-8` with `Content-Disposition: attachment`. The server names the file after the period it covers — `daily-summary-2026-08-24.csv`, `gst-report-2026-08.csv`, `expiring-90-days.csv`, `low-stock-at-20.csv` — and clients should use that name rather than deriving their own.
 
@@ -936,16 +986,15 @@ Documented elsewhere in the repo but absent from the code. Requests to these ret
 | backend README        | `POST /api/auth/refresh`                                                                         | `generateRefreshToken` exists, no route                                                                        |
 | backend README        | `POST /api/auth/forgot-password`, `/reset-password`                                            | Not implemented                                                                                                  |
 | backend README        | `PUT /api/users/:id/password`, `/:id/role`                                                     | Covered by`PUT /api/users/:id`                                                                                 |
-| root + backend README | `/api/customers/*`                                                                               | Use`/api/billing/customers`                                                                                    |
-| root + backend README | `/api/medicines/*`                                                                               | Use`/api/inventory/medicines`                                                                                  |
-| root + backend README | `/api/suppliers/*`                                                                               | Use`/api/inventory/suppliers`                                                                                  |
-| root + backend README | `/api/reports/*` (sales, inventory, billing, top-medicines, daily-sales, low-stock, gst-summary) | Use`/api/billing/invoices/daily-summary`, `/gst-report`, `/api/inventory/batches/expiring`, `/low-stock` |
+| root + backend README | `/api/reports/sales`, `/inventory`, `/billing`, `/top-medicines`, `/daily-sales`, `/gst-summary` | `/api/reports` exists since 2.0.0, but only with`daily-summary`, `gst`, `trend`, `expiring` and `low-stock` |
 | backend README        | `GET /api/inventory` , `/inventory/add`, `/inventory/remove`                                 | Stock moves only via batch create and invoice create                                                             |
 | backend README        | `GET /api/billing/:id/invoice` (download)                                                        | Printing is browser-side                                                                                         |
 | backend README        | `DELETE /api/billing/:id`, `PUT /api/billing/:id`                                              | Invoices are immutable                                                                                           |
-| Architecture.txt      | `POST /api/batches`, `GET /api/batches/expiring`                                               | Under`/api/inventory/`                                                                                         |
+| Architecture.txt      | `POST /api/batches`, `GET /api/batches/expiring`                                               | Batches are under`/api/inventory/`; the expiry report is `/api/reports/expiring`                               |
 
-There is no `customer.routes.js`, `medicine.routes.js`, `report.routes.js` or `supplier.routes.js`. Four zero-byte placeholders with those names were deleted on 2026-08-20 ([G-13](./08-gap-analysis.md#g-13)); the four routers that exist are `auth`, `inventory`, `billing` and `user`.
+**Four entries left this table in 2.0.0.** `/api/customers`, `/api/medicines`, `/api/suppliers` and `/api/reports` were documented in the READMEs, absent from the code, and are now real — see §2a. Their module-shaped predecessors are the deprecated paths, not 404s.
+
+`customer.routes.js`, `medicine.routes.js`, `report.routes.js` and `supplier.routes.js` exist too. Four zero-byte placeholders with exactly those names were deleted on 2026-08-20 ([G-13](./08-gap-analysis.md#g-13)) because they implied routers that did not exist; 2.0.0 is where the names became true. Nine routers are mounted: `auth`, `customer`, `medicine`, `supplier`, `report`, `inventory`, `billing`, `user` and `dashboard`.
 
 ---
 
@@ -961,7 +1010,7 @@ TOKEN=$(curl -s -X POST $BASE/api/auth/login \
   | jq -r .data.token)
 
 # 2. Find a medicine (POS search)
-curl -s "$BASE/api/inventory/medicines/search?q=para" \
+curl -s "$BASE/api/medicines/search?q=para" \
   -H "Authorization: Bearer $TOKEN" | jq
 
 # 3. Create the invoice using the batchId returned above.
@@ -981,7 +1030,7 @@ curl -s -X POST $BASE/api/billing/invoices \
   }' | jq
 
 # 4. Read the day back
-curl -s "$BASE/api/billing/invoices/daily-summary" \
+curl -s "$BASE/api/reports/daily-summary" \
   -H "Authorization: Bearer $TOKEN" | jq .data.summary
 ```
 
