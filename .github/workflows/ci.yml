@@ -47,6 +47,12 @@ jobs:
           cache-dependency-path: backend/package-lock.json
 
       - run: npm ci
+
+      # Lint before anything that needs a database or a generated client: it
+      # costs seconds and catches the class of thing that would otherwise fail
+      # halfway through a test run (D-6).
+      - run: npm run lint
+
       - run: npx prisma generate
 
       # The frontend's request types are generated from these Zod schemas

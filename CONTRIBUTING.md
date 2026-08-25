@@ -200,6 +200,20 @@ docker compose exec \
 
 **`DATABASE_URL` must name a database ending in `_test`.** The suite empties every table between tests, so it refuses to start against anything else. That guard is the only thing standing between a mistyped variable and your dev data — don't remove it.
 
+### Linting and formatting
+
+Both halves lint. The backend's config is [`backend/eslint.config.js`](./backend/eslint.config.js) — flat config, CommonJS, on the same ESLint version line as the frontend so there is one toolchain rather than two.
+
+```bash
+cd backend
+npm run lint          # runs in CI; fails the build
+npm run format        # Prettier, 80 cols / 2 spaces / double quotes / semicolons
+```
+
+`format` is **not** a CI gate and is deliberately not applied across the tree: 13 files predate it and reformatting them belongs in its own commit, not buried in someone's bug fix. Run it on what you touched.
+
+The lint rules are the ones where a violation is a defect rather than a preference — a stray `console.log` in `src/` (logging goes through pino), a loose `==` in code that compares money and stock, a `return` inside `finally`. Formatting is Prettier's job and is not duplicated as lint rules.
+
 ### Writing tests
 
 - Use `tests/helpers/factory.js`: `buildApp()`, `signIn(app, "CASHIER")`, `makeSellable()`, `line()`. Rate limits are effectively off by default, so a test asserting a `401` never fails because an earlier test spent the budget.
@@ -269,7 +283,7 @@ Scopes in use: `billing`, `inventory`, `auth`, `api`, `frontend`, `docs`, `chore
 ### Checklist
 
 - [ ] `npm test` passes in `backend/`
-- [ ] `npm run lint` passes in `frontend/`
+- [ ] `npm run lint` passes in `backend/` **and** `frontend/`
 - [ ] `npm run build` passes in `frontend/` — `tsc -b` catches type errors lint won't
 - [ ] Schema changes ship with a migration
 - [ ] New or changed endpoints are in [`docs/04-api-reference.md`](./docs/04-api-reference.md)

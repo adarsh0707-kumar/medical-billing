@@ -134,7 +134,6 @@ const auditMiddleware = (prisma) => async (params, next) => {
       },
     });
   } catch (err) {
-    // eslint-disable-next-line no-console
     console.error("audit: failed to record a write", {
       model: params.model,
       action,

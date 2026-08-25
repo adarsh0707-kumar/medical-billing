@@ -1,4 +1,5 @@
 const createApp = require("./app");
+const { logger } = require("./config/logger");
 
 // JWT_SECRET is read only at the moment a token is signed or verified, so an
 // unset value used to let the process start perfectly cleanly and then answer
@@ -47,6 +48,11 @@ if (!process.env.JWT_SECRET?.trim()) {
 const PORT = process.env.PORT || 5000;
 
 createApp().listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📦 Environment: ${process.env.NODE_ENV}`);
+  // Through pino rather than stdout: these are the first two lines in any log
+  // aggregator, and a bare console.log arrives there unstructured and unlevelled
+  // while every other line is JSON.
+  logger.info(
+    { port: PORT, env: process.env.NODE_ENV },
+    `Server listening on port ${PORT}`,
+  );
 });
