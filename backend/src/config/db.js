@@ -11,14 +11,15 @@ const prisma = new PrismaClient({
 // controllers so a new write path records itself without being asked (NFR-17).
 // Must be registered before any query runs.
 const { auditMiddleware } = require("./audit");
+const { logger } = require("./logger");
 prisma.$use(auditMiddleware(prisma));
 
 // Test connection
 prisma
   .$connect()
-  .then(() => console.log("✅ Database connected successfully"))
+  .then(() => logger.info("Database connected"))
   .catch((err) => {
-    console.error("❌ Database connection failed:", err);
+    logger.error({ err }, "Database connection failed");
     process.exit(1);
   });
 

@@ -8,8 +8,6 @@ const startOfDay = (date) =>
 const startOfNextDay = (date) =>
   new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1);
 
-const startOfMonth = (date) => new Date(date.getFullYear(), date.getMonth(), 1);
-
 const dayKey = (date) =>
   `${String(date.getFullYear()).slice(-2)}${twoDigit(date.getMonth() + 1)}${twoDigit(date.getDate())}`;
 
