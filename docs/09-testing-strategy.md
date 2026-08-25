@@ -67,12 +67,13 @@ Two decisions worth knowing:
 | `tests/inventory/medicines.test.js`           |    14 | Stock totals, POS search, soft delete, validation                          |
 | `tests/users/users.test.js`                   |    17 | User CRUD, validation, profile safety                                      |
 
-**Frontend — 104 across 14 files.** Counted from a run on 2026-08-25; the 67
+**Frontend — 115 across 15 files.** Counted from a run on 2026-08-25; the 67
 recorded here previously predated the screen-by-screen component coverage.
 
 | File                                             | Tests | Covers                                                           |
 | ------------------------------------------------ | ----: | ----------------------------------------------------------------- |
 | `src/pages/__tests__/cart-math.test.ts`        |    41 | The §4 fixtures in integer paise, mirroring the server ([G-17](./08-gap-analysis.md#g-17)) |
+| `src/pages/__tests__/Reports.void.test.tsx`    |    11 | The void and partial-return dialog: role gating, client-side bounds, the refetch ([FR-BILL-17](./01-product-requirements.md)) |
 | `src/pages/__tests__/Billing.guards.test.tsx`  |     9 | POS stock guards, driven through the rendered page                |
 | `src/lib/__tests__/api.test.ts`                |     8 | The 401 interceptor and the password-change redirect              |
 | `src/store/__tests__/auth.store.test.ts`       |     7 | Sign-out reaches the server, and clears locally whatever it answers |
@@ -289,6 +290,16 @@ These are the acceptance set for `createInvoice`. All values follow [PRD §8 BR-
 
 - The export button is disabled on an empty report — a header-only file is indistinguishable from a failed download.
 - The button requests `…/export` as a blob for the period on screen. The file's *contents* are asserted server-side in `backend/tests/reports/`; the client is only ever asked to prove it did not compute them itself ([G-21](./08-gap-analysis.md#g-21)).
+
+*Reports — invoice void and partial returns (FR-BILL-17)*
+
+- The return form is absent for a `CASHIER` and present for an `ADMIN`. Authorisation itself is `authorize("ADMIN")` on the server, proven in `tests/auth/rbac.test.js`; what this asserts is that the UI agrees with it — and that a 403 is explained rather than reported as a generic failure, because hiding a control is not a guard.
+- A quantity above `quantity − returnedQty`, and a reason under the server's 3-character minimum, are both refused **before** anything is sent. The bounds mirror `voidInvoice` exactly, so the form cannot accept what the request would reject.
+- A committed return sends only the entered lines and then **refetches the day**. A credit note lands in the same period, so the payment-mode split and the period totals move too — patching the one row locally would leave the screen showing takings the database has already reversed.
+- An empty form means "everything outstanding", so it states the consequence and takes a second click. A native `confirm()` — the pattern used for the user-delete in Settings — would stack a browser dialog on an open modal and could not name the units and the money at stake.
+- A cancelled invoice, a credit note and a fully returned invoice each explain why nothing can be returned, in the server's own words, rather than offering a button that fails.
+
+The credit note's *arithmetic*, and the cumulative `returnedQty` guard that makes two simultaneous returns of the same units safe, are proven in `tests/billing/invoice-void.test.js`. Asserting money here would make the suite slower without making it more truthful.
 
 ### 5.7 E2E (Playwright) — P3
 

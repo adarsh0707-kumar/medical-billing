@@ -36,6 +36,7 @@ import { Separator } from "@/components/ui/separator";
 import api from "@/lib/api";
 import { downloadCsv } from "@/lib/download";
 import { toast } from "sonner";
+import InvoiceDetailDialog from "@/components/InvoiceDetailDialog";
 
 // ─── Types ─────────────────────────────────────────────
 
@@ -59,6 +60,15 @@ interface Invoice {
   totalAmount: number;
   paymentMode: string;
   paymentStatus: string;
+  /**
+   * The daily summary returns whole invoice rows, so both of these are present.
+   * They are what separates a sale from the credit note reversing it, and an
+   * active invoice from one already voided — the list showed neither, which
+   * made a negative total look like an arithmetic fault.
+   */
+  type?: "SALE" | "CREDIT_NOTE";
+  status?: "ACTIVE" | "CANCELLED";
+  reversesId?: string | null;
   customer?: { name: string; phone: string };
 }
 
@@ -143,6 +153,7 @@ function StatCard({
 function DailyReport() {
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [exporting, setExporting] = useState(false);
+  const [selected, setSelected] = useState<Invoice | null>(null);
 
   // Summary and invoices come from one response and are now held as one value.
   // Split across two useStates they could be rendered mismatched for a frame,
@@ -314,13 +325,29 @@ function DailyReport() {
             ) : (
               <div className="divide-y divide-slate-700">
                 {invoices.map((inv) => (
-                  <div
+                  <button
                     key={inv.id}
-                    className="flex items-center justify-between px-4 py-2.5"
+                    type="button"
+                    aria-label={`Invoice ${inv.invoiceNumber}`}
+                    onClick={() => setSelected(inv)}
+                    className="w-full flex items-center justify-between px-4 py-2.5
+                      text-left hover:bg-slate-700/50 transition-colors
+                      focus-visible:outline-none focus-visible:ring-1
+                      focus-visible:ring-teal-500"
                   >
                     <div>
-                      <p className="text-white text-sm font-medium">
+                      <p className="text-white text-sm font-medium flex items-center gap-1.5">
                         {inv.invoiceNumber}
+                        {inv.type === "CREDIT_NOTE" && (
+                          <span className="text-amber-400 text-xs font-normal">
+                            credit note
+                          </span>
+                        )}
+                        {inv.status === "CANCELLED" && (
+                          <span className="text-red-400 text-xs font-normal">
+                            voided
+                          </span>
+                        )}
                       </p>
                       <p className="text-slate-500 text-xs">
                         {inv.customer?.name || "Walk-in"} •{" "}
@@ -346,13 +373,22 @@ function DailyReport() {
                         {inv.paymentMode}
                       </Badge>
                     </div>
-                  </div>
+                  </button>
                 ))}
               </div>
             )}
           </CardContent>
         </Card>
       </div>
+
+      {/* Refetching rather than patching the row: a return writes a credit note
+          into the same day, so the payment-mode split and the period totals move
+          too, not just the invoice that was returned. */}
+      <InvoiceDetailDialog
+        invoice={selected}
+        onClose={() => setSelected(null)}
+        onReturned={() => void refetch()}
+      />
     </div>
   );
 }
