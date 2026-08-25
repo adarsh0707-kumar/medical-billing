@@ -67,18 +67,28 @@ Two decisions worth knowing:
 | `tests/inventory/medicines.test.js`           |    14 | Stock totals, POS search, soft delete, validation                          |
 | `tests/users/users.test.js`                   |    17 | User CRUD, validation, profile safety                                      |
 
-**Frontend — 67 across 6 files.**
+**Frontend — 104 across 14 files.** Counted from a run on 2026-08-25; the 67
+recorded here previously predated the screen-by-screen component coverage.
 
 | File                                             | Tests | Covers                                                           |
 | ------------------------------------------------ | ----: | ----------------------------------------------------------------- |
 | `src/pages/__tests__/cart-math.test.ts`        |    41 | The §4 fixtures in integer paise, mirroring the server ([G-17](./08-gap-analysis.md#g-17)) |
+| `src/pages/__tests__/Billing.guards.test.tsx`  |     9 | POS stock guards, driven through the rendered page                |
 | `src/lib/__tests__/api.test.ts`                |     8 | The 401 interceptor and the password-change redirect              |
+| `src/store/__tests__/auth.store.test.ts`       |     7 | Sign-out reaches the server, and clears locally whatever it answers |
 | `src/hooks/__tests__/useNotifications.test.ts` |     6 | Alert derivation and severity thresholds                          |
+| `src/pages/__tests__/Inventory.batches.test.tsx` |   6 | Batch form fields and the `mfgDate` guard ([G-04](./08-gap-analysis.md#g-04)) |
 | `src/components/__tests__/Sidebar.test.tsx`    |     5 | The role filter on navigation                                     |
-| `src/pages/__tests__/Billing.guards.test.tsx`  |     4 | POS stock guards, driven through the rendered page                |
+| `src/lib/__tests__/download.test.ts`           |     4 | Blob download and the `Content-Disposition` filename              |
+| `src/pages/__tests__/Customers.test.tsx`       |     4 | Customer list, search and the history restriction                 |
+| `src/pages/__tests__/Settings.users.test.tsx`  |     4 | User management, admin-only                                       |
 | `src/components/__tests__/ProtectedRoute.test.tsx` | 3 | Redirect when unauthenticated                                     |
+| `src/pages/__tests__/Reports.export.test.tsx`  |     3 | The export button requests the right period                       |
+| `src/hooks/__tests__/query-cancellation.test.tsx` |  2 | In-flight queries cancel on unmount                               |
+| `src/pages/__tests__/Suppliers.test.tsx`       |     2 | Supplier list and form                                            |
 
-**Browser — 6 flows**, `e2e/smoke.spec.ts`, Chromium only.
+**Browser — 7 flows**, `e2e/smoke.spec.ts`. Chromium runs all seven; Firefox runs
+only the CSV download, the one flow built on browser machinery rather than ours.
 
 ### Coverage
 

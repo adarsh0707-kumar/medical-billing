@@ -157,7 +157,10 @@ export default function ForcePasswordChange() {
             <button
               type="button"
               onClick={() => {
-                logout();
+                // See Sidebar's handleLogout: not awaited on purpose. Note the
+                // logout route carries no requirePasswordChange guard, so this
+                // works even though every other route is refusing this account.
+                void logout();
                 navigate("/login", { replace: true });
               }}
               className="text-slate-400 hover:text-white underline underline-offset-2"

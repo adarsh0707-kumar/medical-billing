@@ -34,7 +34,11 @@ export default function Sidebar({ collapsed }: SidebarProps) {
   const navigate = useNavigate();
 
   const handleLogout = () => {
-    logout();
+    // Deliberately not awaited. `logout` clears local state in a `finally`, so
+    // the sign-out is already guaranteed here; waiting on the server round trip
+    // would only hold the user on the page they just asked to leave. The
+    // request is in flight and a client-side navigation does not cancel it.
+    void logout();
     toast.success("Logged out successfully");
     navigate("/login");
   };

@@ -14,5 +14,10 @@ export interface AuthState {
   token: string | null;
   isAuthenticated: boolean;
   login: (user: User, token: string) => void;
-  logout: () => void;
+  /**
+   * Asynchronous because it ends the session server-side before clearing local
+   * state. Callers may fire and forget — the local half is guaranteed by a
+   * `finally` — but must not assume it has completed on the next line.
+   */
+  logout: () => Promise<void>;
 }
