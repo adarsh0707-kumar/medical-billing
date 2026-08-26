@@ -1,0 +1,39 @@
+# Render Blueprint. Must live at the repository root — Render does not look for
+# it in subdirectories — and every path below is resolved from the root too.
+#
+# NOTE: applying this creates a NEW service and database. It does not adopt the
+# service already running in the dashboard. See the region comment before use.
+services:
+  - type: web
+    name: medical-billing-backend
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    # Must match the database's region, or the internal hostname will not
+    # resolve and the app will fail with Prisma P1001.
+    region: oregon
+    plan: free
+    # Applies the 16 migrations in backend/prisma/migrations before traffic is
+    # sent. The Dockerfile deliberately keeps the prisma CLI so this can run.
+    preDeployCommand: npx prisma migrate deploy
+    # Express serves no route at /, so the default probe of / returns 404.
+    # /health is a static 200; /health/ready touches the database and would
+    # take the service out of rotation on a transient DB blip.
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: medical-billing-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: NODE_ENV
+        value: production
+      # CORS origin allow-list (src/app.js). Set to the deployed frontend URL.
+      - key: FRONTEND_URL
+        sync: false
+
+databases:
+  - name: medical-billing-db
+    plan: free
+    region: oregon
