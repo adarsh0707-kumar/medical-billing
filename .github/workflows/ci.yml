@@ -88,7 +88,7 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
-      - run: npm ci --legacy-peer-deps
+      - run: npm ci
       - run: npm run lint
 
       # Unit tests before the build: they are seconds, and the cart-maths cases
@@ -189,7 +189,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: frontend
-        run: npm ci --legacy-peer-deps
+        run: npm ci
 
       # Firefox is scoped to a single flow (see playwright.config.ts): the CSV
       # download is the one path built on browser machinery rather than ours.
