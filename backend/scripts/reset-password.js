@@ -84,9 +84,9 @@ async function main() {
   console.log(`
 ✅ Password reset for ${user.email} (${user.role})
 
-   Temporary password:  ${tempPassword}
+   Temporary password:  [REDACTED]
 
-   Shown once — it is stored only as a hash, so rerun this if it is lost.
+   It is stored only as a hash, so rerun this if a new temporary password is needed.
    Every session for this account has ended, and the API will refuse every
    route except signing in and changing the password until it is replaced.
 `);
