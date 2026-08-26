@@ -19,6 +19,11 @@ RUN apt-get update \
 
 # Copied before the source so a source change does not invalidate the install.
 COPY package*.json ./
+
+# TEMPORARY: confirms whether package-lock.json actually reaches the build
+# context on Render. Remove once the npm ci failure is understood.
+RUN ls -la && echo "---lockfile check---" && (test -f package-lock.json && echo "FOUND, size:" && wc -c package-lock.json || echo "MISSING")
+
 RUN npm ci
 
 COPY prisma ./prisma/
