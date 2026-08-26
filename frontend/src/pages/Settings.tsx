@@ -11,6 +11,8 @@ import {
   CheckCircle2,
   Eye,
   EyeOff,
+  KeyRound,
+  Copy,
 } from "lucide-react";
 import { toast } from "sonner";
 import api from "@/lib/api";
@@ -432,6 +434,14 @@ function UsersTab() {
 
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<AppUser | null>(null);
+  // Holds the generated password between the reset call and the operator
+  // reading it. The API returns it exactly once — it is stored only as a hash —
+  // so this is the only copy, and closing the dialog discards it for good.
+  const [resetResult, setResetResult] = useState<{
+    email: string;
+    tempPassword: string;
+  } | null>(null);
+  const [resettingId, setResettingId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [showPwd, setShowPwd] = useState(false);
   const [form, setForm] = useState({
@@ -525,6 +535,30 @@ function UsersTab() {
     } catch (err: unknown) {
       const e = err as { response?: { data?: { message?: string } } };
       toast.error(e.response?.data?.message || "Failed to delete user");
+    }
+  };
+
+  const handleReset = async (u: AppUser) => {
+    if (
+      !confirm(
+        `Reset the password for ${u.name}?\n\n` +
+          "They will be signed out everywhere and must set a new password at " +
+          "next sign-in. You will be shown a temporary password to give them.",
+      )
+    )
+      return;
+    setResettingId(u.id);
+    try {
+      const res = await api.post(`/api/users/${u.id}/reset-password`);
+      setResetResult({
+        email: u.email,
+        tempPassword: res.data.data.tempPassword,
+      });
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { message?: string } } };
+      toast.error(e.response?.data?.message || "Failed to reset password");
+    } finally {
+      setResettingId(null);
     }
   };
 
@@ -626,6 +660,20 @@ function UsersTab() {
                         {u.isActive ? "Deactivate" : "Activate"}
                       </button>
                       <button
+                        onClick={() => handleReset(u)}
+                        disabled={resettingId === u.id}
+                        aria-label="Reset password"
+                        title="Reset password"
+                        className="p-1.5 rounded-md text-slate-400 hover:text-amber-400
+                          hover:bg-slate-700 transition-colors disabled:opacity-50"
+                      >
+                        {resettingId === u.id ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <KeyRound className="w-3.5 h-3.5" />
+                        )}
+                      </button>
+                      <button
                         onClick={() => openEdit(u)}
                         aria-label="Edit user"
                         className="p-1.5 rounded-md text-slate-400 hover:text-teal-400
@@ -649,6 +697,61 @@ function UsersTab() {
           ))}
         </div>
       )}
+
+      {/* Temporary password — shown once, never retrievable again */}
+      <Dialog
+        open={resetResult !== null}
+        onOpenChange={(open) => !open && setResetResult(null)}
+      >
+        <DialogContent className="bg-slate-800 border-slate-700 text-white max-w-md">
+          <DialogHeader>
+            <DialogTitle>Temporary password</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-slate-400">
+              Give this to <span className="text-white">{resetResult?.email}</span>.
+              They must change it at next sign-in, and every session they had
+              open has ended.
+            </p>
+            <div
+              className="flex items-center gap-2 rounded-md border border-slate-600
+                bg-slate-900 px-3 py-2"
+            >
+              <code className="flex-1 font-mono text-base tracking-wide text-teal-300">
+                {resetResult?.tempPassword}
+              </code>
+              <button
+                onClick={() => {
+                  navigator.clipboard
+                    ?.writeText(resetResult?.tempPassword ?? "")
+                    .then(
+                      () => toast.success("Copied"),
+                      // Clipboard access is refused outside a secure context and
+                      // on some locked-down browsers. The password is on screen
+                      // either way, so this must not read as a failed reset.
+                      () => toast.error("Copy it manually — clipboard blocked"),
+                    );
+                }}
+                aria-label="Copy password"
+                className="p-1.5 rounded-md text-slate-400 hover:text-teal-400
+                  hover:bg-slate-700 transition-colors"
+              >
+                <Copy className="w-4 h-4" />
+              </button>
+            </div>
+            <p className="text-xs text-amber-400/90">
+              Shown only once. It is stored as a hash, so if you lose it, reset
+              the account again rather than looking it up.
+            </p>
+            <Button
+              onClick={() => setResetResult(null)}
+              className="w-full bg-teal-600 hover:bg-teal-700"
+            >
+              Done
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Add/Edit User Dialog */}
       <Dialog open={showForm} onOpenChange={setShowForm}>
