@@ -1,10 +1,22 @@
 import { describe, it, expect, beforeAll, vi } from "vitest";
 import request from "supertest";
-import bcrypt from "bcryptjs";
+import { createRequire } from "node:module";
 import prisma from "../../src/config/db.js";
 import { buildApp, makeUser, signIn, tokenFor, PASSWORD } from "../helpers/factory.js";
 import { generateToken } from "../../src/utils/jwt.utils.js";
 import jwt from "jsonwebtoken";
+
+// `require`, not `import`. bcryptjs 3 dual-publishes ESM and CommonJS through an
+// `exports` map, so `import bcrypt from "bcryptjs"` resolves to a *different*
+// module object than the `require("bcryptjs")` in auth.controller.js. Spying on
+// the imported one patched a copy the controller never calls: the three timing
+// guards below reported zero comparisons and failed, and they had been failing
+// on CI since the dependency was bumped.
+//
+// Reaching for the same build the controller does is what makes the spy
+// observe the real call. Keep this a `require` — swapping it back to an
+// `import` silently disarms the guards rather than breaking them loudly.
+const bcrypt = createRequire(import.meta.url)("bcryptjs");
 
 let app;
 beforeAll(() => {
