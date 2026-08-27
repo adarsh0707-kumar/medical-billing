@@ -2,3 +2,9 @@ node_modules
 dist
 .git
 *.md
+# Never bake an environment file into an image. The backend Dockerfile copies
+# only src/, prisma/ and the manifests so this is belt-and-braces there; the
+# frontend does COPY . . and Vite inlines every VITE_ value into the bundle at
+# build time, so there it is the actual guard.
+.env
+.env.*

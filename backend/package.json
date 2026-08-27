@@ -5,6 +5,9 @@
   "license": "MIT",
   "author": "Adarsh Kumar",
   "main": "index.js",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
