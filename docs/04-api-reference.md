@@ -106,9 +106,11 @@ The 500 row matters to clients. Token verification and the user reload are check
 | ------------------------------------------------------------------------ | :---: | :--------: | :-----: |
 | Log in, read own profile, change own password, update own profile        |  ✅  |     ✅     |   ✅   |
 | List / create / update / delete users                                    |  ✅  |            |        |
+| Reset another user's password                                            |  ✅  |            |        |
 | Register user via`/api/auth/register`                                  |  ✅  |            |        |
 | Read categories, manufacturers, medicines, batches, suppliers            |  ✅  |     ✅     |   ✅   |
 | Create / update categories, manufacturers, medicines, batches, suppliers |  ✅  |     ✅     |        |
+| Adjust batch stock (`/batches/:id/adjust`)                             |  ✅  |     ✅     |        |
 | Delete categories, manufacturers, medicines, suppliers                   |  ✅  |            |        |
 | Read customers, create / update customers                                |  ✅  |     ✅     |   ✅   |
 | Read a customer's**purchase history**                              |  ✅  |     ✅     |        |
@@ -385,6 +387,29 @@ Returns all users ordered by newest first: `id, name, email, role, isActive, cre
 ### `DELETE /api/users/:id` — ADMIN
 
 **200** on success. **400** `You can't delete your own account` when `:id` equals the caller. **409** `This record is still in use by other data and cannot be deleted.` for a user who has raised invoices — the foreign key holds, and the honest answer is to deactivate them instead ([G-12](./08-gap-analysis.md#g-12)).
+
+### `POST /api/users/:id/reset-password` — ADMIN
+
+No request body: the password is generated server-side, so there is nothing for a
+caller to choose and nothing to validate. **200** with
+`{ id, email, tempPassword, mustChangePassword: true }` — `tempPassword` is
+readable exactly once and is never recoverable afterwards, since it is stored as
+a bcrypt hash like any other. An administrator who loses it before handing it
+over reruns the reset.
+
+The target is left with `mustChangePassword` set, so the generated value can do
+exactly one thing: replace itself. Every session for that account ends —
+`tokenVersion` is bumped and their refresh tokens are revoked — because a reset
+answers a compromise as often as it answers forgetfulness.
+
+Resetting **your own** account is allowed and not special-cased: it is a
+legitimate way to rotate a credential you believe is exposed. It signs you out,
+unlike `PUT /api/auth/change-password`, which hands the caller a replacement
+token.
+
+**404** if the id does not exist. The route sits under the router's
+`requirePasswordChange`, so an administrator who has not yet replaced their own
+temporary password cannot reset anybody else's.
 
 ### `PUT /api/users/profile` — any authenticated role
 
@@ -983,8 +1008,7 @@ Documented elsewhere in the repo but absent from the code. Requests to these ret
 
 | Claimed in            | Path                                                                                               | Reality                                                                                                          |
 | --------------------- | -------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| backend README        | `POST /api/auth/refresh`                                                                         | `generateRefreshToken` exists, no route                                                                        |
-| backend README        | `POST /api/auth/forgot-password`, `/reset-password`                                            | Not implemented                                                                                                  |
+| backend README        | `POST /api/auth/forgot-password`, `POST /api/auth/reset-password`                              | Still not implemented — there is no self-service reset, because this stack has no mail. An **administrator** can reset someone else's password at `POST /api/users/:id/reset-password` (§7), and `npm run reset-password` is the console break-glass when the last admin is locked out |
 | backend README        | `PUT /api/users/:id/password`, `/:id/role`                                                     | Covered by`PUT /api/users/:id`                                                                                 |
 | root + backend README | `/api/reports/sales`, `/inventory`, `/billing`, `/top-medicines`, `/daily-sales`, `/gst-summary` | `/api/reports` exists since 2.0.0, but only with`daily-summary`, `gst`, `trend`, `expiring` and `low-stock` |
 | backend README        | `GET /api/inventory` , `/inventory/add`, `/inventory/remove`                                 | Stock moves only via batch create and invoice create                                                             |
@@ -992,7 +1016,9 @@ Documented elsewhere in the repo but absent from the code. Requests to these ret
 | backend README        | `DELETE /api/billing/:id`, `PUT /api/billing/:id`                                              | Invoices are immutable                                                                                           |
 | Architecture.txt      | `POST /api/batches`, `GET /api/batches/expiring`                                               | Batches are under`/api/inventory/`; the expiry report is `/api/reports/expiring`                               |
 
-**Four entries left this table in 2.0.0.** `/api/customers`, `/api/medicines`, `/api/suppliers` and `/api/reports` were documented in the READMEs, absent from the code, and are now real — see §2a. Their module-shaped predecessors are the deprecated paths, not 404s.
+**Five entries have left this table.** `POST /api/auth/refresh` went when refresh rotation shipped on 2026-08-22 and is documented in §7; it stayed here for three days after becoming real, which is the same drift this table exists to record.
+
+**Four left in 2.0.0.** `/api/customers`, `/api/medicines`, `/api/suppliers` and `/api/reports` were documented in the READMEs, absent from the code, and are now real — see §2a. Their module-shaped predecessors are the deprecated paths, not 404s.
 
 `customer.routes.js`, `medicine.routes.js`, `report.routes.js` and `supplier.routes.js` exist too. Four zero-byte placeholders with exactly those names were deleted on 2026-08-20 ([G-13](./08-gap-analysis.md#g-13)) because they implied routers that did not exist; 2.0.0 is where the names became true. Nine routers are mounted: `auth`, `customer`, `medicine`, `supplier`, `report`, `inventory`, `billing`, `user` and `dashboard`.
 
