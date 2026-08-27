@@ -19,6 +19,17 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile.dev
+    # Bring the schema up before serving. Nothing else in this stack applied the
+    # migrations, so a fresh clone following the README got an empty database:
+    # `docker compose up -d` succeeded, `npm run seed` failed with P2021 "table
+    # public.User does not exist" — and, until it was given an exit code, said
+    # nothing about it — and every request 500'd against a schema that was never
+    # created. It worked only on machines whose pgdata volume predated the
+    # problem, which is the shape of a bug that survives for months.
+    #
+    # `migrate deploy`, not `migrate dev`: it applies committed migrations and
+    # never generates or resets one. Idempotent, so restarts are free.
+    command: sh -c "npx prisma migrate deploy && npm run dev"
     ports:
       - "5000:5000"
     volumes:

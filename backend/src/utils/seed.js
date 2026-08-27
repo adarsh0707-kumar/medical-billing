@@ -25,6 +25,18 @@ async function main() {
   console.log("⚠️  The API will refuse every other request until it is changed.");
 }
 
+// A non-zero exit on failure, which this did not have.
+//
+// `.catch(console.error)` printed the error and exited 0, so every caller was
+// told the seed had worked. CI's "Seed the bootstrap admin" step passed green
+// against a database with no schema at all, and the failure only surfaced two
+// steps later as a browser test that could not sign in. A script whose whole
+// job is to create one account must not report success when it created none.
+//
+// Matches the convention in retention.js, which already does this.
 main()
-  .catch(console.error)
+  .catch((err) => {
+    console.error("Seed failed:", err);
+    process.exitCode = 1;
+  })
   .finally(() => prisma.$disconnect());
