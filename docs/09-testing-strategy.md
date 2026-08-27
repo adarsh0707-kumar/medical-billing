@@ -1,6 +1,6 @@
 # Testing Strategy
 
-**Current state (measured 2026-08-27): 550 backend tests across 20 files, 115 frontend unit tests across 15 files, and a 7-flow browser smoke — all three layers on CI.** Sections 1–4 describe the approach and the acceptance fixtures; §5 lists the cases, most of which now exist.
+**Current state (measured 2026-08-27): 576 backend tests across 21 files, 115 frontend unit tests across 15 files, and a 7-flow browser smoke — all three layers on CI.** Sections 1–4 describe the approach and the acceptance fixtures; §5 lists the cases, most of which now exist.
 
 > Counts here are taken by **running the suites**, not by adding up the table below. Three documents previously carried four different numbers because the table was maintained by hand and two suites were never added to it.
 
@@ -48,7 +48,7 @@ Two decisions worth knowing:
 
 ### What exists
 
-**Backend — 550 across 20 files, all passing.** The count is what a run reports, not what passes — recording it the other way would be the drift this section exists to prevent, and for a while the two genuinely differed.
+**Backend — 576 across 21 files, all passing.** The count is what a run reports, not what passes — recording it the other way would be the drift this section exists to prevent, and for a while the two genuinely differed.
 
 Two failures worth remembering, both fixed 2026-08-27:
 
@@ -59,6 +59,7 @@ Two failures worth remembering, both fixed 2026-08-27:
 | ----------------------------------------------- | ----: | -------------------------------------------------------------------------- |
 | `tests/auth/rbac.test.js`                     |   142 | The full role matrix, plus anonymous rejection on every route              |
 | `tests/billing/invoice-create.test.js`        |    48 | GST fixtures, invariants, rejections, atomicity, Schedule H and expiry     |
+| `tests/api/dashboard.test.js`                 |    26 | Every panel of `GET /api/dashboard/stats`: counting under a void, count-vs-items, the expiry and low-stock windows, and the trend's day bucketing |
 | `tests/api/query-validation.test.js`          |    46 | Every query surface: bounds, coercion, and that a filter actually filters ([G-19](./08-gap-analysis.md#g-19)) |
 | `tests/api/route-layout.test.js`              |    41 | All nine moved paths: alias and successor return the same body, and only the alias is marked deprecated |
 | `tests/auth/auth.test.js`                     |    41 | Login, token rejection, immediate revocation, password change, refresh rotation and reuse detection |
@@ -108,10 +109,12 @@ Measured 2026-08-22: **about 85% of statements** overall. The gate is deliberate
 
 | File                              | Statements | Branches | Gate |
 | --------------------------------- | ---------: | -------: | ---- |
-| `billing.controller.js`         |     94.93% |   76.19% | 90%  |
-| `auth.middleware.js`            |     96.15% |   93.75% | 90%  |
+| `billing.controller.js`         |     97.05% |   80.00% | 90%  |
+| `auth.middleware.js`            |     96.66% |   95.00% | 90%  |
+| `dashboard.controller.js`       |     97.37% |   91.66% | 90%  |
+| `utils/trend.js`                |    100.00% |   90.00% | 100% |
 
-> **`dashboard.controller.js` sits at 21.73%** — the lowest in the codebase. It serves `GET /api/dashboard/stats`, the single request that replaced thirteen, so every panel the dashboard renders depends on it and almost none of it is exercised. That is the most valuable backend gap left.
+> **`dashboard.controller.js` was the lowest in the codebase at 21.73%**, and is now at 97.37% with a gate of its own. It serves `GET /api/dashboard/stats`, the single request that replaced thirteen, so every panel the dashboard renders depends on it — and almost none of it was exercised. Writing the tests found two defects: the expiry panel keyed its window to the current instant rather than local midnight (the third site of that bug, the other two having been fixed the same day), and the trend chart bucketed days in UTC while the zero-fill loop keyed them locally, so an early-morning sale was charted on the previous day. The second is the more instructive: the chart and the daily summary disagreed about which day a sale belonged to, and neither was obviously wrong on its own screen.
 
 ### Still open
 

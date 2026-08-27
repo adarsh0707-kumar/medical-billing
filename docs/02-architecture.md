@@ -117,9 +117,12 @@ backend/src/
     │                            tokenVersion, which is what makes revocation work.
     ├── invoice.utils.js         generateInvoiceNumber() · generateCreditNoteNumber()
     │                            · isDuplicateNumber()
+    ├── trend.js                 The daily sales trend, shared by /api/reports/trend and
+    │                            the dashboard so the two cannot disagree. Buckets by the
+    │                            store's LOCAL day, not UTC — see the file for why.
     └── seed.js                  Creates admin@medstore.com, flagged mustChangePassword
 
-backend/tests/                   550 tests across 20 files — Vitest + Supertest, real PostgreSQL
+backend/tests/                   576 tests across 21 files — Vitest + Supertest, real PostgreSQL
 ├── setup/                       Database-name guard, migrations, per-test cleanup
 ├── helpers/factory.js           buildApp(), signed-in users by role, inventory fixtures
 ├── api/                         Query-parameter validation across all ten surfaces

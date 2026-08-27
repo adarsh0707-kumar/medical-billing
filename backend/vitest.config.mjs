@@ -27,6 +27,17 @@ export default defineConfig({
       thresholds: {
         "src/controllers/billing.controller.js": { statements: 90, lines: 90 },
         "src/middlewares/auth.middleware.js": { statements: 90, lines: 90 },
+        // Added 2026-08-27, when this went from 21.73% to 97.37%. It qualifies
+        // on the same rule as the two above rather than because the number is
+        // now high: it serves every panel on the screen the owner reads, it
+        // aggregates money, and it holds the boundary logic that decides which
+        // day a sale belongs to. A regression here misreports takings.
+        "src/controllers/dashboard.controller.js": { statements: 90, lines: 90 },
+        // The trend query and its zero-filling, shared by the dashboard and the
+        // reports endpoint so the two cannot disagree. Small enough to hold at
+        // 100, and the timezone handling in it is the kind of thing that breaks
+        // silently.
+        "src/utils/trend.js": { statements: 100, lines: 100 },
       },
     },
   },
