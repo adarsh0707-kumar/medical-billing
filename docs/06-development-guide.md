@@ -306,7 +306,7 @@ medical-billing/
 │   ├── src/                  index (boot guard + listen) · app (createApp factory)
 │   │                         · config · middlewares · validators · routes
 │   │                         · controllers · utils
-│   ├── tests/                368 tests; needs a DATABASE_URL ending in _test
+│   ├── tests/                545 tests; needs a DATABASE_URL ending in _test
 │   ├── Dockerfile            multi-stage production image, runs as USER node
 │   ├── Dockerfile.dev        node:22-slim + openssl + nodemon
 │   └── .env                  gitignored

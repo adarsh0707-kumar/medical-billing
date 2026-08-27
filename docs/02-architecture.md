@@ -117,7 +117,7 @@ backend/src/
     │                            · isDuplicateNumber() · generatePurchaseNumber() (unused)
     └── seed.js                  Creates admin@medstore.com, flagged mustChangePassword
 
-backend/tests/                   368 tests across 14 files — Vitest + Supertest, real PostgreSQL
+backend/tests/                   545 tests across 20 files — Vitest + Supertest, real PostgreSQL
 ├── setup/                       Database-name guard, migrations, per-test cleanup
 ├── helpers/factory.js           buildApp(), signed-in users by role, inventory fixtures
 ├── api/                         Query-parameter validation across all ten surfaces

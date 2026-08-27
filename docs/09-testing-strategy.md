@@ -1,6 +1,6 @@
 # Testing Strategy
 
-**Current state (measured 2026-08-22): 368 backend tests across 14 files, 67 frontend unit tests across 6 files, and a 6-flow browser smoke — all three layers on CI.** Sections 1–4 describe the approach and the acceptance fixtures; §5 lists the cases, most of which now exist.
+**Current state (measured 2026-08-27): 545 backend tests across 20 files, 115 frontend unit tests across 15 files, and a 7-flow browser smoke — all three layers on CI.** Sections 1–4 describe the approach and the acceptance fixtures; §5 lists the cases, most of which now exist.
 
 > Counts here are taken by **running the suites**, not by adding up the table below. Three documents previously carried four different numbers because the table was maintained by hand and two suites were never added to it.
 
@@ -48,24 +48,30 @@ Two decisions worth knowing:
 
 ### What exists
 
-**Backend — 368 across 14 files.**
+**Backend — 545 across 20 files.** Four are failing: the login-timing guards in `tests/auth/auth.test.js`, which stopped working when bcryptjs 3.x began dual-publishing ESM and CommonJS. The test `import`s one build and the controller `require`s the other, so `vi.spyOn` patches a module instance the controller never calls. The count is what a run reports, not what passes — recording it the other way would be the drift this section exists to prevent.
 
 | File                                            | Tests | Covers                                                                     |
 | ----------------------------------------------- | ----: | -------------------------------------------------------------------------- |
-| `tests/api/query-validation.test.js`          |    46 | Every query surface: bounds, coercion, and that a filter actually filters ([G-19](./08-gap-analysis.md#g-19)) |
-| `tests/auth/auth.test.js`                     |    18 | Login, token rejection, immediate revocation, password change              |
-| `tests/auth/password-change-required.test.js` |    13 | The forced-password-change gate and its two deliberate exemptions          |
-| `tests/auth/rate-limit.test.js`               |     5 | Failed-login budget, per-client isolation, successful sign-ins not counted |
 | `tests/auth/rbac.test.js`                     |   142 | The full role matrix, plus anonymous rejection on every route              |
-| `tests/billing/customers.test.js`             |    13 | Uniqueness, validation, search, history, pagination shape                  |
-| `tests/billing/invoice-concurrency.test.js`   |     4 | Last-unit races, oversell bursts, gapless serials                          |
-| `tests/billing/invoice-create.test.js`        |    30 | GST fixtures, invariants, rejections, atomicity                            |
-| `tests/billing/invoice-void.test.js`          |    12 | Stock restoration, credit notes, double-submit and concurrent voids, period rule |
+| `tests/billing/invoice-create.test.js`        |    48 | GST fixtures, invariants, rejections, atomicity, Schedule H and expiry     |
+| `tests/api/query-validation.test.js`          |    46 | Every query surface: bounds, coercion, and that a filter actually filters ([G-19](./08-gap-analysis.md#g-19)) |
+| `tests/api/route-layout.test.js`              |    41 | All nine moved paths: alias and successor return the same body, and only the alias is marked deprecated |
+| `tests/auth/auth.test.js`                     |    41 | Login, token rejection, immediate revocation, password change, refresh rotation and reuse detection |
+| `tests/inventory/batches.test.js`             |    28 | Opening stock, manufacture dates, strict updates, alert windows, manual adjustment |
+| `tests/users/users.test.js`                   |    28 | User CRUD, validation, profile safety                                      |
 | `tests/billing/reports.test.js`               |    23 | Daily, trend and GST reports, date boundaries, paid-only filtering         |
-| `tests/inventory/batches.test.js`             |    16 | Opening stock, manufacture dates, strict updates, alert windows            |
+| `tests/billing/invoice-void.test.js`          |    22 | Stock restoration, credit notes, partial returns, concurrent voids, period rule |
+| `tests/inventory/medicines.test.js`           |    19 | Stock totals, POS search, soft delete, validation                          |
+| `tests/reports/csv.test.js`                   |    16 | Escaping, the formula-injection guard, the BOM and CRLF                    |
 | `tests/inventory/masters.test.js`             |    15 | Masters CRUD, delete conflicts, suppliers                                  |
-| `tests/inventory/medicines.test.js`           |    14 | Stock totals, POS search, soft delete, validation                          |
-| `tests/users/users.test.js`                   |    17 | User CRUD, validation, profile safety                                      |
+| `tests/auth/password-change-required.test.js` |    13 | The forced-password-change gate and its two deliberate exemptions          |
+| `tests/billing/customers.test.js`             |    13 | Uniqueness, validation, search, history, pagination shape                  |
+| `tests/users/password-reset.test.js`          |    13 | The generated temporary password, its single use, and the sessions it ends |
+| `tests/billing/customer-erasure.test.js`      |    11 | Anonymisation in place, the audit-trail sweep, invoices left reconciling   |
+| `tests/reports/csv-export.test.js`            |    11 | The four export endpoints: filenames, headers, money as stored             |
+| `tests/audit/audit-log.test.js`               |     6 | Actor and before/after on every audited write, and what is deliberately not audited |
+| `tests/auth/rate-limit.test.js`               |     5 | Failed-login budget, per-client isolation, successful sign-ins not counted |
+| `tests/billing/invoice-concurrency.test.js`   |     4 | Last-unit races, oversell bursts, gapless serials                          |
 
 **Frontend — 115 across 15 files.** Counted from a run on 2026-08-25; the 67
 recorded here previously predated the screen-by-screen component coverage.
@@ -328,7 +334,7 @@ Four jobs in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml), plus Cod
 | **Backend tests** | `npm run test:coverage` against a real PostgreSQL service container, applying migrations first | Coverage rather than plain `npm test`: the config gates `billing.controller.js` and `auth.middleware.js` at 90% |
 | **Frontend lint, test and build** | `npm run lint` → `npm test` → `npm run build` | Unit tests before the build because they take seconds, and the cart-maths cases guard [G-17](./08-gap-analysis.md#g-17). `tsc -b` runs inside the build and catches what lint does not |
 | **Dependency audit** | `npm audit --omit=dev --audit-level=high` per workspace, plus a full advisory report that never fails | Reads the lockfile without installing, so it costs seconds. The threshold matches SECURITY.md's scope rule — see [07 §10 P2-14](./07-security.md#10-hardening-backlog) |
-| **Browser smoke (Playwright)** | Brings the compose stack up, seeds, runs the six flows | The Chromium download costs about a minute and it needs the whole stack, so keeping it apart leaves the other three as the fast signal |
+| **Browser smoke (Playwright)** | Brings the compose stack up, seeds, runs the seven flows | The Chromium download costs about a minute and it needs the whole stack, so keeping it apart leaves the other three as the fast signal |
 
 > The workflow itself is the source of truth and is **not reproduced here**. An inline copy drifts — the version that used to sit in this section still claimed the backend job ran `npm test` long after it had moved to `npm run test:coverage`.
 
