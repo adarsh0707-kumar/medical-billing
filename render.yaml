@@ -29,8 +29,14 @@ services:
         generateValue: true
       - key: NODE_ENV
         value: production
-      # CORS origin allow-list (src/app.js). Set to the deployed frontend URL.
-      - key: FRONTEND_URL
+      # CORS origin allow-list (src/app.js). Comma-separated origins, e.g.
+      # https://medical-billing.vercel.app
+      #
+      # Must be CORS_ORIGINS, not FRONTEND_URL. app.js reads FRONTEND_URL only
+      # on the development branch; under the NODE_ENV=production set above, the
+      # allowlist is exactly this variable. Setting the other one permitted
+      # nothing at all.
+      - key: CORS_ORIGINS
         sync: false
 
 databases:
