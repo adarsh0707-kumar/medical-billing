@@ -138,6 +138,27 @@ describe("expiry and low-stock alerts", () => {
     expect(res.body.data.map((b) => b.batchNumber)).toEqual(["SOON"]);
   });
 
+  // Guards C-3. The window used to open at `new Date()` — the current instant —
+  // while expiry dates are stored at midnight, so a batch expiring today was
+  // already behind the cursor by the time anyone loaded the page.
+  //
+  // The two halves have to agree: `createInvoice` sells a batch through the end
+  // of its expiry date (FR-BATCH-09), so the report that says "take this off the
+  // shelf" must show it for exactly as long as the till will sell it. Silent on
+  // the one day it matters is the worst possible day to be silent.
+  it("shows a batch expiring today, which is still sellable", async () => {
+    const { token } = await signIn(app);
+    const { medicine, supplier } = await makeMedicine();
+    // Stored the way batch.controller.create stores it — midnight, from a
+    // date-only string.
+    const today = new Date(new Date().toISOString().slice(0, 10));
+    await makeBatch({ medicineId: medicine.id, supplierId: supplier.id, batchNumber: "TODAY", expiryDate: today });
+
+    const res = await get(token, "/api/inventory/batches/expiring?days=30");
+
+    expect(res.body.data.map((b) => b.batchNumber)).toEqual(["TODAY"]);
+  });
+
   it("ignores already-expired and sold-out batches", async () => {
     const { token } = await signIn(app);
     const { medicine, supplier } = await makeMedicine();
