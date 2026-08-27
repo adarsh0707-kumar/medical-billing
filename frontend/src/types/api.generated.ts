@@ -20,16 +20,16 @@
  */
 
 /** `batchAdjustSchema` — `backend/src/validators/inventory.validator.js` */
-export type BatchAdjustInput = { reason: string; delta: number; };
+export type BatchAdjustInput = { delta: number; reason: string; };
 
 /** `batchSchema` — `backend/src/validators/inventory.validator.js` */
-export type BatchInput = { medicineId: string; quantity: number; batchNumber: string; expiryDate: string; purchasePrice: number; sellingPrice: number; supplierId: string; mfgDate?: string | undefined; };
+export type BatchInput = { medicineId: string; batchNumber: string; expiryDate: string; purchasePrice: number; sellingPrice: number; quantity: number; supplierId: string; mfgDate?: string | undefined; };
 
 /** `batchListQuerySchema` — `backend/src/validators/inventory.validator.js` */
 export type BatchListQuery = { page?: number | string | undefined; limit?: number | string | undefined; medicineId?: string | undefined; expiringSoon?: "true" | "false" | undefined; lowStock?: "true" | "false" | undefined; };
 
 /** `batchUpdateSchema` — `backend/src/validators/inventory.validator.js` */
-export type BatchUpdateInput = { mfgDate?: string | undefined; batchNumber?: string | undefined; expiryDate?: string | undefined; purchasePrice?: number | undefined; sellingPrice?: number | undefined; };
+export type BatchUpdateInput = { batchNumber?: string | undefined; expiryDate?: string | undefined; mfgDate?: string | undefined; purchasePrice?: number | undefined; sellingPrice?: number | undefined; };
 
 /** `categorySchema` — `backend/src/validators/inventory.validator.js` */
 export type CategoryInput = { name: string; };
@@ -38,7 +38,7 @@ export type CategoryInput = { name: string; };
 export type ChangePasswordInput = { currentPassword: string; newPassword: string; };
 
 /** `createInvoiceSchema` — `backend/src/validators/billing.validator.js` */
-export type CreateInvoiceInput = { items: { batchId: string; medicineId: string; medicineName: string; quantity: number; unitPrice: number; discount?: number | undefined; gstPercent?: number | undefined; }[]; notes?: string | undefined; customerId?: string | undefined; prescription?: { prescriberName: string; prescriberRegNo: string; prescribedOn: string | Date; patientName: string; notes?: string | undefined; } | undefined; discountAmt?: number | undefined; paymentMode?: "CASH" | "UPI" | "CARD" | "CREDIT" | undefined; paymentStatus?: "PAID" | "PENDING" | "PARTIAL" | undefined; };
+export type CreateInvoiceInput = { items: { batchId: string; medicineId: string; medicineName: string; quantity: number; unitPrice: number; discount?: number | undefined; gstPercent?: number | undefined; }[]; customerId?: string | undefined; prescription?: { prescriberName: string; prescriberRegNo: string; prescribedOn: string | Date; patientName: string; notes?: string | undefined; } | undefined; discountAmt?: number | undefined; paymentMode?: "CASH" | "UPI" | "CARD" | "CREDIT" | undefined; paymentStatus?: "PAID" | "PENDING" | "PARTIAL" | undefined; notes?: string | undefined; };
 
 /** `createUserSchema` — `backend/src/validators/user.validator.js` */
 export type CreateUserInput = { name: string; email: string; password: string; role?: "ADMIN" | "PHARMACIST" | "CASHIER" | undefined; };
@@ -59,7 +59,7 @@ export type ExpiringQuery = { days?: number | string | undefined; };
 export type GstReportQuery = { month: number | string; year: number | string; };
 
 /** `invoiceListQuerySchema` — `backend/src/validators/billing.validator.js` */
-export type InvoiceListQuery = { page?: number | string | undefined; limit?: number | string | undefined; paymentMode?: "CASH" | "UPI" | "CARD" | "CREDIT" | undefined; paymentStatus?: "PAID" | "PENDING" | "PARTIAL" | undefined; search?: string | undefined; startDate?: string | Date | undefined; endDate?: string | Date | undefined; };
+export type InvoiceListQuery = { page?: number | string | undefined; limit?: number | string | undefined; search?: string | undefined; startDate?: string | Date | undefined; endDate?: string | Date | undefined; paymentMode?: "CASH" | "UPI" | "CARD" | "CREDIT" | undefined; paymentStatus?: "PAID" | "PENDING" | "PARTIAL" | undefined; };
 
 /** `lowStockQuerySchema` — `backend/src/validators/inventory.validator.js` */
 export type LowStockQuery = { threshold?: number | string | undefined; };
@@ -68,7 +68,7 @@ export type LowStockQuery = { threshold?: number | string | undefined; };
 export type ManufacturerInput = { name: string; };
 
 /** `medicineSchema` — `backend/src/validators/inventory.validator.js` */
-export type MedicineInput = { gstPercent: number; name: string; categoryId: string; manufacturerId: string; unit: "tablet" | "capsule" | "syrup" | "injection" | "cream" | "drops" | "powder" | "inhaler" | "other"; genericName?: string | undefined; hsnCode?: string | undefined; isScheduledH?: boolean | undefined; };
+export type MedicineInput = { name: string; categoryId: string; manufacturerId: string; unit: "tablet" | "capsule" | "syrup" | "injection" | "cream" | "drops" | "powder" | "inhaler" | "other"; gstPercent: number; genericName?: string | undefined; hsnCode?: string | undefined; isScheduledH?: boolean | undefined; };
 
 /** `medicineListQuerySchema` — `backend/src/validators/inventory.validator.js` */
 export type MedicineListQuery = { page?: number | string | undefined; limit?: number | string | undefined; search?: string | undefined; categoryId?: string | undefined; };
@@ -80,7 +80,7 @@ export type MedicineSearchQuery = { q?: string | undefined; };
 export type PrescriptionInput = { prescriberName: string; prescriberRegNo: string; prescribedOn: string | Date; patientName: string; notes?: string | undefined; };
 
 /** `supplierSchema` — `backend/src/validators/inventory.validator.js` */
-export type SupplierInput = { name: string; phone?: string | undefined; email?: string | undefined; address?: string | undefined; contactName?: string | undefined; gstNumber?: string | undefined; };
+export type SupplierInput = { name: string; contactName?: string | undefined; phone?: string | undefined; email?: string | undefined; gstNumber?: string | undefined; address?: string | undefined; };
 
 /** `supplierListQuerySchema` — `backend/src/validators/inventory.validator.js` */
 export type SupplierListQuery = { search?: string | undefined; };
@@ -95,4 +95,4 @@ export type UpdateProfileInput = { name?: string | undefined; email?: string | u
 export type UpdateUserInput = { name?: string | undefined; email?: string | undefined; role?: "ADMIN" | "PHARMACIST" | "CASHIER" | undefined; isActive?: boolean | undefined; };
 
 /** `voidInvoiceSchema` — `backend/src/validators/billing.validator.js` */
-export type VoidInvoiceInput = { reason: string; items?: { quantity: number; invoiceItemId: string; }[] | undefined; };
+export type VoidInvoiceInput = { reason: string; items?: { invoiceItemId: string; quantity: number; }[] | undefined; };

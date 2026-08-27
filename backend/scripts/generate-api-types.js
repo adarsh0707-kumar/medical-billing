@@ -45,18 +45,24 @@
  * `z.input` is the client's half of the contract, so that is what is emitted.
  *
  * ── The one thing z.input gets wrong ─────────────────────────────────────────
- * Zod 3 does not model the pre-coercion type: `z.coerce.date()` reports its
- * *input* as `Date`, and `z.coerce.number()` as `number`, when what actually
- * travels is a string. Taking that at face value would hand the frontend a type
- * that contradicts the wire — worse than no shared type, because it looks
- * authoritative.
+ * Neither Zod version models the pre-coercion type usefully, and the two are
+ * wrong in opposite directions. Zod 3 reported the *output*: `z.coerce.date()`
+ * claimed its input was `Date` and `z.coerce.number()` claimed `number`, when
+ * what travels is a string. Zod 4 reports `unknown` — not a lie, but not a
+ * contract either. Emitting either would hand the frontend a type that says
+ * nothing true about the wire, which is worse than no shared type because it
+ * still looks authoritative.
  *
  * So the coerced leaves are found by walking the schemas at runtime and widened
  * to what a client may really send. If a widening cannot be applied the
  * generator throws rather than emitting the narrow type, because a silently
- * wrong contract is the failure this whole file exists to prevent. (Zod 4 models
- * this properly; when the backend upgrades, `COERCED_WIRE_TYPES` and
- * `widenCoercedFields` can go.)
+ * wrong contract is the failure this whole file exists to prevent.
+ *
+ * This comment used to say Zod 4 modelled it properly, and that
+ * `COERCED_WIRE_TYPES` and `widenCoercedFields` could go once the backend
+ * upgraded. Measured on 4.4.3, that is false: `z.input` of `z.coerce.number()`
+ * is `unknown`. Following the old advice would retype every coerced query
+ * parameter as `unknown` and call it an upgrade. The widening stays.
  *
  * Run `npm run types:generate` after changing a schema; `npm run types:check`
  * fails if the committed file is stale, and runs in CI.
@@ -102,12 +108,15 @@ function typeNameFor(exportName) {
  * What a client may actually put on the wire for a coerced field. Each includes
  * the parsed type too: axios JSON-encodes a `Date` to an ISO string, so passing
  * one is legitimate.
+ *
+ * Keyed by Zod 4's `_def.type` — the lowercase discriminator that replaced
+ * Zod 3's `typeName`, so these read `date` where they once read `ZodDate`.
  */
 const COERCED_WIRE_TYPES = {
-  ZodDate: "string | Date",
-  ZodNumber: "number | string",
-  ZodBoolean: "boolean | string",
-  ZodString: "string",
+  date: "string | Date",
+  number: "number | string",
+  boolean: "boolean | string",
+  string: "string",
 };
 
 /** Unwraps the wrappers that sit between a field and its underlying type. */
@@ -115,10 +124,11 @@ function unwrap(schema) {
   let current = schema;
   for (;;) {
     const def = current._def;
+    // optional / nullable / default all carry their subject as `innerType`.
     if (def.innerType) current = def.innerType;
-    else if (def.schema) current = def.schema;
-    else if (typeof def.type === "object" && def.typeName === "ZodArray")
-      return current;
+    // `.transform()` builds a pipe in Zod 4 (it was ZodEffects with `.schema`
+    // in Zod 3). The client's half of a pipe is its input side.
+    else if (def.in) current = def.in;
     else return current;
   }
 }
@@ -134,22 +144,25 @@ function collectCoercedFields(schema, found = new Map()) {
   const inner = unwrap(schema);
   const def = inner._def;
 
-  if (def.typeName === "ZodObject") {
-    for (const [key, child] of Object.entries(def.shape())) {
+  if (def.type === "object") {
+    // `shape` is a plain object in Zod 4; in Zod 3 it was a function.
+    for (const [key, child] of Object.entries(def.shape)) {
       const leaf = unwrap(child);
       if (leaf._def.coerce) {
-        const wire = COERCED_WIRE_TYPES[leaf._def.typeName];
+        const wire = COERCED_WIRE_TYPES[leaf._def.type];
         if (!wire) {
           throw new Error(
-            `no wire type known for coerced ${leaf._def.typeName} (field "${key}")`,
+            `no wire type known for coerced ${leaf._def.type} (field "${key}")`,
           );
         }
         found.set(key, wire);
       }
       collectCoercedFields(child, found);
     }
-  } else if (def.typeName === "ZodArray") {
-    collectCoercedFields(def.type, found);
+  } else if (def.type === "array") {
+    // Zod 3 held the element type in `def.type`, which is now the
+    // discriminator string itself.
+    collectCoercedFields(def.element, found);
   }
 
   return found;
@@ -173,10 +186,13 @@ function widenCoercedFields(typeName, printed, coerced) {
         `${typeName}: expected exactly one "${field}" field to widen, found ${matches.length}`,
       );
     }
-    const [, optional, current] = matches[0];
-    const widened = current.endsWith(" | undefined")
-      ? `${wire} | undefined`
-      : wire;
+    // Optionality comes from the `?` marker rather than the printed union.
+    // Under Zod 3 an optional coerced field printed as `X | undefined` and
+    // could be detected that way; under Zod 4 it prints as a bare `unknown`,
+    // so reading the union would silently drop the `| undefined` half of
+    // every optional field in the emitted contract.
+    const [, optional] = matches[0];
+    const widened = optional ? `${wire} | undefined` : wire;
     out = out.replace(pattern, `${field}${optional}: ${widened};`);
   }
   return out;

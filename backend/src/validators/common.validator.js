@@ -9,13 +9,13 @@ const MAX_LIMIT = 100;
 // Absent means "use the default"; present but unparseable is a 400. A typo must
 // not quietly return a different page of results than the caller asked for.
 const page = z.coerce
-  .number({ invalid_type_error: "page must be a number" })
+  .number({ error: "page must be a number" })
   .int("page must be a whole number")
   .min(1, "page must be at least 1")
   .default(1);
 
 const limit = z.coerce
-  .number({ invalid_type_error: "limit must be a number" })
+  .number({ error: "limit must be a number" })
   .int("limit must be a whole number")
   .min(1, "limit must be at least 1")
   .max(MAX_LIMIT, `limit must be at most ${MAX_LIMIT}`)

@@ -2,11 +2,11 @@ const { z } = require("zod");
 const { passwordProblem } = require("./password");
 
 const role = z.enum(["ADMIN", "PHARMACIST", "CASHIER"], {
-  errorMap: () => ({ message: "Role must be ADMIN, PHARMACIST or CASHIER" }),
+  error: "Role must be ADMIN, PHARMACIST or CASHIER",
 });
 
 const name = z.string().min(2, "Name must be at least 2 characters");
-const email = z.string().email("A valid email address is required");
+const email = z.email("A valid email address is required");
 
 // Rules live in validators/password.js, with the reasoning for what is
 // deliberately absent — no character-class requirements, no breach-corpus

@@ -29,7 +29,7 @@ const prescriptionSchema = z
       .trim()
       .min(3, "Prescriber registration number is required"),
     prescribedOn: z.coerce
-      .date({ invalid_type_error: "Prescription date is required" })
+      .date({ error: "Prescription date is required" })
       .refine((d) => d <= new Date(), {
         message: "A prescription cannot be dated in the future",
       }),
@@ -51,7 +51,7 @@ const createInvoiceSchema = z.object({
 const customerSchema = z.object({
   name: z.string().min(2, "Name is required"),
   phone: z.string().optional(),
-  email: z.string().email().optional().or(z.literal("")),
+  email: z.email().optional().or(z.literal("")),
   address: z.string().optional(),
   age: z
     .union([z.string(), z.number()])
@@ -68,8 +68,8 @@ const invoiceListQuerySchema = z.object({
   page,
   limit,
   search: searchTerm,
-  startDate: z.coerce.date({ invalid_type_error: "startDate must be a date" }).optional(),
-  endDate: z.coerce.date({ invalid_type_error: "endDate must be a date" }).optional(),
+  startDate: z.coerce.date({ error: "startDate must be a date" }).optional(),
+  endDate: z.coerce.date({ error: "endDate must be a date" }).optional(),
   paymentMode: z.enum(["CASH", "UPI", "CARD", "CREDIT"]).optional(),
   paymentStatus: z.enum(["PAID", "PENDING", "PARTIAL"]).optional(),
 });
@@ -78,7 +78,7 @@ const dailySummaryQuerySchema = z.object({
   // Absent means today. Present but unparseable used to produce an Invalid Date,
   // which Prisma turned into a range that matched nothing — an empty day that
   // looked like a real one.
-  date: z.coerce.date({ invalid_type_error: "date must be a valid date" }).optional(),
+  date: z.coerce.date({ error: "date must be a valid date" }).optional(),
 });
 
 const gstReportQuerySchema = z.object({
@@ -86,12 +86,12 @@ const gstReportQuerySchema = z.object({
   // rather than an error, and an empty tax period is indistinguishable from a
   // month with no sales — see docs/09 section 5.5.
   month: z.coerce
-    .number({ invalid_type_error: "month is required and must be a number" })
+    .number({ error: "month is required and must be a number" })
     .int("month must be a whole number")
     .min(1, "month must be between 1 and 12")
     .max(12, "month must be between 1 and 12"),
   year: z.coerce
-    .number({ invalid_type_error: "year is required and must be a number" })
+    .number({ error: "year is required and must be a number" })
     .int("year must be a whole number")
     .min(2000, "year must be between 2000 and 2100")
     .max(2100, "year must be between 2000 and 2100"),
@@ -101,7 +101,7 @@ const trendQuerySchema = z.object({
   // The dashboard and the reports chart both draw fixed windows; 90 days is well
   // past anything either asks for and keeps one query bounded.
   days: z.coerce
-    .number({ invalid_type_error: "days must be a number" })
+    .number({ error: "days must be a number" })
     .int("days must be a whole number")
     .min(1, "days must be at least 1")
     .max(90, "days must be at most 90")

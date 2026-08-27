@@ -79,7 +79,7 @@ const batchSchema = z
 const batchAdjustSchema = z
   .object({
     delta: z
-      .number({ invalid_type_error: "delta must be a number" })
+      .number({ error: "delta must be a number" })
       .int("delta must be a whole number of units")
       .refine((n) => n !== 0, "delta must not be zero"),
     // Mandatory, and long enough to be a sentence rather than a keystroke. An
@@ -115,7 +115,7 @@ const supplierSchema = z.object({
   name: z.string().min(2, "Supplier name is required"),
   contactName: z.string().optional(),
   phone: z.string().optional(),
-  email: z.string().email().optional().or(z.literal("")),
+  email: z.email().optional().or(z.literal("")),
   gstNumber: z.string().optional(),
   address: z.string().optional(),
 });
@@ -124,7 +124,7 @@ const supplierSchema = z.object({
 
 // URLSearchParams sends booleans as the strings "true"/"false".
 const booleanFlag = z
-  .enum(["true", "false"], { invalid_type_error: "must be true or false" })
+  .enum(["true", "false"], { error: "must be true or false" })
   .optional()
   .transform((v) => v === "true");
 
@@ -154,7 +154,7 @@ const expiringQuerySchema = z.object({
   // `Number(x) || 30` used to swallow a typo silently, so ?days=abc returned a
   // 30-day window that looked exactly like a deliberate one.
   days: z.coerce
-    .number({ invalid_type_error: "days must be a number" })
+    .number({ error: "days must be a number" })
     .int("days must be a whole number")
     .min(1, "days must be at least 1")
     .max(365, "days must be at most 365")
@@ -163,7 +163,7 @@ const expiringQuerySchema = z.object({
 
 const lowStockQuerySchema = z.object({
   threshold: z.coerce
-    .number({ invalid_type_error: "threshold must be a number" })
+    .number({ error: "threshold must be a number" })
     .int("threshold must be a whole number")
     .min(1, "threshold must be at least 1")
     .max(100000, "threshold must be at most 100000")
