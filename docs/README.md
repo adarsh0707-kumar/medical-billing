@@ -41,7 +41,7 @@ React 19 + Vite SPA  →  Express 5 REST API  →  PostgreSQL 15 (via Prisma 5)
 ```
 
 **Roles:** `ADMIN` › `PHARMACIST` › `CASHIER`.
-**Auth:** JWT bearer token, 7-day expiry, stored in browser `localStorage`.
+**Auth:** JWT bearer token, 30-minute expiry, stored in browser `localStorage`. The session lasts a week, carried by a rotating `HttpOnly` refresh cookie.
 **Money model:** per-line discount %, bill-level flat discount, GST split 50/50 into CGST + SGST.
 
 ## Where to start

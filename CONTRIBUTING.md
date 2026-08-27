@@ -42,6 +42,8 @@ Sign in with `admin@medstore.com` / `admin123`.
 
 Both entry points serve the SPA and proxy `/api` to the backend on the **same origin**, so CORS never applies to the browser. Don't reintroduce an absolute API URL in the client.
 
+**Running the suites outside Docker needs Node 22**, declared as `engines` in both `package.json` files and pinned in CI. On Node 20 the frontend suite does not fail a test — it fails to start its workers with `TypeError: webidl.util.markAsUncloneable is not a function` from inside jsdom, which says nothing about the actual cause.
+
 Full setup, environment variables and troubleshooting: [`docs/06-development-guide.md`](./docs/06-development-guide.md).
 
 ---
@@ -154,7 +156,7 @@ Every user query uses an explicit `select` that omits `password`. The only excep
 - Database access only through the `config/db.js` singleton.
 - Zod schemas live in `validators/`, never inline in a route.
 - Prisma error codes are mapped centrally in `error.middleware.js` (`P2002` → 409, `P2003` → 409, `P2025` → 404). Add new mappings there rather than in controllers.
-- Raw SQL is a last resort. There is exactly one statement — the invoice-serial upsert, which needs the atomicity — and it uses a `$queryRaw` tagged template so its inputs are bound. **`$queryRawUnsafe` must not appear in this codebase.**
+- Raw SQL is a last resort. There are five statements — the two document-serial upserts, which need the atomicity; the two trend aggregations, which would otherwise be a query per day; and the readiness probe. Each is a `$queryRaw` tagged template, so its inputs are bound. The current list is in [SECURITY.md](./SECURITY.md#security-relevant-design); add to it there rather than starting a second count here. **`$queryRawUnsafe` must not appear in this codebase.**
 
 ### Frontend
 

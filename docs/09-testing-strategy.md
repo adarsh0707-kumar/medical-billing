@@ -1,6 +1,6 @@
 # Testing Strategy
 
-**Current state (measured 2026-08-27): 545 backend tests across 20 files, 115 frontend unit tests across 15 files, and a 7-flow browser smoke — all three layers on CI.** Sections 1–4 describe the approach and the acceptance fixtures; §5 lists the cases, most of which now exist.
+**Current state (measured 2026-08-27): 550 backend tests across 20 files, 115 frontend unit tests across 15 files, and a 7-flow browser smoke — all three layers on CI.** Sections 1–4 describe the approach and the acceptance fixtures; §5 lists the cases, most of which now exist.
 
 > Counts here are taken by **running the suites**, not by adding up the table below. Three documents previously carried four different numbers because the table was maintained by hand and two suites were never added to it.
 
@@ -48,7 +48,12 @@ Two decisions worth knowing:
 
 ### What exists
 
-**Backend — 545 across 20 files.** Four are failing: the login-timing guards in `tests/auth/auth.test.js`, which stopped working when bcryptjs 3.x began dual-publishing ESM and CommonJS. The test `import`s one build and the controller `require`s the other, so `vi.spyOn` patches a module instance the controller never calls. The count is what a run reports, not what passes — recording it the other way would be the drift this section exists to prevent.
+**Backend — 550 across 20 files, all passing.** The count is what a run reports, not what passes — recording it the other way would be the drift this section exists to prevent, and for a while the two genuinely differed.
+
+Two failures worth remembering, both fixed 2026-08-27:
+
+- **The login-timing guards were inert for weeks.** bcryptjs 3.x began dual-publishing ESM and CommonJS, the test `import`ed one build while the controller `require`s the other, and `vi.spyOn` patched a module instance the controller never called. The guards reported zero comparisons and failed, so CI was red — but the *control* was fine throughout, which is the trap: a test that fails loudly is a better outcome than one that passes while measuring nothing. `tests/auth/auth.test.js` now reaches bcryptjs through `createRequire`, and says why.
+- **One test could only fail off CI.** `reports.test.js` built its `?date=` with `toISOString().slice(0, 10)` on a local-midnight instant, which names the previous day everywhere east of Greenwich. Green in CI's UTC, red on any machine in IST — the timezone this product is actually built for. Dates crossing a local/UTC boundary in a test are worth the same suspicion they get in the controllers.
 
 | File                                            | Tests | Covers                                                                     |
 | ----------------------------------------------- | ----: | -------------------------------------------------------------------------- |

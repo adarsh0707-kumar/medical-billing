@@ -75,7 +75,7 @@ graph TB
 
 Start order is enforced: `backend` waits for Postgres to pass `pg_isready`; `frontend` waits for `backend`; `nginx` waits for both.
 
-> **Both Dockerfiles are development images.** They run `npm run dev` / `nodemon`, mount source, and install dev dependencies. There is no production image, no multi-stage build, and no `vite build` served as static assets. See [Phase 8](./05-roadmap-and-phases.md#phase-8--production-readiness).
+> **The images in the table above are the development ones** (`Dockerfile.dev`): they run `npm run dev` / `nodemon`, mount source, and install dev dependencies. Production images exist alongside them and are what `docker-compose.prod.yml` builds — `backend/Dockerfile` and `frontend/Dockerfile`, both two-stage, the backend self-contained under a non-root user and the frontend serving `vite build` output from nginx. See [Phase 8](./05-roadmap-and-phases.md#phase-8--production-readiness).
 
 ---
 
@@ -112,12 +112,14 @@ backend/src/
 ├── controllers/                 auth · user · category · manufacturer · medicine · batch
 │                                · supplier · customer · billing · dashboard
 └── utils/
-    ├── jwt.utils.js             generateToken (7d) · generateRefreshToken (30d, unused)
+    ├── jwt.utils.js             generateToken (30m access) · generateRefreshToken (7d,
+    │                            carries the RefreshToken row id as jti). Both embed
+    │                            tokenVersion, which is what makes revocation work.
     ├── invoice.utils.js         generateInvoiceNumber() · generateCreditNoteNumber()
-    │                            · isDuplicateNumber() · generatePurchaseNumber() (unused)
+    │                            · isDuplicateNumber()
     └── seed.js                  Creates admin@medstore.com, flagged mustChangePassword
 
-backend/tests/                   545 tests across 20 files — Vitest + Supertest, real PostgreSQL
+backend/tests/                   550 tests across 20 files — Vitest + Supertest, real PostgreSQL
 ├── setup/                       Database-name guard, migrations, per-test cleanup
 ├── helpers/factory.js           buildApp(), signed-in users by role, inventory fixtures
 ├── api/                         Query-parameter validation across all ten surfaces
@@ -322,7 +324,7 @@ The last two fetched one row purely to read a count out of `pagination.total` �
 
 | Concern          | Mechanism                                                                                                                                                                                            | Location                       |
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
-| Authentication   | JWT HS256,`Authorization: Bearer`, 7-day expiry, per-request DB reload                                                                                                                             | `auth.middleware.js`         |
+| Authentication   | JWT HS256,`Authorization: Bearer`, 30-minute access token carrying `{ id, tokenVersion }`, per-request DB reload; the 7-day half is a rotating `HttpOnly` refresh cookie                            | `auth.middleware.js`         |
 | Authorisation    | `authorize(...roles)` → 403 with the required role named                                                                                                                                          | `auth.middleware.js`         |
 | Forced password change | `403 PASSWORD_CHANGE_REQUIRED` on every route but reading your own profile and changing your password, while `User.mustChangePassword` is set                                             | `password-change.middleware.js` |
 | Body validation  | Zod`safeParse`; on success `req.body` is **replaced** by parsed data (unknown keys dropped)                                                                                                | `validate.middleware.js`     |

@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+A full-surface audit on 2026-08-27 — code, tests, documentation and deployment — and the fixes for what it found. Three of the defects were the same shape: a date boundary drawn differently from the one drawn beside it.
+
+### Fixed
+
+- **A password change no longer signs out the device that made it.** `changePassword` bumped `tokenVersion` and reissued the *access* token, but not the refresh cookie — which still carried the old counter, so `POST /api/auth/refresh` correctly rejected it and the SPA cleared the session. The caller stayed signed in for one token lifetime and was then dropped to `/login`, up to 30 minutes later. Worst on the path nobody can skip: the seeded admin and every administrator-reset account are *forced* through that screen. Both halves of the session are now reissued, and the account's other refresh rows are revoked rather than merely out-versioned.
+- **The GST report no longer drops the last millisecond of the month.** `endDate` was built without a milliseconds argument, closing the period at `23:59:59.000` while the next opens at `00:00:00.000`. A sale committed in that 999 ms window appeared in the daily summary and in **no GST return at all** — too late for its own month, too early for the next. Guarded now by a month-boundary test, and by one asserting consecutive months partition the timeline.
+- **The expiring-stock report shows batches that expire today.** It filtered from `new Date()`, the current instant, while expiry dates are stored at midnight — so a batch expiring today was already behind the cursor. `createInvoice` sells such a batch all day (FR-BATCH-09), which meant the till traded stock the report built to flag it stayed silent about, along with the topbar notification that reads the same endpoint. Both now derive local midnight from one shared helper.
+- **The day's first sale is numbered `-0001` again after a morning credit note.** The counter row was seeded from a `COUNT(*)` over every invoice for the day, credit notes included — though those allocate from their own `CRN` row. Voiding yesterday's sale before today's first opened the sale series at `-0002`, leaving a gap in a book of account.
+- **A rejected password is reported once, not twice.** Zod 4 does not abort on a `superRefine` issue, so the field-level and object-level checks both reported the same problem and the Settings form rendered it twice.
+
+### Fixed — tests and CI
+
+- **CI is green again.** The four login-timing guards had been failing since bcryptjs 3.x began dual-publishing ESM and CommonJS: the test `import`ed one build while the controller `require`s the other, so `vi.spyOn` patched a module instance the controller never called. The control itself was never affected — measured at 386 / 386 / 380 ms across the three miss paths — but its guard measured nothing.
+- **A timezone-fragile test no longer passes only in UTC.** `reports.test.js` built its `?date=` with `toISOString().slice(0, 10)` on a local-midnight instant, naming the previous day in every zone east of Greenwich. It was green on CI and red on any machine in IST.
+- **Node 22 is declared** as `engines` in both manifests. Below it the frontend suite fails to start its workers with a jsdom error that says nothing about the cause.
+
+### Changed
+
+- `render.yaml` states `TRUST_PROXY` explicitly rather than relying on the default. If the platform's edge falls outside the trusted ranges, the rate limiter silently keys every request to one bucket and the per-client budget becomes a shop-wide one.
+- `.env` and `.env.*` are excluded from both Docker build contexts. The backend never copied them; the frontend does `COPY . .`, and Vite inlines every `VITE_` value into the bundle at build time.
+
+### Documentation
+
+- Corrected the session description in four places — `SECURITY.md`, `docs/02`, `docs/README`, `docs/10` — which still described the pre-2026-08-22 token: *"7-day expiry, carrying only a user id"*. It is a 30-minute access token carrying `{ id, tokenVersion }`, with the week in a rotating `HttpOnly` cookie. SECURITY.md's own design table contradicted SECURITY.md sixty lines above it, and the glossary's `payload { id } only` denied the existence of the counter the whole revocation model rests on.
+- `Prescription.patientName` in the schema claimed it was anonymised alongside the customer. It is not, deliberately — `erase-customer.js` argues the case from Rule 65(11) at length. The schema now records the limit rather than promising the opposite, since it is what a reader consults when deciding whether an erasure was complete.
+- CONTRIBUTING said there was exactly one raw SQL statement; there are five. It now points at SECURITY.md's list rather than keeping a second count.
+- `docs/02` no longer says there is no production image or multi-stage build — both Dockerfiles are two-stage production images — and no longer lists `generatePurchaseNumber()`, removed with the purchases table.
+
+---
+
 ## [2.0.0] - 2026-08-24
 
 The first release since 1.0.0. Versions 1.1.0 through 1.3.0 appear in the roadmap but were never tagged, so everything that accumulated on `main` since 1.0.0 is recorded here rather than back-dated into releases that did not ship.
