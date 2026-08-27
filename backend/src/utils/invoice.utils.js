@@ -22,7 +22,12 @@ const dayKey = (date) =>
 // back rather than leaving a gap in a tax document.
 //
 // The row is seeded from the invoices already recorded for the day, so days
-// written before this counter existed continue where they left off.
+// written before this counter existed continue where they left off. The seed
+// counts SALES only: credit notes allocate from their own CRN-prefixed row, so
+// counting them here started the sale series above 1 on any day whose first
+// document was a reversal — void yesterday's invoice at 9am and the day's first
+// sale was numbered -0002, with no -0001. A gap in a serial sequence is exactly
+// what this counter exists to prevent, and it is a tax document.
 //
 // MUST be called with the transaction client that inserts the invoice.
 const generateInvoiceNumber = async (client = prisma, now = new Date()) => {
@@ -31,7 +36,8 @@ const generateInvoiceNumber = async (client = prisma, now = new Date()) => {
     VALUES (
       ${dayKey(now)},
       (SELECT COUNT(*)::int FROM "Invoice"
-        WHERE "createdAt" >= ${startOfDay(now)}
+        WHERE "type" = 'SALE'::"InvoiceType"
+          AND "createdAt" >= ${startOfDay(now)}
           AND "createdAt" < ${startOfNextDay(now)}) + 1
     )
     ON CONFLICT ("day") DO UPDATE SET "seq" = "InvoiceCounter"."seq" + 1

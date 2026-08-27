@@ -84,4 +84,48 @@ describe("concurrent checkout", () => {
     const second = await sell(token, plenty.medicine, plenty.batch);
     expect(second.body.data.invoiceNumber).toMatch(/-0002$/);
   });
+
+  // Guards O-3. The counter row is seeded from the documents already recorded
+  // for the day, and that seed used to count every Invoice row — credit notes
+  // included, even though they allocate from their own CRN-prefixed row.
+  //
+  // So a shop that took a return before its first sale of the day — void
+  // yesterday's invoice at nine in the morning, which is when returns happen —
+  // opened its sale series at -0002. There is no -0001, and a missing serial in
+  // a book of account is a question somebody has to answer later.
+  it("starts the sale series at 0001 even after a credit note that morning", async () => {
+    const { token, user } = await signIn(app);
+    const { medicine, batch } = await makeSellable({ quantity: 100 });
+
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const old = await prisma.invoice.create({
+      data: {
+        invoiceNumber: "INV-FROM-YESTERDAY",
+        userId: user.id,
+        date: yesterday,
+        createdAt: yesterday,
+        subtotal: 100, cgst: 6, sgst: 6, totalAmount: 112,
+        paymentMode: "CASH", paymentStatus: "PAID",
+        items: {
+          create: [{
+            batchId: batch.id, medicineName: medicine.name, quantity: 1,
+            unitPrice: 100, discount: 0, gstPercent: 12, totalPrice: 112,
+          }],
+        },
+      },
+    });
+
+    // Today's first document is the reversal, not a sale.
+    const voided = await request(app)
+      .post(`/api/billing/invoices/${old.id}/void`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ reason: "customer returned it this morning" });
+    expect(voided.status).toBe(201);
+    expect(voided.body.data.invoiceNumber).toMatch(/^CRN\d{6}-0001$/);
+
+    // ...and the day's first sale still opens the sale series.
+    const first = await sell(token, medicine, batch);
+    expect(first.body.data.invoiceNumber).toMatch(/^INV\d{6}-0001$/);
+  });
 });
