@@ -140,7 +140,7 @@ describe("POST /api/users/:id/reset-password", () => {
   // someone else's hands — could reset its way across every account in the shop
   // without ever proving it knows a chosen password.
   it("refuses an admin who has not yet replaced their own temporary password", async () => {
-    const { user, token } = await signIn(app);
+    const { user } = await signIn(app);
     await prisma.user.update({
       where: { id: user.id },
       data: { mustChangePassword: true },
