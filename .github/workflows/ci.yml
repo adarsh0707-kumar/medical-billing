@@ -171,6 +171,26 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
+      # BEFORE `docker compose up`, and that order is the whole point.
+      #
+      # The frontend dev service bind-mounts ./frontend and layers an anonymous
+      # volume at /app/node_modules. To mount that volume Docker has to create
+      # the mountpoint inside the bind mount — on the host, as root. `npm ci`
+      # then runs as `runner`, finds frontend/node_modules owned by root, and
+      # dies with EACCES before installing anything.
+      #
+      # Installing first means the directory already exists and belongs to the
+      # runner, so Docker mounts over it instead of creating it. It also fails
+      # this job on a dependency problem before spending a minute building
+      # images.
+      #
+      # This job had been skipped, not passing, on every run since the backend
+      # suite went red — so the breakage sat here unseen until the suite was
+      # fixed.
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
       - name: Start the stack
         run: |
           echo "JWT_SECRET=$(openssl rand -hex 32)" > .env
@@ -186,10 +206,6 @@ jobs:
             sleep 2
           done
           echo "nginx never became ready"; docker compose logs; exit 1
-
-      - name: Install dependencies
-        working-directory: frontend
-        run: npm ci
 
       # Firefox is scoped to a single flow (see playwright.config.ts): the CSV
       # download is the one path built on browser machinery rather than ours.
