@@ -7,7 +7,7 @@
 # copied forward rather than regenerated in a layer that has no dev dependencies.
 
 # ─── Stage 1: dependencies and the Prisma client ──────────────────────────────
-FROM node:20-slim AS build
+FROM node:22-slim AS build
 
 WORKDIR /app
 
@@ -39,7 +39,7 @@ RUN cp -r node_modules/prisma /tmp/prisma-cli \
     && rm -rf /tmp/prisma-cli /tmp/prisma-bin
 
 # ─── Stage 2: runtime ─────────────────────────────────────────────────────────
-FROM node:20-slim AS runtime
+FROM node:22-slim AS runtime
 
 WORKDIR /app
 
@@ -54,7 +54,7 @@ COPY --from=build /app/prisma ./prisma
 COPY package*.json ./
 COPY src ./src
 
-# node:20-slim ships a `node` user (uid 1000). Running as root inside a container
+# node:22-slim ships a `node` user (uid 1000). Running as root inside a container
 # is not a sandbox escape on its own, but it removes a layer for no benefit.
 RUN chown -R node:node /app
 USER node

@@ -1,6 +1,6 @@
 # Backend — Medical Billing API
 
-Node 20 · Express 5 · Prisma 5 · PostgreSQL 15. CommonJS, not ESM.
+Node 22 · Express 5 · Prisma 5 · PostgreSQL 15. CommonJS, not ESM.
 
 Run it from the repository root with `docker compose up -d`; see the
 [root README](../README.md) for first-run setup.

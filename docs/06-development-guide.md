@@ -9,7 +9,7 @@ Everything needed to go from a clean checkout to a running, editable system.
 | Tool                | Version | Needed for                                                 |
 | ------------------- | ------- | ---------------------------------------------------------- |
 | Docker + Compose v2 | current | The recommended path                                       |
-| Node.js             | 20.x    | Local (non-Docker) runs — both images use`node:20-slim` |
+| Node.js             | 22.x    | Local (non-Docker) runs — both images use`node:22-slim` |
 | npm                 | 10.x    |                                                            |
 | PostgreSQL          | 15      | Only if running without Docker                             |
 
@@ -308,14 +308,14 @@ medical-billing/
 │   │                         · controllers · utils
 │   ├── tests/                368 tests; needs a DATABASE_URL ending in _test
 │   ├── Dockerfile            multi-stage production image, runs as USER node
-│   ├── Dockerfile.dev        node:20-slim + openssl + nodemon
+│   ├── Dockerfile.dev        node:22-slim + openssl + nodemon
 │   └── .env                  gitignored
 └── frontend/
     ├── src/                  pages · components/ui · store · hooks · lib · types
     ├── e2e/                  Playwright browser smoke, 6 flows
     ├── vite.config.ts        React 19 compiler, Tailwind v4, @ alias, /api proxy
     ├── Dockerfile            builds with Vite, serves from nginx:alpine
-    ├── Dockerfile.dev        node:20-slim, npm install --legacy-peer-deps
+    ├── Dockerfile.dev        node:22-slim, npm install --legacy-peer-deps
     └── .env                  gitignored (empty — the SPA needs no variables)
 ```
 

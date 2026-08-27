@@ -11,7 +11,7 @@ handful of places where the obvious change is the wrong one.
 
 ## Quick start
 
-Requires Docker and Docker Compose. For a non-Docker run you also need Node 20
+Requires Docker and Docker Compose. For a non-Docker run you also need Node 22
 and PostgreSQL 15.
 
 ```bash
@@ -54,7 +54,7 @@ Full requirement list, each with a status:
 | Layer | Technology |
 |---|---|
 | Frontend | React 19, TypeScript, Vite, Tailwind v4, shadcn/ui |
-| Backend | Node 20, Express 5, Prisma 5 |
+| Backend | Node 22, Express 5, Prisma 5 |
 | Database | PostgreSQL 15 |
 | Web server | nginx |
 

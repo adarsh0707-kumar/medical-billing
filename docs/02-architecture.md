@@ -69,8 +69,8 @@ graph TB
 | Container    | Image / build                                         | Port (host:container) | Persistence            | Purpose                                     |
 | ------------ | ----------------------------------------------------- | --------------------- | ---------------------- | ------------------------------------------- |
 | `nginx`    | `nginx:alpine`                                      | 80:80                 | —                     | Single entry point; proxies SPA and`/api` |
-| `frontend` | `./frontend/Dockerfile.dev` (node:20-slim)          | 5173:5173             | bind-mounted source    | Vite dev server with HMR                    |
-| `backend`  | `./backend/Dockerfile.dev` (node:20-slim + openssl) | 5000:5000             | bind-mounted source    | Express API under nodemon                   |
+| `frontend` | `./frontend/Dockerfile.dev` (node:22-slim)          | 5173:5173             | bind-mounted source    | Vite dev server with HMR                    |
+| `backend`  | `./backend/Dockerfile.dev` (node:22-slim + openssl) | 5000:5000             | bind-mounted source    | Express API under nodemon                   |
 | `postgres` | `postgres:15-alpine`                                | 5432:5432             | named volume`pgdata` | System of record                            |
 
 Start order is enforced: `backend` waits for Postgres to pass `pg_isready`; `frontend` waits for `backend`; `nginx` waits for both.

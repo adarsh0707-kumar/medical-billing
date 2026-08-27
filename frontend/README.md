@@ -6,7 +6,7 @@ Run it from the repository root with `docker compose up -d`; see the
 [root README](../README.md) for first-run setup.
 
 ```bash
-# non-Docker — needs Node 20
+# non-Docker — needs Node 22
 npm install --legacy-peer-deps
 npm run dev          # http://localhost:5173
 ```
