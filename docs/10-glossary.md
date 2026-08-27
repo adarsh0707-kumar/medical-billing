@@ -22,7 +22,7 @@ Domain and system vocabulary used across this documentation and in the code.
 
 **MRP** — Maximum Retail Price. Not modelled separately; `Batch.sellingPrice` serves this role and is treated as pre-GST.
 
-**Schedule H** — A category under India's Drugs and Cosmetics Rules covering medicines that may be sold only against a registered practitioner's prescription. `Medicine.isScheduledH` flags them and the POS shows a badge, but the system **stores no prescription record and does not block the sale** ([FR-MED-12](./01-product-requirements.md#64-medicine-catalogue--fr-med)).
+**Schedule H** — A category under India's Drugs and Cosmetics Rules covering medicines that may be sold only against a registered practitioner's prescription. `Medicine.isScheduledH` flags them, the POS shows a badge, and since 2026-08-24 an invoice containing such a line **cannot be created without a register entry** — prescriber, council registration number, prescription date and patient name, written in the same transaction as the sale ([FR-MED-12](./01-product-requirements.md#64-medicine-catalogue--fr-med)).
 
 **Supplier** — The distributor or stockist a batch is purchased from. Carries a GSTIN. Every batch records its supplier, which is what makes a recall traceable back to source.
 

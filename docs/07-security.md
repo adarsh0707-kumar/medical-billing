@@ -74,7 +74,7 @@ The full permission matrix is in [04 §4](./04-api-reference.md#4-role-matrix).
 - **Read is broadly permitted, with one exception.** Every authenticated role can read inventory, customers and invoices, including other operators' invoices. Since 2026-08-24 a **cashier cannot read a customer's purchase history**: `GET /api/customers/:id` returns the customer to every role but the attached invoices only to ADMIN and PHARMACIST. A cashier still needs to find someone and attach them to a sale, and the POS is unaffected — what they lose is the ability to browse what a named person has been buying, which in a pharmacy is health information. Reversing it is one constant in `customer.controller.js`.
 - **The GST report is the only report gated by role** (ADMIN/PHARMACIST). The daily summary is open to cashiers — meaning a cashier can see whole-day store revenue. Confirm that is intended.
 - **Deletes are ADMIN-only** across categories, manufacturers, medicines, suppliers and users. Good.
-- **Customer writes are open to all roles**, including create and update. A cashier can alter any customer record. Low risk, but there is no audit trail.
+- **Customer writes are open to all roles**, including create and update. A cashier can alter any customer record. Low risk, and no longer untracked: `Customer` is in the audited set, so every create, update and erasure records the actor and the before/after state ([03 §3.12](./03-data-model.md#312-auditlog--who-changed-what)). Reads remain unlogged, which is T-9's problem rather than this one.
 
 ---
 
@@ -120,7 +120,7 @@ The rule: **absent means use the default; present but unparseable or out of rang
 - **NoSQL/ORM operator injection:** query values are interpolated into `contains`/`equals` filters as plain strings, never spread from user input into Prisma operator objects.
 - **Mass assignment:** blocked by Zod's key-stripping on every mutating route. The two highest-value targets go further and reject unknown keys outright: `PUT /api/inventory/batches/:id` (so `quantity`, `initialQty` and the FK columns cannot be written) and `PUT /api/users/profile` (so a stray `role` cannot look accepted).
 - **XSS:** React escapes interpolated content by default and there is no `dangerouslySetInnerHTML` in the codebase. The residual risk is a dependency-borne XSS combined with A-1.
-- **CSRF:** not applicable — authentication is a bearer header, not a cookie, so browsers do not attach it automatically.
+- **CSRF:** the API call itself is a bearer header, which browsers do not attach automatically, so ordinary requests are not forgeable. Since 2026-08-22 there **is** one cookie — `refresh_token` — and `POST /api/auth/refresh` accepts it as the credential with no `Authorization` header, which is exactly the shape CSRF exploits. What stands in for a token is the cookie's own attributes: `SameSite=Strict` means a cross-site request never carries it, and `Path=/api/auth` keeps it off every other route. Weakening either turns the refresh endpoint into a CSRF target, so treat them as a control rather than as defaults.
 
 ---
 
@@ -202,7 +202,9 @@ Still true, and not addressed here:
 - No consent capture or privacy notice.
 - The purge is a command an operator runs, not a scheduled job. Nothing erases on its own.
 
-**Schedule H note.** The system flags prescription-only medicines but stores no prescription record and does not block the sale ([FR-MED-12](./01-product-requirements.md#64-medicine-catalogue--fr-med)). Where the Drugs and Cosmetics Rules require a prescription record for such sales, this system does not by itself satisfy that obligation.
+**Schedule H note.** Since 2026-08-24 the system both records a prescription and blocks the sale without one ([FR-MED-12](./01-product-requirements.md#64-medicine-catalogue--fr-med)). Any invoice carrying a Schedule H line requires a register entry — prescriber, council registration number, the prescription's date and the patient's name — written in the same transaction as the sale, so the two cannot come apart. Schedule H is decided from the **batch's** medicine, never the client-supplied `medicineId`, which is validated but not persisted.
+
+Two limits worth stating plainly. **No prescription image is stored** — Rule 65(11) permits a register in lieu of retaining the paper, and a scan would be a second copy of patient-identifying data with its own retention obligations. And `Prescription.patientName` is deliberately **outside** the erasure path: a statutory record the shop is obliged to hold is not something a right to erasure overrides ([03 §8](./03-data-model.md#8-data-lifecycle--retention)). Whether the register satisfies your local obligations is still yours to assess.
 
 ---
 
