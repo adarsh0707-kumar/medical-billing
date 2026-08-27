@@ -165,7 +165,7 @@ erDiagram
 | `isActive`                  | Boolean  | default`true`            | `false` blocks login *and* invalidates existing tokens on next request |
 | `createdAt` / `updatedAt` | DateTime | auto                       |                                                                            |
 
-Relations: `invoices Invoice[]`.
+Relations: `invoices Invoice[]`, `refreshTokens RefreshToken[]` (§3.14).
 
 > Every user query in the codebase uses an explicit `select` that omits `password` — except the two places that need the hash to compare it (`login`, `changePassword`). Preserve that discipline when adding queries.
 
@@ -399,6 +399,41 @@ Both tables existed from the initial migration and never acquired a write path: 
 **Decided 2026-08-24 (PRD Q7): the schema was deleted, not built.** The control it looked like it would provide already existed — `Batch` carries `supplierId` and `purchasePrice`, and the audit log records who created it, so stock already has a traceable cause and a cost. What Phase 10 would add on top is purchase-level grouping, supplier payables and margin reporting: features nobody asked for in the four months since 1.0.0. The design survives in git history and in this document, so procurement can be built later against real requirements rather than an April 2026 guess.
 
 Dropped in migration `20260824111521_drop_purchases`, verified empty (0 rows in both) beforehand.
+
+### 3.14 `RefreshToken` — one row per signed-in device
+
+Added 2026-08-22 with refresh rotation (FR-AUTH-10). Numbered last rather than
+beside `User`, where it belongs conceptually, because renumbering ten sections
+would break every cross-reference into them — including the ones pointing at
+§3.11 and §3.12.
+
+| Column        | Type      | Notes                                                                                          |
+| ------------- | --------- | ---------------------------------------------------------------------------------------------- |
+| `id`        | String    | PK, cuid. **This is the refresh token's `jti`** — the token is a pointer to this row, not a bearer of its own authority |
+| `userId`    | String    | FK → User, `ON DELETE CASCADE`. Deleting a user takes their sessions with them              |
+| `expiresAt` | DateTime  | Seven days from issue                                                                          |
+| `revokedAt` | DateTime? | Set the moment the token is rotated or the session ends. **A presented token whose row is already revoked is the reuse signal** |
+| `createdAt` | DateTime  | default now                                                                                    |
+
+Indexed on `userId`, which is the only way it is ever queried — revoking every
+session for an account.
+
+**Why the server holds state for a stateless credential.** The access token is a
+plain JWT and is verified without a lookup; the refresh token is not, and that
+asymmetry is the point. Rotation means every use revokes the row it was issued
+against and creates a new one, so presenting an already-revoked row means two
+parties hold the same credential. A legitimate client never does that. The
+response is to treat it as theft and end every session for that user, the honest
+one included — losing a session beats leaving somebody else in one.
+
+**Deliberately not audited** ([§3.12](#312-auditlog--who-changed-what)). With
+30-minute access tokens each device rotates one roughly 48 times a day, so
+auditing this table would bury the rows anyone actually wants to read.
+
+Revocation has two halves and needs both: `User.tokenVersion` invalidates
+outstanding **access** tokens, and revoking these rows stops new ones being
+minted. `POST /api/auth/logout`, a password change, an administrator's password
+reset and deactivating an account all do both.
 
 ## 4. Indexes and constraints
 

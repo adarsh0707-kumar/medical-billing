@@ -84,22 +84,37 @@ npm install --legacy-peer-deps   # the Docker image uses this flag too
 npm run dev                      # Vite on :5173
 ```
 
-`frontend/.env` sets `PORT` and `FRONTEND_URL` but not `VITE_API_URL`, which is what you want: the client calls `/api` relative to its own origin and the dev server proxies it to `http://localhost:5000`. Set `VITE_PROXY_TARGET` if the API is elsewhere, or `VITE_API_URL` if it is on another host entirely — then restart Vite, since env values are inlined at build time.
+`frontend/.env` is **empty**, which is correct: the client calls `/api` relative to its own origin and the dev server proxies it to `http://localhost:5000`, so it needs no variables at all. Set `VITE_PROXY_TARGET` if the API is elsewhere, or `VITE_API_URL` if it is on another host entirely — then restart Vite, since env values are inlined at build time.
 
 ## 4. Environment variables
 
 ### Backend
 
-| Variable         | Required | Default                              | Purpose                                                                                                              |
-| ---------------- | :------: | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
-| `DATABASE_URL` |    ✅    | —                                   | Postgres connection string. Process exits if unreachable                                                             |
-| `JWT_SECRET`   |    ✅    | —                                   | HMAC key for tokens.**No fallback** — the process refuses to start without it                                |
-| `PORT`         |          | `5000`                             |                                                                                                                      |
-| `NODE_ENV`     |          | —                                   | `development` enables Prisma query logs and error stacks in responses                                              |
-| `FRONTEND_URL` |          | —                                   | Appended to the CORS allowlist when set                                                                              |
-| `TRUST_PROXY`  |          | `loopback, linklocal, uniquelocal` | Express`trust proxy` value — which peers may set `X-Forwarded-For`, and therefore what the rate limiter keys on |
+| Variable | Required | Default | Purpose |
+| -------- | :------: | ------- | ------- |
+| `DATABASE_URL` | ✅ | — | Postgres connection string. Process exits if unreachable |
+| `JWT_SECRET` | ✅ | — | HMAC key for tokens. **No fallback** — the process refuses to start without it |
+| `CORS_ORIGINS` | ✅ **in production** | — | Comma-separated origins permitted to call the API cross-origin. Under `NODE_ENV=production` this **is** the allowlist; unset means an empty one. `docker-compose.prod.yml` refuses to start without it |
+| `PORT` | | `5000` | |
+| `NODE_ENV` | | — | `development` enables Prisma query logs and error stacks in responses. Also selects the CORS branch below |
+| `FRONTEND_URL` | | — | Appended to the **development** allowlist only. Ignored entirely under `NODE_ENV=production` — set `CORS_ORIGINS` there instead |
+| `TRUST_PROXY` | | `loopback, linklocal, uniquelocal` | Express `trust proxy` value — which peers may set `X-Forwarded-For`, and therefore what the rate limiter keys on |
+| `LOG_LEVEL` | | `info` | pino level: `trace`, `debug`, `info`, `warn`, `error`, `fatal`. Silent under `NODE_ENV=test` |
+| `RATE_LIMIT_MAX` | | `500` | Requests per 15 minutes per client on `/api` |
+| `LOGIN_RATE_LIMIT_MAX` | | `10` | **Failed** logins per 15 minutes on `/api/auth/login`; successes are not counted |
+| `CUSTOMER_RETENTION_MONTHS` | | `36` | Inactivity window used by `npm run purge:customers` |
 
-CORS allows, always: `http://localhost:3000`, `http://localhost:5173`, `http://127.0.0.1:5173`, `http://172.17.0.1:5173`, plus `FRONTEND_URL`. Requests with **no** Origin header (curl, Postman, server-to-server) are allowed.
+**The CORS allowlist has two branches, and they share nothing.** Under
+`NODE_ENV=production` it is exactly `CORS_ORIGINS`, because "restrict CORS to
+your real origin" is impossible to actually do if `localhost:5173` is always
+permitted. Otherwise it is the development set — `http://localhost`,
+`http://localhost:3000`, `http://localhost:5173`, `http://127.0.0.1:5173`,
+`http://172.17.0.1:5173`, plus `FRONTEND_URL` if set.
+
+Either way, requests with **no** `Origin` header (curl, Postman,
+server-to-server) are allowed. The SPA is same-origin through nginx or the Vite
+proxy, so none of this governs the browser — it governs callers reaching the API
+directly.
 
 ### Frontend
 
