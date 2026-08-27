@@ -70,7 +70,7 @@ Domain and system vocabulary used across this documentation and in the code.
 
 **FEFO batch resolution** — See FEFO. Implemented as `where: { quantity: { gt: 0 } }, orderBy: { expiryDate: "asc" }, take: 1`.
 
-**JWT** — JSON Web Token, HS256, signed with `JWT_SECRET`, 7-day expiry, payload `{ id }` only. Role is not in the token — the server reloads the user on every request.
+**JWT** — JSON Web Token, HS256, signed with `JWT_SECRET`. The access token expires in **30 minutes** and carries `{ id, tokenVersion }`; the refresh token adds a `jti` and lasts 7 days. Role is not in either — the server reloads the user on every request. `tokenVersion` is the revocation counter: `protect` compares the token's copy against the column, so bumping it ends every session for that account.
 
 **Middleware chain** — The per-request order `protect → authorize → validate → controller`. Anything missing a link is a gap; see [07 §4](./07-security.md#4-input-validation).
 

@@ -1,10 +1,28 @@
 import { describe, it, expect, beforeAll, vi } from "vitest";
 import request from "supertest";
-import bcrypt from "bcryptjs";
+import { createRequire } from "node:module";
 import prisma from "../../src/config/db.js";
 import { buildApp, makeUser, signIn, tokenFor, PASSWORD } from "../helpers/factory.js";
 import { generateToken } from "../../src/utils/jwt.utils.js";
 import jwt from "jsonwebtoken";
+
+// `require`, not `import`. bcryptjs 3 dual-publishes ESM and CommonJS through an
+// `exports` map, so `import bcrypt from "bcryptjs"` resolves to a *different*
+// module object than the `require("bcryptjs")` in auth.controller.js. Spying on
+// the imported one patched a copy the controller never calls: the three timing
+// guards below reported zero comparisons and failed, and they had been failing
+// on CI since the dependency was bumped.
+//
+// Reaching for the same build the controller does is what makes the spy
+// observe the real call. Keep this a `require` — swapping it back to an
+// `import` silently disarms the guards rather than breaking them loudly.
+const bcrypt = createRequire(import.meta.url)("bcryptjs");
+
+// The refresh cookie off a response, for the tests that follow one across a
+// rotation. Module-level because both the refresh block and the change-password
+// block need it.
+const cookieFrom = (res) =>
+  (res.headers["set-cookie"] ?? []).find((c) => c.startsWith("refresh_token="));
 
 let app;
 beforeAll(() => {
@@ -329,8 +347,7 @@ describe("POST /api/auth/logout", () => {
 // Guards FR-AUTH-10 / docs/07 A-3. Access tokens are short-lived; the week is
 // carried by a refresh cookie that JavaScript cannot read.
 describe("POST /api/auth/refresh", () => {
-  const cookieOf = (res) =>
-    (res.headers["set-cookie"] ?? []).find((c) => c.startsWith("refresh_token="));
+  const cookieOf = cookieFrom;
 
   const signInFor = async (email) => {
     const user = await makeUser({ role: "CASHIER", email });
@@ -468,6 +485,51 @@ describe("PUT /api/auth/change-password", () => {
     expect((await request(app).get("/api/auth/me").set("Authorization", `Bearer ${token}`)).status).toBe(401);
     expect(change.body.data.token).toBeTruthy();
     expect((await request(app).get("/api/auth/me").set("Authorization", `Bearer ${change.body.data.token}`)).status).toBe(200);
+  });
+
+  // Guards C-1, and it is the other half of the test above.
+  //
+  // "Stays signed in" was asserted on the access token alone, which is true for
+  // thirty minutes and then false: the change bumps `tokenVersion`, and the
+  // caller's refresh cookie still carried the old one, so `refresh` correctly
+  // rejected it and the SPA cleared the session and bounced to /login. Handing
+  // back one half of a session reads as working right up until the silent
+  // refresh that proves it is not — which is why this asserts the cookie a real
+  // client would use next, not the token it is holding now.
+  //
+  // Worst on the path nobody can skip: the seeded admin and every reset account
+  // are *forced* through this screen before they can do anything else.
+  it("hands the caller a working refresh cookie, not just an access token", async () => {
+    const password = "a-real-password-12";
+    const user = await makeUser({ role: "CASHIER", email: "changer@test.local" });
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { password: await bcrypt.hash(password, 4) },
+    });
+
+    const login = await request(app)
+      .post("/api/auth/login")
+      .send({ email: user.email, password });
+    const loginCookie = cookieFrom(login);
+
+    const change = await request(app)
+      .put("/api/auth/change-password")
+      .set("Authorization", `Bearer ${login.body.data.token}`)
+      .send({ currentPassword: password, newPassword: "another-real-password-34" });
+    expect(change.status).toBe(200);
+
+    // The change must set a replacement cookie...
+    const fresh = cookieFrom(change);
+    expect(fresh).toBeTruthy();
+    expect(fresh).not.toBe(loginCookie);
+
+    // ...that still works when the access token expires half an hour later.
+    const refreshed = await request(app).post("/api/auth/refresh").set("Cookie", fresh);
+    expect(refreshed.status).toBe(200);
+    expect((await request(app).get("/api/auth/me").set("Authorization", `Bearer ${refreshed.body.data.token}`)).status).toBe(200);
+
+    // And the cookie from before the change is dead, like every other session.
+    expect((await request(app).post("/api/auth/refresh").set("Cookie", loginCookie)).status).toBe(401);
   });
 
   it("refuses when the current password is wrong", async () => {

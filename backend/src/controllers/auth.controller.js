@@ -216,27 +216,49 @@ const changePassword = async (req, res, next) => {
     }
 
     const hashedPassword = await bcrypt.hash(newPassword, 12);
-    const updated = await prisma.user.update({
-      where: { id: req.user.id },
-      data: {
-        password: hashedPassword,
-        // Clearing the flag here is what lets the user back into the system.
-        mustChangePassword: false,
-        // Changing a password is how someone responds to a compromise, so it
-        // has to end the attacker's session and not merely the victim's
-        // patience (docs/07 A-6). Bumping the counter invalidates every token
-        // outstanding for this account.
-        tokenVersion: { increment: 1 },
-      },
-      select: { tokenVersion: true },
-    });
+    const [updated] = await prisma.$transaction([
+      prisma.user.update({
+        where: { id: req.user.id },
+        data: {
+          password: hashedPassword,
+          // Clearing the flag here is what lets the user back into the system.
+          mustChangePassword: false,
+          // Changing a password is how someone responds to a compromise, so it
+          // has to end the attacker's session and not merely the victim's
+          // patience (docs/07 A-6). Bumping the counter invalidates every token
+          // outstanding for this account.
+          tokenVersion: { increment: 1 },
+        },
+        select: { tokenVersion: true },
+      }),
+      // The counter kills outstanding access tokens; this kills the refresh
+      // tokens that would otherwise mint new ones. Same two halves as logout
+      // and as an administrator's reset — either alone leaves the other
+      // sessions alive until their next rotation.
+      prisma.refreshToken.updateMany({
+        where: { userId: req.user.id, revokedAt: null },
+        data: { revokedAt: new Date() },
+      }),
+    ]);
 
     // ...including the one that just called, which would leave the caller
-    // signed out by their own successful password change. So they get a fresh
-    // token carrying the new counter: whoever proved they know the current
-    // password keeps working, and everyone else is out. That asymmetry is the
-    // entire point of the control.
-    const token = generateToken(req.user.id, updated.tokenVersion);
+    // signed out by their own successful password change. So they are handed a
+    // whole new session: whoever proved they know the current password keeps
+    // working, and everyone else is out. That asymmetry is the entire point of
+    // the control.
+    //
+    // BOTH halves have to be reissued, not just the access token. Handing back
+    // a token while leaving the caller's refresh cookie pointing at the old
+    // `tokenVersion` looked like it worked — the next request carried the new
+    // token and succeeded — and then signed the caller out at the first silent
+    // refresh, up to thirty minutes later, because `refresh` correctly rejects
+    // a cookie whose counter has moved. That is the forced path for the seeded
+    // admin and for every account an administrator resets, so the account most
+    // likely to hit it was the one least able to explain it.
+    const token = await issueSession(res, {
+      id: req.user.id,
+      tokenVersion: updated.tokenVersion,
+    });
 
     res.json({
       success: true,

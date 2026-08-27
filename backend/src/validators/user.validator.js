@@ -30,10 +30,16 @@ const createUserSchema = z
   // Re-run the rules once the whole object is known, so the password can be
   // checked against this account's own name and email. A password that restates
   // either is guessable by anyone who can see the user list — which is every
-  // administrator. Only reachable when the field-level checks passed, so the
-  // caller never sees two complaints about one value.
+  // administrator.
+  //
+  // The context-free problems are skipped here because the field-level check
+  // above has already reported them. A `superRefine` issue does not abort the
+  // parse in Zod 4, so both refinements run on the same value and, without this
+  // guard, a weak password came back with the identical message twice — which
+  // the Settings form duly rendered twice under one field.
   .superRefine((data, ctx) => {
     if (typeof data.password !== "string") return;
+    if (passwordProblem(data.password)) return;
     const problem = passwordProblem(data.password, {
       name: data.name,
       email: data.email,

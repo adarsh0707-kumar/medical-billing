@@ -2,6 +2,23 @@ const prisma = require("../config/db");
 const { toCsv, sendCsv } = require("../utils/csv");
 const { setReason } = require("../config/audit-context");
 
+// Local midnight today — the same boundary `createInvoice` derives, and for the
+// same reason: a medicine is good *through* the date printed on it, so a batch
+// expiring today is still sellable and still worth warning about.
+//
+// These reports used to start at `new Date()`, the current instant. Expiry
+// dates are stored at midnight, so from the first moment of the day a batch
+// expiring today was already behind the cursor: the till sold it happily while
+// the report built to say "take this off the shelf" — and the topbar
+// notification that reads the same endpoint — stayed silent on the one day it
+// mattered. Shared from here so the sale path and the warning path cannot
+// disagree about what "expired" means again.
+const startOfToday = () => {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
+};
+
 const getAll = async (req, res, next) => {
   try {
     // `expiringSoon` and `lowStock` arrive as booleans: validateQuery coerces the
@@ -10,9 +27,9 @@ const getAll = async (req, res, next) => {
     const { medicineId, expiringSoon, lowStock, page, limit } =
       req.validatedQuery;
 
-    const today = new Date();
+    const today = startOfToday();
     const thirtyDaysLater = new Date();
-    thirtyDaysLater.setDate(today.getDate() + 30);
+    thirtyDaysLater.setDate(thirtyDaysLater.getDate() + 30);
 
     const where = {
       ...(medicineId && { medicineId }),
@@ -63,7 +80,7 @@ const expiringData = async ({ days }) => {
 
   const batches = await prisma.batch.findMany({
     where: {
-      expiryDate: { lte: futureDate, gte: new Date() },
+      expiryDate: { lte: futureDate, gte: startOfToday() },
       quantity: { gt: 0 },
     },
     include: {

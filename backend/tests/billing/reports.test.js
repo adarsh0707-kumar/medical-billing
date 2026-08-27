@@ -10,6 +10,19 @@ beforeAll(() => {
 
 const get = (token, path) => request(app).get(path).set("Authorization", `Bearer ${token}`);
 
+// The `?date=` a client would send for a given local day.
+//
+// NOT `toISOString().slice(0, 10)`. The fixtures below are local instants, and
+// local midnight belongs to the *previous* UTC day everywhere east of Greenwich
+// — so in IST that idiom asked for 2026-07-14 while the test read as though it
+// asked for the 15th, and matched only the fixture planted as the out-of-window
+// neighbour. It passed in CI's UTC and failed on every developer machine in the
+// timezone this product is built for, which is the wrong way round for a bug to
+// be visible. `getTrend` builds its keys from local components for the same
+// reason; this mirrors it.
+const localDay = (d) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
 // Writes an invoice straight to the database so a test can place it on any date
 // and in any payment state.
 async function invoiceAt(date, { total = 100, cgst = 6, sgst = 6, status = "PAID", mode = "CASH" } = {}) {
@@ -65,7 +78,7 @@ describe("GET /api/billing/invoices/daily-summary", () => {
       invoiceAt(after, { total: 999 }),
     ]);
 
-    const res = await get(token, `/api/billing/invoices/daily-summary?date=${day.toISOString().slice(0, 10)}`);
+    const res = await get(token, `/api/billing/invoices/daily-summary?date=${localDay(day)}`);
 
     expect(res.body.data.summary.totalInvoices).toBe(2);
     expect(res.body.data.summary.totalSales).toBe(30);
@@ -203,6 +216,41 @@ describe("GET /api/billing/invoices/gst-report", () => {
 
     expect(res.body.data.invoices).toHaveLength(2);
     expect(res.body.data.totals.total).toBe(30);
+  });
+
+  // Guards C-2. The test above brackets the month only to the nearest minute,
+  // which left the last 999ms of it unasserted — and `endDate` was built without
+  // a milliseconds argument, so it closed at 23:59:59.000. A sale in that gap
+  // was in no GST return at all: too late for its own month, too early for the
+  // next. The daily summary has the same guard at day scale; a tax period needs
+  // it more, because the money that falls through is money nobody files.
+  it("includes the last millisecond of the month", async () => {
+    const { token } = await signIn(app);
+    await Promise.all([
+      invoiceAt(new Date("2026-05-01T00:00:00.000"), { total: 10 }),
+      invoiceAt(new Date("2026-05-31T23:59:59.999"), { total: 20 }),
+      invoiceAt(new Date("2026-06-01T00:00:00.000"), { total: 999 }),
+    ]);
+
+    const res = await get(token, "/api/billing/invoices/gst-report?month=5&year=2026");
+
+    expect(res.body.data.invoices).toHaveLength(2);
+    expect(res.body.data.totals.total).toBe(30);
+  });
+
+  // The other half of the same property: consecutive months must partition the
+  // timeline, so a sale belongs to exactly one of them. Asserting May alone
+  // cannot catch a boundary that overlaps.
+  it("files a midnight-boundary sale in exactly one month", async () => {
+    const { token } = await signIn(app);
+    const lastMoment = new Date("2026-05-31T23:59:59.999");
+    await invoiceAt(lastMoment, { total: 112, cgst: 6, sgst: 6 });
+
+    const may = (await get(token, "/api/billing/invoices/gst-report?month=5&year=2026")).body.data;
+    const june = (await get(token, "/api/billing/invoices/gst-report?month=6&year=2026")).body.data;
+
+    expect(may.invoices).toHaveLength(1);
+    expect(june.invoices).toHaveLength(0);
   });
 
   it("totals reconcile with the invoices returned", async () => {
