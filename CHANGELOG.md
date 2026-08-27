@@ -25,6 +25,18 @@ A full-surface audit on 2026-08-27 — code, tests, documentation and deployment
 - **A timezone-fragile test no longer passes only in UTC.** `reports.test.js` built its `?date=` with `toISOString().slice(0, 10)` on a local-midnight instant, naming the previous day in every zone east of Greenwich. It was green on CI and red on any machine in IST.
 - **Node 22 is declared** as `engines` in both manifests. Below it the frontend suite fails to start its workers with a jsdom error that says nothing about the cause.
 
+### Fixed — found by covering the dashboard
+
+`dashboard.controller.js` sat at **21.73%** statements, the lowest in the codebase, while serving every panel on the screen the owner reads. Twenty-six tests took it to **97.37%** and turned up two defects on the way — which is the argument for writing them.
+
+- **The trend chart filed early-morning sales under the previous day.** `Invoice.date` is a naked timestamp holding a UTC instant, so `date_trunc('day', …)` bucketed in UTC while the zero-fill loop built its keys from local components. East of Greenwich the two disagreed for the first hours of every day: measured in IST, a ₹777 sale at 02:00 was charted on yesterday's bar and today read ₹0 — while the daily summary, which draws its boundaries in JS, insisted the sale was today. Two screens, one sale, two different days, neither obviously wrong on its own. The query now converts to the store's zone before truncating, by IANA name so a DST zone stays correct across the transition.
+- **The dashboard's expiry panel hid batches expiring today** — the third site of the boundary bug fixed in `batch.controller.js`, missed in that pass because the same rule was written out by hand in three places.
+
+### Changed
+
+- **The trend query lives in `utils/trend.js`.** `GET /api/reports/trend` and the dashboard held identical copies of the SQL under a comment saying the two "must agree" — true only while nobody edited one of them, and it meant fixing the timezone defect twice. They now call one function, and a test asserts the two endpoints return the same array.
+- **Coverage gates on `dashboard.controller.js` (90%) and `utils/trend.js` (100%).** Not because the numbers are now high, but on the rule the existing two gates use: a regression there misreports takings.
+
 ### Fixed — the chain behind the red CI
 
 Repairing the backend suite let the browser smoke job run instead of being skipped, and three defects were waiting behind it, each hiding the next. **The middle one broke the documented setup for every fresh clone.**

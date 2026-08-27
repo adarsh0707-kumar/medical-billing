@@ -1,5 +1,6 @@
 const prisma = require("../config/db");
 const { Prisma } = require("@prisma/client");
+const { dailyTrend, fillWindow } = require("../utils/trend");
 
 const D = Prisma.Decimal;
 
@@ -51,8 +52,17 @@ const getStats = async (req, res, next) => {
     trendStart.setDate(trendStart.getDate() - 6);
     trendStart.setHours(0, 0, 0, 0);
 
+    // `startOfDay`, not `now`. Expiry dates are stored at midnight, so keying
+    // the window to the current instant drops a batch expiring today the moment
+    // the day starts — while `createInvoice` goes on selling it until midnight
+    // (FR-BATCH-09). The panel that exists to say "take this off the shelf"
+    // must not go quiet on the last day it can.
+    //
+    // The same defect lived in batch.controller.js's two windows and was fixed
+    // there first; this third site was missed in that pass, which is the case
+    // for one shared boundary rather than three hand-written ones.
     const expiringWhere = {
-      expiryDate: { lte: expiryCutoff, gte: now },
+      expiryDate: { lte: expiryCutoff, gte: startOfDay },
       quantity: { gt: 0 },
     };
     const lowStockWhere = { quantity: { lte: LOW_STOCK_THRESHOLD, gt: 0 } };
@@ -115,18 +125,10 @@ const getStats = async (req, res, next) => {
       }),
       prisma.medicine.count({ where: { isActive: true } }),
       prisma.customer.count(),
-      // `sales` sums every document so a reversal nets out; `invoices` counts
-      // only sales, so a bar reading "1 invoice, ₹0" cannot happen. Kept
-      // identical to getTrend in billing.controller.js — the two must agree.
-      prisma.$queryRaw`
-        SELECT to_char(date_trunc('day', "date"), 'YYYY-MM-DD')   AS day,
-               COUNT(*) FILTER (WHERE "type" = 'SALE')::int       AS invoices,
-               COALESCE(SUM("totalAmount"), 0)                    AS sales
-        FROM "Invoice"
-        WHERE "date" >= ${trendStart} AND "date" <= ${endOfDay}
-          AND "paymentStatus" = 'PAID'::"PaymentStatus"
-        GROUP BY 1
-        ORDER BY 1`,
+      // The same query the reports trend uses — literally the same function, so
+      // the two cannot drift. It buckets by the store's local day rather than
+      // by UTC; see utils/trend.js for why that distinction is load-bearing.
+      dailyTrend(prisma, trendStart, endOfDay),
     ]);
 
     const countOf = (type) =>
@@ -156,19 +158,7 @@ const getStats = async (req, res, next) => {
     });
 
     // Days with no sales still appear, or the chart silently shifts left.
-    const byDay = new Map(trendRows.map((r) => [r.day, r]));
-    const trend = [];
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date(now);
-      d.setDate(d.getDate() - i);
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-      const row = byDay.get(key);
-      trend.push({
-        date: key,
-        sales: row ? Number(row.sales) : 0,
-        invoices: row ? row.invoices : 0,
-      });
-    }
+    const trend = fillWindow(trendRows, 7, now);
 
     res.json({
       success: true,
