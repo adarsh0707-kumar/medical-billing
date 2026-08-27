@@ -38,6 +38,18 @@ services:
       # nothing at all.
       - key: CORS_ORIGINS
         sync: false
+      # Which peers may set X-Forwarded-For, and therefore what the rate limiter
+      # keys on. Stated rather than left to the default, because the failure is
+      # silent: if Render's edge reaches the container from an address outside
+      # these ranges, express-rate-limit keys every request to the proxy and the
+      # per-client budget of 500 requests / 15 min becomes a shop-wide one.
+      #
+      # Render routes to services over its private network, which is RFC 1918 —
+      # covered by `uniquelocal`. Verify on the running service rather than
+      # trusting this comment: the readiness log line carries the resolved
+      # req.ip, and it should be the caller's address, not 10.x.
+      - key: TRUST_PROXY
+        value: "loopback, linklocal, uniquelocal"
 
 databases:
   - name: medical-billing-db
