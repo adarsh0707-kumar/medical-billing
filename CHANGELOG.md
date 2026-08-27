@@ -25,6 +25,17 @@ A full-surface audit on 2026-08-27 — code, tests, documentation and deployment
 - **A timezone-fragile test no longer passes only in UTC.** `reports.test.js` built its `?date=` with `toISOString().slice(0, 10)` on a local-midnight instant, naming the previous day in every zone east of Greenwich. It was green on CI and red on any machine in IST.
 - **Node 22 is declared** as `engines` in both manifests. Below it the frontend suite fails to start its workers with a jsdom error that says nothing about the cause.
 
+### Fixed — the chain behind the red CI
+
+Repairing the backend suite let the browser smoke job run instead of being skipped, and three defects were waiting behind it, each hiding the next. **The middle one broke the documented setup for every fresh clone.**
+
+- **The development stack applies its migrations.** Neither `docker-compose.yml` nor `Dockerfile.dev` ran them, and the only `prisma migrate deploy` in CI belongs to the backend job against its own service container — so `docker compose up -d` followed by `npm run seed`, exactly as the README prints it, produced a database with **no schema** and an API that failed every request against tables that were never created. It worked only on machines whose `pgdata` volume predated the problem, which is why it lasted. The backend now runs `migrate deploy` before nodemon: it applies committed migrations, never generates or resets one, and is idempotent across restarts.
+- **`npm run seed` exits non-zero when it fails.** `main().catch(console.error)` printed the error and exited 0, so CI's "Seed the bootstrap admin" step showed a green tick against an empty database and the real failure surfaced two steps later as a browser test that could not sign in. This is what hid the item above.
+- **The browser smoke job installs before it starts the stack.** The frontend dev service bind-mounts `./frontend` and layers an anonymous volume at `/app/node_modules`; Docker creates that mountpoint inside the bind mount, on the host, as root, and `npm ci` then ran as an unprivileged user and died with `EACCES`.
+- **Removed the duplicate CodeQL workflow.** `codeql.yml` was an unmodified template analysing the same two languages as the repository's default setup, and every run failed with "CodeQL analyses from advanced configurations cannot be processed when the default setup is enabled". The default setup, which passes, is unaffected.
+
+A job that is skipped reports nothing and reads much like one that passes. The smoke suite had been skipped, not passing, on every run since the backend suite went red.
+
 ### Changed
 
 - `render.yaml` states `TRUST_PROXY` explicitly rather than relying on the default. If the platform's edge falls outside the trusted ranges, the rate limiter silently keys every request to one bucket and the per-client budget becomes a shop-wide one.
