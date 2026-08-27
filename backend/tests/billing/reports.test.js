@@ -10,6 +10,19 @@ beforeAll(() => {
 
 const get = (token, path) => request(app).get(path).set("Authorization", `Bearer ${token}`);
 
+// The `?date=` a client would send for a given local day.
+//
+// NOT `toISOString().slice(0, 10)`. The fixtures below are local instants, and
+// local midnight belongs to the *previous* UTC day everywhere east of Greenwich
+// — so in IST that idiom asked for 2026-07-14 while the test read as though it
+// asked for the 15th, and matched only the fixture planted as the out-of-window
+// neighbour. It passed in CI's UTC and failed on every developer machine in the
+// timezone this product is built for, which is the wrong way round for a bug to
+// be visible. `getTrend` builds its keys from local components for the same
+// reason; this mirrors it.
+const localDay = (d) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
 // Writes an invoice straight to the database so a test can place it on any date
 // and in any payment state.
 async function invoiceAt(date, { total = 100, cgst = 6, sgst = 6, status = "PAID", mode = "CASH" } = {}) {
@@ -65,7 +78,7 @@ describe("GET /api/billing/invoices/daily-summary", () => {
       invoiceAt(after, { total: 999 }),
     ]);
 
-    const res = await get(token, `/api/billing/invoices/daily-summary?date=${day.toISOString().slice(0, 10)}`);
+    const res = await get(token, `/api/billing/invoices/daily-summary?date=${localDay(day)}`);
 
     expect(res.body.data.summary.totalInvoices).toBe(2);
     expect(res.body.data.summary.totalSales).toBe(30);
