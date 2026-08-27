@@ -834,7 +834,12 @@ const getTrend = async (req, res, next) => {
  */
 const gstReportData = async ({ month, year }) => {
   const startDate = new Date(year, month - 1, 1);
-  const endDate = new Date(year, month, 0, 23, 59, 59);
+  // `.999`, not `.000`. Omitting the milliseconds argument closed the month at
+  // 23:59:59.000 while the next one opens at 00:00:00.000, so a sale committed
+  // in the 999 ms between them appeared in the daily summary and in no GST
+  // return at all — not its own month's, and too early for the following one.
+  // A tax period has to be a partition of time, not a cover with holes in it.
+  const endDate = new Date(year, month, 0, 23, 59, 59, 999);
 
   const invoices = await prisma.invoice.findMany({
     where: {
