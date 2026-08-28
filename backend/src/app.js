@@ -132,6 +132,13 @@ const createApp = ({
   });
   app.use("/api/auth/login", loginLimiter);
 
+  // Signup shares that budget. It is a one-shot endpoint — after the first
+  // account it refuses before touching bcrypt — but *before* setup every call
+  // costs a cost-12 hash, and an unclaimed installation is exactly when nobody
+  // is watching. The same 10-per-window ceiling keeps that from being a way to
+  // burn a fresh instance's CPU, and one honest operator needs one request.
+  app.use("/api/auth/signup", loginLimiter);
+
   // ─── Health Check ──────────────────────────────────────
   // Liveness: is this process up? Deliberately cheap and dependency-free, so a
   // database outage does not cause an orchestrator to kill an otherwise healthy

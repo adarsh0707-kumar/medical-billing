@@ -70,7 +70,7 @@ The report names drop the qualifier the path now supplies: `gst-report` under `/
 
 ## 3. Authentication
 
-Every endpoint except `POST /api/auth/login` and `GET /health` requires:
+Every endpoint except `POST /api/auth/login`, `POST /api/auth/signup`, `GET /api/auth/setup-status`, `POST /api/auth/refresh` and `GET /health` requires:
 
 ```http
 Authorization: Bearer <jwt>
@@ -219,6 +219,7 @@ Two limiters, both keyed on the client IP:
 | Scope                    | Budget                               | Notes                                                                                                                |
 | ------------------------ | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
 | `/api/*`               | 500 requests / 15 min                | `429` with `Too many requests, please try again later.`                                                          |
+| `POST /api/auth/signup` | 10 attempts / 15 min | Shares the login budget. Before setup every call costs a cost-12 hash; after it, the endpoint refuses before hashing |
 | `POST /api/auth/login` | 10**failed** attempts / 15 min | `429` with `Too many failed login attempts. Please try again in 15 minutes.` Successful sign-ins are not counted |
 
 `trust proxy` is set to private-range peers, so behind Nginx the real client IP is used rather than the proxy's — but a client reaching port 5000 directly from outside cannot forge `X-Forwarded-For` to pick its own bucket. Override with the `TRUST_PROXY` environment variable ([G-06](./08-gap-analysis.md#g-06)).
@@ -259,6 +260,44 @@ Readiness. Runs `SELECT 1` and reports what it found.
 ---
 
 ## 7. Authentication & users
+
+### `GET /api/auth/setup-status` — public
+
+Whether this installation still needs its first account.
+
+```json
+{ "success": true, "data": { "needsSetup": true } }
+```
+
+One boolean and nothing else, deliberately: it is unauthenticated, so it must not disclose how many users exist, who they are, or when the system was set up. The login page reads it to decide whether to offer the signup link.
+
+---
+
+### `POST /api/auth/signup` — public, **once**
+
+Creates the first administrator on an unclaimed installation, and closes itself permanently the moment it succeeds.
+
+```json
+{ "name": "Priya Nair", "email": "priya@pharmacy.example", "password": "a-well-chosen-passphrase" }
+```
+
+Answers `201` with the same `{ token, user }` shape as login, and sets the `refresh_token` cookie — the operator is signed in, because they chose that password one request ago.
+
+**This is not open registration.** Every authenticated role can read customer records, and purchase history in a pharmacy reveals health conditions (threat T-9), so a signup that worked twice would be a data breach with a form in front of it. The account it creates is always `ADMIN`, because a shop with no administrator cannot create one.
+
+`role` is **rejected**, not ignored: the schema is `.strict()`, so sending one is a `400`. Accepting and silently dropping it would read like a privilege-escalation hole to anyone inspecting the request.
+
+`mustChangePassword` is **not** set, unlike the seeded admin and unlike an administrator's reset. Both of those hand someone a credential they did not choose, which is the state that flag exists to force them out of.
+
+| Failure | Status | Code |
+|---|---|---|
+| An account already exists | `409` | `SETUP_ALREADY_COMPLETE` |
+| Another signup is committing right now | `409` | `SETUP_IN_PROGRESS` — retryable |
+| Password fails the policy, or `role` was sent | `400` | validation errors, per field |
+
+Concurrency is guarded by a Postgres advisory lock taken inside the insert's transaction: `count() === 0` followed by `create()` is a read-then-write race of the same shape as [G-01](./08-gap-analysis.md#g-01), and a burst would otherwise leave two administrators nobody chose. `backend/tests/auth/signup.test.js` fires eight concurrent signups and asserts exactly one succeeds.
+
+---
 
 ### `POST /api/auth/login` — public
 

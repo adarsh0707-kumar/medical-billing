@@ -53,6 +53,33 @@ const createUserSchema = z
     }
   });
 
+// POST /api/auth/signup — the first-run bootstrap, and the only public way an
+// account is ever created.
+//
+// **`.strict()`, and no `role`.** The role is not a field here: the controller
+// hard-codes ADMIN, because the only account this endpoint can create is the
+// first one and a shop with no administrator cannot be administered. Accepting
+// a role and ignoring it would look like a privilege-escalation hole to anyone
+// reading the request; rejecting the key outright says what is true.
+const signupSchema = z
+  .object({ name, email, password })
+  .strict()
+  .superRefine((data, ctx) => {
+    if (typeof data.password !== "string") return;
+    if (passwordProblem(data.password)) return;
+    const problem = passwordProblem(data.password, {
+      name: data.name,
+      email: data.email,
+    });
+    if (problem) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["password"],
+        message: problem,
+      });
+    }
+  });
+
 // PUT /api/users/:id — every field optional so a partial edit leaves the rest
 // alone. Not strict: the active/inactive toggle sends the whole user row back.
 const updateUserSchema = z.object({
@@ -78,6 +105,7 @@ const changePasswordSchema = z.object({
 });
 
 module.exports = {
+  signupSchema,
   createUserSchema,
   updateUserSchema,
   updateProfileSchema,

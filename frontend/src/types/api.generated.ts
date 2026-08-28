@@ -79,6 +79,9 @@ export type MedicineSearchQuery = { q?: string | undefined; };
 /** `prescriptionSchema` — `backend/src/validators/billing.validator.js` */
 export type PrescriptionInput = { prescriberName: string; prescriberRegNo: string; prescribedOn: string | Date; patientName: string; notes?: string | undefined; };
 
+/** `signupSchema` — `backend/src/validators/user.validator.js` */
+export type SignupInput = { name: string; email: string; password: string; };
+
 /** `supplierSchema` — `backend/src/validators/inventory.validator.js` */
 export type SupplierInput = { name: string; contactName?: string | undefined; phone?: string | undefined; email?: string | undefined; gstNumber?: string | undefined; address?: string | undefined; };
 

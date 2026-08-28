@@ -35,6 +35,12 @@ docker compose exec backend npm run seed     # creates the bootstrap admin
 Sign in with `admin@medstore.com` / `admin123`. **Change that password before the
 system is reachable by anyone else** — see [SECURITY.md](./SECURITY.md).
 
+Or skip the seed entirely: on an installation with no accounts the login page
+offers **Set up this system**, which creates the first administrator with a
+password you choose. That link disappears the moment an account exists, and the
+endpoint behind it refuses regardless of what the page renders — it is first-run
+setup, not open registration.
+
 Both entry points serve the SPA and proxy `/api` to the backend on the **same
 origin**, so CORS never applies to the browser.
 

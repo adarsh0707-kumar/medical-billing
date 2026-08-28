@@ -106,7 +106,7 @@ These are **already documented** in [`docs/07-security.md`](./docs/07-security.m
 
 | Issue | Status |
 |---|---|
-| Seeded admin credentials (`admin@medstore.com` / `admin123`) are in the repository | By design for first-run setup. **Fixed 2026-08-20**: the account is created needing a password change, and the API refuses everything else until it happens |
+| Seeded admin credentials (`admin@medstore.com` / `admin123`) are in the repository | By design for first-run setup. **Fixed 2026-08-20**: the account is created needing a password change, and the API refuses everything else until it happens. **Avoidable entirely since 2026-08-28**: `POST /api/auth/signup` lets the operator create the first administrator with a password of their own on an unclaimed installation, so there is no published credential to change. `npm run seed` remains for development |
 | The PostgreSQL password is hard-coded in `docker-compose.yml` | Development default, and still true of the *development* file. `docker-compose.prod.yml` has no credential literals |
 | No TLS anywhere — nginx listens on `:80` only | **Fixed 2026-08-20** for the production stack: TLS, HSTS and an 80 → 443 redirect. The development stack is still plain HTTP, deliberately |
 | JWTs are stored in `localStorage` and are valid for 7 days | **Reduced 2026-08-22.** The access token is still in `localStorage` but now lasts **30 minutes**. The 7-day half is a `refresh_token` cookie marked `HttpOnly`, so script cannot read it. XSS gets a short-lived token rather than a renewable session |

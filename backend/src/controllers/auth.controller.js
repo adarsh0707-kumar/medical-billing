@@ -11,6 +11,33 @@ const { passwordProblem } = require("../validators/password");
 
 const REFRESH_COOKIE = "refresh_token";
 
+// Thrown from inside the signup transaction when the installation turns out to
+// already have an account. Its own class so the catch can tell it apart from a
+// genuine database fault and answer 409 rather than 500 — the same split
+// `protect` makes between a bad credential and infrastructure trouble.
+class SetupClosedError extends Error {
+  constructor() {
+    super("Setup already complete");
+    this.name = "SetupClosedError";
+  }
+}
+
+// Raised when another signup request holds the advisory lock. Distinct from
+// SetupClosedError because it is a different answer: the installation is not
+// necessarily claimed, someone is merely mid-claim. Retryable, and told so.
+class SetupInProgressError extends Error {
+  constructor() {
+    super("Setup already in progress");
+    this.name = "SetupInProgressError";
+  }
+}
+
+// The advisory-lock key for first-run signup. An arbitrary constant — advisory
+// locks are a namespace the application owns, and nothing else in this codebase
+// takes one, so any value would do. It is written out rather than hashed from a
+// string so that `SELECT * FROM pg_locks` is greppable against this file.
+const SIGNUP_LOCK_KEY = 8241990001n;
+
 // A decoy for the login miss path, so an unknown email costs the same bcrypt
 // work as a known one (docs/07 P2-12).
 //
@@ -71,6 +98,154 @@ const issueSession = async (res, user) => {
   );
 
   return generateToken(user.id, user.tokenVersion);
+};
+
+// ─── First-run setup ───────────────────────────────────
+//
+// Whether the shop still needs its first account. Public, and deliberately
+// answers with one boolean and nothing else: before setup it says "nobody has
+// claimed this installation", and after it says only "signup is closed". It
+// does not leak how many users exist, who they are, or when they were created.
+//
+// The login page reads this to decide whether to offer the signup link at all,
+// which is a courtesy — `signup` below refuses on its own regardless of what
+// the client renders, in the same way `password-change.middleware.js` is the
+// control and its screen is only the manners.
+const setupStatus = async (req, res, next) => {
+  try {
+    const users = await prisma.user.count();
+    res.json({ success: true, data: { needsSetup: users === 0 } });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ─── Signup — the first administrator, once ────────────
+//
+// The only public route that creates an account, and it exists for exactly one
+// moment: a fresh installation with an empty user table. It hands that first
+// account ADMIN, because a shop with no administrator cannot create one.
+//
+// **Why this is not open registration.** Every authenticated role can read
+// customer records, and purchase history in a pharmacy reveals health
+// conditions (threat T-9). A public signup that worked more than once would let
+// anyone who can reach the URL read all of it. So the endpoint closes itself
+// permanently the moment it succeeds, and every later caller gets a 409.
+//
+// **Why it is better than the seeded admin it replaces.** `npm run seed`
+// creates admin@medstore.com with a password printed in this repository, and
+// SECURITY.md has carried that as its first known issue since the beginning.
+// The mitigation was `mustChangePassword` — the account can sign in and do
+// exactly one thing. This is the same idea moved earlier: there is no published
+// credential at all, because the operator chooses the first one. The seed stays
+// for development and for anyone who prefers it.
+const signup = async (req, res, next) => {
+  try {
+    const { name, email, password } = req.body;
+
+    // Fast path, and only that. It answers the overwhelmingly common case — an
+    // installed system — without taking a lock, but it is an optimisation and
+    // never the guard: the authoritative check is inside the transaction below,
+    // because anything read outside one is a statement about the past.
+    if ((await prisma.user.count()) > 0) {
+      return res.status(409).json({
+        success: false,
+        code: "SETUP_ALREADY_COMPLETE",
+        message:
+          "This system already has an account. Ask an administrator to create yours.",
+      });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 12);
+
+    let user;
+    try {
+      user = await prisma.$transaction(async (tx) => {
+        // THE GUARD. `count() === 0` followed by `create()` is a read-then-write
+        // race of exactly the shape G-01 and G-09 were: two requests arriving
+        // together both read zero, both insert, and the installation ends up
+        // with two administrators nobody chose. It is a one-shot endpoint, so
+        // the window is small and permanent — precisely the kind that gets
+        // dismissed and then happens.
+        //
+        // Postgres has no "insert if the table is empty" as a single statement
+        // the way the invoice counter has an upsert — that would need a raw
+        // INSERT ... WHERE NOT EXISTS, and `id` is a client-side cuid, so the
+        // one row created that way would carry an id in a different shape from
+        // every other user's.
+        //
+        // So the serialisation is a lock, and `try` is the important half.
+        // `LOCK TABLE "User" IN EXCLUSIVE MODE` was tried first and is worse
+        // than it looks: a queued transaction holds its pooled connection while
+        // it waits, so a burst of eight jammed the pool and every request died
+        // on the transaction timeout — correct, in that no second administrator
+        // was ever created, but answering 500 to all of them. `pg_try_advisory_
+        // xact_lock` returns false instead of waiting, so a loser costs one
+        // round trip and no queue, and the lock is released on commit.
+        const [{ acquired }] = await tx.$queryRaw`
+          SELECT pg_try_advisory_xact_lock(${SIGNUP_LOCK_KEY}) AS acquired`;
+        // Somebody else is inside this block right now. They will either create
+        // the account or fail; either way the honest answer is "not you, and
+        // not now" rather than a second insert.
+        if (!acquired) throw new SetupInProgressError();
+
+        if ((await tx.user.count()) > 0) throw new SetupClosedError();
+
+        return tx.user.create({
+          data: {
+            name,
+            email,
+            password: hashedPassword,
+            role: "ADMIN",
+            // Not set, unlike the seeded admin and unlike an administrator's
+            // reset. Both of those hand someone a credential they did not
+            // choose, which is what the flag exists to force them out of. This
+            // password was chosen by the person typing it.
+            mustChangePassword: false,
+          },
+        });
+      });
+    } catch (err) {
+      if (err instanceof SetupClosedError) {
+        return res.status(409).json({
+          success: false,
+          code: "SETUP_ALREADY_COMPLETE",
+          message:
+            "This system already has an account. Ask an administrator to create yours.",
+        });
+      }
+      if (err instanceof SetupInProgressError) {
+        return res.status(409).json({
+          success: false,
+          code: "SETUP_IN_PROGRESS",
+          message: "Setup is already under way. Try again in a moment.",
+        });
+      }
+      throw err;
+    }
+
+    // Signed in immediately, both halves, the way login does. Making the
+    // operator type the password again on the next screen would prove nothing:
+    // they chose it one request ago.
+    const token = await issueSession(res, user);
+
+    res.status(201).json({
+      success: true,
+      message: "Administrator account created. You are signed in.",
+      data: {
+        token,
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          mustChangePassword: false,
+        },
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
 };
 
 // ─── Register (Admin only, first time setup) ───────────
@@ -426,4 +601,13 @@ const refresh = async (req, res, next) => {
   }
 };
 
-module.exports = { register, login, getMe, changePassword, logout, refresh };
+module.exports = {
+  setupStatus,
+  signup,
+  register,
+  login,
+  getMe,
+  changePassword,
+  logout,
+  refresh,
+};

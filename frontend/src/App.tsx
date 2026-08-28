@@ -20,6 +20,9 @@ const Customers = lazy(() => import("./pages/Customers"));
 const Suppliers = lazy(() => import("./pages/Suppliers"));
 const Settings = lazy(() => import("./pages/Settings"));
 const ForcePasswordChange = lazy(() => import("./pages/ForcePasswordChange"));
+// First-run only, and reached from the login page just once in an installation's
+// life — so it is lazy, unlike Login.
+const Signup = lazy(() => import("./pages/Signup"));
 
 function RouteFallback() {
   return (
@@ -35,6 +38,10 @@ export default function App() {
       <Suspense fallback={<RouteFallback />}>
         <Routes>
           <Route path="/login" element={<Login />} />
+          {/* Public: before the first account exists there is nobody who could
+              authenticate. The endpoint behind it closes itself permanently
+              once one does. */}
+          <Route path="/signup" element={<Signup />} />
           {/* Outside the Layout: a blocked account has nothing to navigate to,
               and showing it a sidebar of links that all return 403 would be
               worse than showing it the one thing it can actually do. */}
