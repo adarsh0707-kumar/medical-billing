@@ -45,6 +45,60 @@ afterEach(() => {
   mock.restore();
 });
 
+describe("the login form is not pinned to one account", () => {
+  it("starts empty rather than pre-filled with the seeded admin", async () => {
+    mock.onGet("/api/auth/setup-status").reply(200, {
+      success: true,
+      data: { needsSetup: false },
+    });
+
+    renderAt(<Login />);
+
+    // These carried admin@medstore.com / admin123 as their initial state, so a
+    // pharmacist or cashier had to clear two fields before typing their own —
+    // and a working password sat on screen at the counter.
+    expect(await screen.findByLabelText(/email/i)).toHaveValue("");
+    expect(screen.getByLabelText(/password/i)).toHaveValue("");
+  });
+
+  it("signs in whoever types, not just an administrator", async () => {
+    mock.onGet("/api/auth/setup-status").reply(200, {
+      success: true,
+      data: { needsSetup: false },
+    });
+    mock.onPost("/api/auth/login").reply(200, {
+      success: true,
+      data: {
+        token: "cashier-token",
+        user: {
+          id: "u9",
+          name: "Ravi Kumar",
+          email: "ravi@pharmacy.test",
+          role: "CASHIER",
+          mustChangePassword: false,
+        },
+      },
+    });
+
+    renderAt(<Login />);
+    const user = userEvent.setup();
+
+    await user.type(await screen.findByLabelText(/email/i), "ravi@pharmacy.test");
+    await user.type(screen.getByLabelText(/password/i), "a-cashier-passphrase");
+    await user.click(screen.getByRole("button", { name: /sign in/i }));
+
+    await waitFor(() => expect(mock.history.post).toHaveLength(1));
+    expect(JSON.parse(mock.history.post[0].data)).toEqual({
+      email: "ravi@pharmacy.test",
+      password: "a-cashier-passphrase",
+    });
+    // A cashier reaches the app like anyone else. What differs is what the
+    // sidebar offers and what the API authorises, not whether they may sign in.
+    expect(useAuthStore.getState().user?.role).toBe("CASHIER");
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith("/dashboard"));
+  });
+});
+
 describe("the signup link on the login page", () => {
   it("is offered while the installation is unclaimed", async () => {
     mock.onGet("/api/auth/setup-status").reply(200, {

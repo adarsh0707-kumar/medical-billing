@@ -13,8 +13,13 @@ export default function Login() {
   const navigate = useNavigate();
   const { login } = useAuthStore();
 
-  const [email, setEmail] = useState("admin@medstore.com");
-  const [password, setPassword] = useState("admin123");
+  // Empty, not pre-filled. These carried the seeded admin's credentials as
+  // their initial state, which made every visit a sign-in as that one account:
+  // a pharmacist or cashier had to clear two fields before they could type
+  // their own. It also put a working password on screen for anyone standing at
+  // the counter, and left it in the DOM of a page served to every visitor.
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   // Whether this installation still needs its first account. The signup link is
@@ -101,6 +106,10 @@ export default function Login() {
                 <Input
                   id="email"
                   type="email"
+                  // Lets a browser or password manager offer the right saved
+                  // account per person on a shared terminal, instead of one
+                  // remembered login for the machine.
+                  autoComplete="username"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="admin@medstore.com"
@@ -117,6 +126,7 @@ export default function Login() {
                   <Input
                     id="password"
                     type={showPassword ? "text" : "password"}
+                    autoComplete="current-password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
