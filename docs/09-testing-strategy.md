@@ -1,6 +1,6 @@
 # Testing Strategy
 
-**Current state (measured 2026-08-27): 576 backend tests across 21 files, 115 frontend unit tests across 15 files, and a 7-flow browser smoke — all three layers on CI.** Sections 1–4 describe the approach and the acceptance fixtures; §5 lists the cases, most of which now exist.
+**Current state (measured 2026-08-27): 599 backend tests across 22 files, 125 frontend unit tests across 16 files, and a 7-flow browser smoke — all three layers on CI.** Sections 1–4 describe the approach and the acceptance fixtures; §5 lists the cases, most of which now exist.
 
 > Counts here are taken by **running the suites**, not by adding up the table below. Three documents previously carried four different numbers because the table was maintained by hand and two suites were never added to it.
 
@@ -48,7 +48,7 @@ Two decisions worth knowing:
 
 ### What exists
 
-**Backend — 576 across 21 files, all passing.** The count is what a run reports, not what passes — recording it the other way would be the drift this section exists to prevent, and for a while the two genuinely differed.
+**Backend — 599 across 22 files, all passing.** The count is what a run reports, not what passes — recording it the other way would be the drift this section exists to prevent, and for a while the two genuinely differed.
 
 Two failures worth remembering, both fixed 2026-08-27:
 
@@ -59,6 +59,7 @@ Two failures worth remembering, both fixed 2026-08-27:
 | ----------------------------------------------- | ----: | -------------------------------------------------------------------------- |
 | `tests/auth/rbac.test.js`                     |   142 | The full role matrix, plus anonymous rejection on every route              |
 | `tests/billing/invoice-create.test.js`        |    48 | GST fixtures, invariants, rejections, atomicity, Schedule H and expiry     |
+| `tests/auth/signup.test.js`                   |    23 | First-run setup: the one administrator, the endpoint closing itself, an eight-way concurrent burst, and what it refuses |
 | `tests/api/dashboard.test.js`                 |    26 | Every panel of `GET /api/dashboard/stats`: counting under a void, count-vs-items, the expiry and low-stock windows, and the trend's day bucketing |
 | `tests/api/query-validation.test.js`          |    46 | Every query surface: bounds, coercion, and that a filter actually filters ([G-19](./08-gap-analysis.md#g-19)) |
 | `tests/api/route-layout.test.js`              |    41 | All nine moved paths: alias and successor return the same body, and only the alias is marked deprecated |
@@ -79,7 +80,7 @@ Two failures worth remembering, both fixed 2026-08-27:
 | `tests/auth/rate-limit.test.js`               |     5 | Failed-login budget, per-client isolation, successful sign-ins not counted |
 | `tests/billing/invoice-concurrency.test.js`   |     4 | Last-unit races, oversell bursts, gapless serials                          |
 
-**Frontend — 115 across 15 files.** Counted from a run on 2026-08-25; the 67
+**Frontend — 125 across 16 files.** Counted from a run on 2026-08-25; the 67
 recorded here previously predated the screen-by-screen component coverage.
 
 | File                                             | Tests | Covers                                                           |

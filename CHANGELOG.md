@@ -25,6 +25,22 @@ A full-surface audit on 2026-08-27 — code, tests, documentation and deployment
 - **A timezone-fragile test no longer passes only in UTC.** `reports.test.js` built its `?date=` with `toISOString().slice(0, 10)` on a local-midnight instant, naming the previous day in every zone east of Greenwich. It was green on CI and red on any machine in IST.
 - **Node 22 is declared** as `engines` in both manifests. Below it the frontend suite fails to start its workers with a jsdom error that says nothing about the cause.
 
+### Added
+
+#### First-run signup (FR-AUTH-12)
+
+`GET /api/auth/setup-status` and `POST /api/auth/signup`, plus a `/signup` page and a "Don't have an account?" link that appears on the login screen **only while the installation is unclaimed**.
+
+Signup creates the first administrator and then closes permanently. It is deliberately not open registration: every authenticated role can read customer records, and purchase history in a pharmacy reveals health conditions (threat T-9), so a signup that worked twice would be a data breach with a form in front of it.
+
+- **It replaces a published credential with a chosen one.** The seeded `admin@medstore.com` / `admin123` has been SECURITY.md's first known issue since the beginning; the mitigation was `mustChangePassword`, which lets that account do exactly one thing. This moves the fix earlier — on a fresh install there is no published credential at all. `npm run seed` stays for development.
+- **The account it creates is always `ADMIN`**, because a shop with no administrator cannot create one. `role` is *rejected* rather than ignored — the schema is `.strict()`, so sending one is a `400`. Accepting and silently dropping it would read like a privilege-escalation hole.
+- **`mustChangePassword` is not set**, unlike the seeded admin and unlike an administrator's reset. Both of those hand someone a credential they did not choose; this one they chose a request ago.
+- **Concurrency is guarded by a Postgres advisory lock** inside the insert's transaction. `count() === 0` then `create()` is a read-then-write race of the same shape as G-01, and a burst would leave two administrators nobody chose. `LOCK TABLE` was tried first and is worse: a queued transaction holds its pooled connection, so eight concurrent signups jammed the pool and every one died on the transaction timeout — never creating a second admin, but answering `500` to all of them. `pg_try_advisory_xact_lock` returns false instead of waiting, so a loser costs one round trip and is told `SETUP_IN_PROGRESS`, which is retryable.
+- **Verified against a real fresh install**, not only in tests: 16 migrations applied, `needsSetup: true`, a weak password refused with the specific rule, signup `201` with an ADMIN and a working refresh cookie, then `needsSetup: false`, a second attempt `409`, and exactly one row in `User`.
+
+33 new tests — 23 backend including the eight-way concurrent burst, 10 frontend across both states of the page.
+
 ### Fixed — found by covering the dashboard
 
 `dashboard.controller.js` sat at **21.73%** statements, the lowest in the codebase, while serving every panel on the screen the owner reads. Twenty-six tests took it to **97.37%** and turned up two defects on the way — which is the argument for writing them.
