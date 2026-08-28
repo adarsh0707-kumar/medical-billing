@@ -27,6 +27,7 @@ A full-surface audit on 2026-08-27 — code, tests, documentation and deployment
 
 ### Fixed
 
+- **Autofilled inputs keep the form's colours.** Chrome paints `input:-webkit-autofill` with its own pale background and dark text, and it overrides `background-color` from any class — so once the login fields gained `autoComplete` and the browser began filling them, two white boxes appeared on a dark card. Overridden with the inset `box-shadow` trick, which is the one thing that reaches it, plus `-webkit-text-fill-color` for the text. Scoped to the `bg-slate-700` inputs the app uses, so it covers every autofillable form — Settings, Customers, Suppliers — not just the login page.
 - **The request log names the endpoint again.** Express rewrites `req.url` when it dispatches into a mounted router, and pino's message builders run on response finish — after the rewrite. So `/api/auth/setup-status` was logged as `GET /setup-status`, and a route at a router's own root as plain `GET /`: `GET / 401` was the entire record of a rejected request to `/api/medicines`. Unfindable by grep, and meaningless to read. The structured `req.url` field was correct throughout, which made it worse rather than better — one line carried two different paths for one request, and the half a person reads was the wrong one. Now built from `originalUrl`, so the query string survives too.
 
 ### Added

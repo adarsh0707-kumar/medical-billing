@@ -145,3 +145,34 @@
     @apply font-sans;
     }
 }
+/**
+ * Autofilled inputs keep the form's own colours.
+ *
+ * Chrome paints `input:-webkit-autofill` with its own pale background and dark
+ * text, and it wins over `background-color` from any class — so the moment the
+ * login fields gained `autoComplete` and the browser started filling them, two
+ * white boxes appeared on a dark card. The password field was the worse half:
+ * light background, dark dots, and a focus ring that no longer matched
+ * anything around it.
+ *
+ * A large inset box-shadow is the one thing that does override it, because the
+ * shadow paints over the background Chrome reserved. `-webkit-text-fill-color`
+ * does the same job for the text, which `color` cannot reach either.
+ *
+ * The transition delay is the other half of the trick: Chrome re-applies the
+ * background on interaction, and a 9999s transition means the repaint never
+ * visibly lands.
+ *
+ * Scoped to the dark form inputs the app actually uses (`bg-slate-700`), so a
+ * light surface added later is not dragged into this.
+ */
+input.bg-slate-700:-webkit-autofill,
+input.bg-slate-700:-webkit-autofill:hover,
+input.bg-slate-700:-webkit-autofill:focus,
+input.bg-slate-700:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 1000px var(--color-slate-700) inset;
+  box-shadow: 0 0 0 1000px var(--color-slate-700) inset;
+  -webkit-text-fill-color: #fff;
+  caret-color: #fff;
+  transition: background-color 9999s ease-in-out 0s;
+}
