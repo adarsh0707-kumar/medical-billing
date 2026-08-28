@@ -65,6 +65,26 @@ const logger = pino({
 });
 
 /**
+ * The full path of a request, for the human-readable log line.
+ *
+ * `originalUrl`, not `url`. Express rewrites `req.url` when it dispatches into a
+ * mounted router, and the message builders below run on response finish — by
+ * which point the path is relative to the mount point. `/api/auth/setup-status`
+ * logged as `GET /setup-status`, and a route at a router's own root logged as
+ * plain `GET /`, so `GET / 401` was the entire record of a rejected request to
+ * `/api/medicines`.
+ *
+ * The structured `req.url` field below was always correct, because pino-http
+ * captures it before the rewrite — which made this worse rather than better:
+ * one line carried two different paths for the same request, and the half a
+ * person reads was the wrong one. Grepping the logs for an endpoint found
+ * nothing.
+ *
+ * `deprecate.middleware.js` already uses originalUrl, for the same reason.
+ */
+const requestPath = (req) => req.originalUrl ?? req.url;
+
+/**
  * Request logging with a correlation id.
  *
  * Every request gets an id, echoed back as `X-Request-Id`. When a cashier says
@@ -88,9 +108,10 @@ const httpLogger = require("pino-http")({
     if (req.url === "/health" || req.url === "/health/ready") return "silent";
     return "info";
   },
-  customSuccessMessage: (req, res) => `${req.method} ${req.url} ${res.statusCode}`,
+  customSuccessMessage: (req, res) =>
+    `${req.method} ${requestPath(req)} ${res.statusCode}`,
   customErrorMessage: (req, res, err) =>
-    `${req.method} ${req.url} ${res.statusCode} — ${err.message}`,
+    `${req.method} ${requestPath(req)} ${res.statusCode} — ${err.message}`,
   serializers: {
     req: (req) => ({
       id: req.id,
@@ -104,4 +125,4 @@ const httpLogger = require("pino-http")({
   },
 });
 
-module.exports = { logger, httpLogger };
+module.exports = { logger, httpLogger, requestPath };
