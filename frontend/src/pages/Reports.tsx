@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useAuthStore } from "@/store/auth.store";
 import {
   BarChart3,
   TrendingUp,
@@ -397,6 +398,14 @@ function DailyReport() {
 // ─── GST Report Tab ────────────────────────────────────
 
 function GstReport() {
+  // A GST return is the shop's filing position, not a cashier's screen — the
+  // server already refuses this to anyone but ADMIN/PHARMACIST (see
+  // report.routes.js). Gating the query itself, not just the tab that leads
+  // here, means a stale bookmark or a future navigation change can't still
+  // fire a request this role will only ever get a 403 back from.
+  const { user } = useAuthStore();
+  const canViewGst = user?.role === "ADMIN" || user?.role === "PHARMACIST";
+
   const now = new Date();
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [year, setYear] = useState(now.getFullYear());
@@ -421,6 +430,10 @@ function GstReport() {
         totals: res.data.data.totals as GstTotals,
       };
     },
+    // Never fires for a role that can only get a 403 back — and react-query's
+    // default retries meant every load quietly retried that 403 several times
+    // over, which is what was flooding the console.
+    enabled: canViewGst,
     meta: { errorMessage: "Failed to fetch GST report" },
   });
 
@@ -455,6 +468,21 @@ function GstReport() {
       setExporting(false);
     }
   };
+
+  // The tab that leads here is already hidden from a cashier (see the parent
+  // Reports() component), so reaching this state means a stale bookmark or a
+  // direct URL — not the normal path. Explaining the restriction beats a
+  // report that spins forever or renders empty with no reason given.
+  if (!canViewGst) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-2 py-16 text-center">
+        <FileText className="w-8 h-8 text-slate-600" />
+        <p className="text-slate-400 text-sm">
+          GST reports are available to administrators and pharmacists.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -1037,6 +1065,9 @@ function SalesTrend() {
 // ─── Main Reports Page ─────────────────────────────────
 
 export default function Reports() {
+  const { user } = useAuthStore();
+  const canViewGst = user?.role === "ADMIN" || user?.role === "PHARMACIST";
+
   return (
     <div className="space-y-4">
       <div>
@@ -1056,12 +1087,14 @@ export default function Reports() {
           >
             <Receipt className="w-4 h-4 mr-2" /> Daily Report
           </TabsTrigger>
-          <TabsTrigger
-            value="gst"
-            className="data-[state=active]:bg-teal-600 data-[state=active]:text-white text-slate-400"
-          >
-            <FileText className="w-4 h-4 mr-2" /> GST Report
-          </TabsTrigger>
+          {canViewGst && (
+            <TabsTrigger
+              value="gst"
+              className="data-[state=active]:bg-teal-600 data-[state=active]:text-white text-slate-400"
+            >
+              <FileText className="w-4 h-4 mr-2" /> GST Report
+            </TabsTrigger>
+          )}
           <TabsTrigger
             value="trend"
             className="data-[state=active]:bg-teal-600 data-[state=active]:text-white text-slate-400"
@@ -1079,9 +1112,11 @@ export default function Reports() {
         <TabsContent value="daily">
           <DailyReport />
         </TabsContent>
-        <TabsContent value="gst">
-          <GstReport />
-        </TabsContent>
+        {canViewGst && (
+          <TabsContent value="gst">
+            <GstReport />
+          </TabsContent>
+        )}
         <TabsContent value="trend">
           <SalesTrend />
         </TabsContent>
