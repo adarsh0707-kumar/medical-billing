@@ -5,6 +5,8 @@ import MockAdapter from "axios-mock-adapter";
 import api from "@/lib/api";
 import Reports from "@/pages/Reports";
 import { createQueryWrapper } from "@/test/query-wrapper";
+import { useAuthStore } from "@/store/auth.store";
+import type { User } from "@/types";
 
 /**
  * docs/09 §5.6 — the CSV export controls (FR-RPT-09).
@@ -42,7 +44,19 @@ const stubGst = (invoices: unknown[]) =>
     },
   });
 
+// The GST tab is rendered only for ADMIN and PHARMACIST, mirroring the
+// authorize() on report.routes.js so a cashier's page never fires a request it
+// can only get a 403 back from. These tests are about the export button behind
+// that tab, so they sign in as somebody allowed to see it.
+const asRole = (role: User["role"]) =>
+  useAuthStore.setState({
+    user: { id: "u1", name: role, email: `${role}@test.local`, role },
+    token: "token",
+    isAuthenticated: true,
+  });
+
 beforeEach(() => {
+  asRole("ADMIN");
   mock = new MockAdapter(api);
   mock.onGet(/daily-summary\?/).reply(200, {
     success: true,
@@ -57,6 +71,9 @@ beforeEach(() => {
 afterEach(() => {
   mock.restore();
   vi.restoreAllMocks();
+  // The store is a module singleton, so a signed-in user would otherwise be
+  // inherited by whatever file runs next in this worker.
+  useAuthStore.setState({ user: null, token: null, isAuthenticated: false });
 });
 
 const openGst = async (user: ReturnType<typeof userEvent.setup>) => {
@@ -113,5 +130,44 @@ describe("Reports — CSV export", () => {
       expect(call!.url).toContain(`month=${now.getMonth() + 1}`);
       expect(call!.url).toContain(`year=${now.getFullYear()}`);
     });
+  });
+});
+
+/**
+ * The GST tab is ADMIN/PHARMACIST only.
+ *
+ * Cosmetic, exactly as the sidebar's role filter is: `authorize()` on
+ * report.routes.js is the real boundary, and a cashier reaching /api/reports/gst
+ * by any other route still gets a 403. What this guards is the second half of
+ * the change — the query is gated too, so the page does not spend a request, or
+ * react-query's retries of it, on a 403 nobody will ever see.
+ */
+describe("Reports — GST is not a cashier's screen", () => {
+  it("renders no GST tab for a cashier", async () => {
+    asRole("CASHIER");
+    stubGst([INVOICE]);
+
+    render(<Reports />, { wrapper: createQueryWrapper() });
+
+    // The daily tab is the page's default, so waiting for it means the page has
+    // rendered and the GST tab's absence is a decision rather than a race.
+    expect(
+      await screen.findByRole("tab", { name: /daily report/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("tab", { name: /gst report/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not request the GST report for a cashier", async () => {
+    asRole("CASHIER");
+    stubGst([INVOICE]);
+
+    render(<Reports />, { wrapper: createQueryWrapper() });
+    await screen.findByRole("tab", { name: /daily report/i });
+
+    expect(
+      mock.history.get.some((r) => /reports\/gst/.test(r.url ?? "")),
+    ).toBe(false);
   });
 });
