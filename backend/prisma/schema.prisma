@@ -227,6 +227,7 @@ model Batch {
   supplierId     String
   createdAt      DateTime @default(now())
 
+  shop           Shop          @relation(fields: [shopId], references: [id])
   medicine       Medicine      @relation(fields: [medicineId], references: [id])
   supplier       Supplier      @relation(fields: [supplierId], references: [id])
   invoiceItems   InvoiceItem[]
