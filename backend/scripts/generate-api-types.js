@@ -71,6 +71,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const ts = require("typescript");
+const prettier = require("prettier");
 const { z } = require("zod");
 
 const BACKEND_DIR = path.resolve(__dirname, "..");
@@ -338,11 +339,34 @@ function render(schemas, printed) {
   return lines.join("\n");
 }
 
-function main() {
+/**
+ * Formats the rendered source the way Prettier would.
+ *
+ * Not cosmetic — it is what makes `--check` mean anything. `typeToString` emits
+ * one very long line per contract, and the moment anyone ran Prettier over the
+ * committed file (an editor on save is enough) the byte comparison below failed
+ * for a file whose *contents* were perfectly current. That is what happened on
+ * 2026-08-29: the multi-tenant commit reformatted it, and the gate reported a
+ * schema drift that did not exist. A check that cries wolf gets switched off.
+ *
+ * Config is resolved from the output path rather than hard-coded, so the
+ * generator and a developer's editor always agree by construction. There is no
+ * Prettier config in the frontend tree today, so this resolves to Prettier's
+ * defaults — which is exactly the formatting already committed.
+ */
+async function format(source) {
+  const config = await prettier.resolveConfig(OUT_FILE);
+  return prettier.format(source, {
+    ...config,
+    parser: "typescript",
+  });
+}
+
+async function main() {
   const check = process.argv.includes("--check");
   const schemas = collectSchemas();
   const printed = printExpandedTypes(schemas);
-  const output = render(schemas, printed);
+  const output = await format(render(schemas, printed));
 
   if (check) {
     const current = fs.existsSync(OUT_FILE)
@@ -368,4 +392,10 @@ function main() {
   );
 }
 
-main();
+// `main` is async, so a rejection here would otherwise surface as an unhandled
+// promise and leave the exit code at 0 — a green tick in CI over a file that was
+// never written. Same failure the seed script had.
+main().catch((err) => {
+  console.error(err.message ?? err);
+  process.exit(1);
+});
