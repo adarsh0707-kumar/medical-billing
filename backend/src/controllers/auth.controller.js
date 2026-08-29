@@ -31,9 +31,23 @@ const DUMMY_PASSWORD_HASH = bcrypt.hashSync(
 // auth endpoints, so it is not attached to every API call. Secure only in
 // production, because the development stack is deliberately plain HTTP and a
 // Secure cookie would simply never be sent there.
+//
+// `sameSite` cannot be a flat "strict" once frontend and backend are on
+// different sites — a browser refuses to send a Strict (or Lax) cookie on any
+// cross-site request at all, including this app's own XHR calls from a
+// Vercel-hosted SPA to a Render-hosted API. With Strict, the cookie is set
+// once at login and then never sent again, so every refresh attempt fails
+// silently and the 30-minute access token's expiry becomes a full logout —
+// which looks like "sessions don't last a week" when the code otherwise
+// behaves exactly as designed.
+//
+// "None" is the setting that actually allows a cross-site cookie to be sent,
+// and browsers require Secure whenever SameSite is None — which production
+// already sets. Kept at "strict" outside production, where frontend and
+// backend share an origin through the dev proxy and Strict costs nothing.
 const refreshCookieOptions = () => ({
   httpOnly: true,
-  sameSite: "strict",
+  sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
   secure: process.env.NODE_ENV === "production",
   path: "/api/auth",
   maxAge: REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000,

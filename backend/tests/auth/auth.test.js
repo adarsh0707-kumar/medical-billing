@@ -2,7 +2,13 @@ import { describe, it, expect, beforeAll, vi } from "vitest";
 import request from "supertest";
 import { createRequire } from "node:module";
 import prisma from "../../src/config/db.js";
-import { buildApp, makeUser, signIn, tokenFor, PASSWORD } from "../helpers/factory.js";
+import {
+  buildApp,
+  makeUser,
+  signIn,
+  tokenFor,
+  PASSWORD,
+} from "../helpers/factory.js";
 import { generateToken } from "../../src/utils/jwt.utils.js";
 import jwt from "jsonwebtoken";
 
@@ -61,17 +67,30 @@ describe("POST /api/auth/login", () => {
   // disabled account from a wrong password.
   it("gives the same answer for unknown email, wrong password and disabled user", async () => {
     await makeUser({ email: "real@test.local" });
-    await makeUser({ email: "disabled@test.local", isActive: false, role: "CASHIER" });
+    await makeUser({
+      email: "disabled@test.local",
+      isActive: false,
+      role: "CASHIER",
+    });
 
     const [unknown, wrong, disabled] = await Promise.all([
-      request(app).post("/api/auth/login").send({ email: "nobody@test.local", password: PASSWORD }),
-      request(app).post("/api/auth/login").send({ email: "real@test.local", password: "nope" }),
-      request(app).post("/api/auth/login").send({ email: "disabled@test.local", password: PASSWORD }),
+      request(app)
+        .post("/api/auth/login")
+        .send({ email: "nobody@test.local", password: PASSWORD }),
+      request(app)
+        .post("/api/auth/login")
+        .send({ email: "real@test.local", password: "nope" }),
+      request(app)
+        .post("/api/auth/login")
+        .send({ email: "disabled@test.local", password: PASSWORD }),
     ]);
 
     for (const res of [unknown, wrong, disabled]) {
       expect(res.status).toBe(401);
-      expect(res.body).toEqual({ success: false, message: "Invalid credentials." });
+      expect(res.body).toEqual({
+        success: false,
+        message: "Invalid credentials.",
+      });
       // A failed sign-in must not open a session either.
       expect(res.headers["set-cookie"]).toBeUndefined();
     }
@@ -86,8 +105,14 @@ describe("POST /api/auth/login", () => {
   // property — the timing is only its consequence.
   it.each([
     ["an unknown email", { email: "nobody@test.local", password: PASSWORD }],
-    ["a wrong password", { email: "timing@test.local", password: "not-the-password" }],
-    ["a deactivated account", { email: "timing-off@test.local", password: PASSWORD }],
+    [
+      "a wrong password",
+      { email: "timing@test.local", password: "not-the-password" },
+    ],
+    [
+      "a deactivated account",
+      { email: "timing-off@test.local", password: PASSWORD },
+    ],
   ])("spends a bcrypt comparison on %s", async (_label, credentials) => {
     await makeUser({ email: "timing@test.local" });
     await makeUser({
@@ -128,7 +153,9 @@ describe("POST /api/auth/login", () => {
   });
 
   it("rejects a missing field with 400", async () => {
-    const res = await request(app).post("/api/auth/login").send({ email: "a@b.c" });
+    const res = await request(app)
+      .post("/api/auth/login")
+      .send({ email: "a@b.c" });
     expect(res.status).toBe(400);
   });
 });
@@ -136,7 +163,9 @@ describe("POST /api/auth/login", () => {
 describe("token handling", () => {
   it("accepts a valid token on a protected route", async () => {
     const { token, user } = await signIn(app, "CASHIER");
-    const res = await request(app).get("/api/auth/me").set("Authorization", `Bearer ${token}`);
+    const res = await request(app)
+      .get("/api/auth/me")
+      .set("Authorization", `Bearer ${token}`);
 
     expect(res.status).toBe(200);
     expect(res.body.data.user.id).toBe(user.id);
@@ -144,7 +173,11 @@ describe("token handling", () => {
 
   it.each([
     ["no header", undefined, "Access denied. No token provided."],
-    ["a malformed header", "not-a-bearer-token", "Access denied. No token provided."],
+    [
+      "a malformed header",
+      "not-a-bearer-token",
+      "Access denied. No token provided.",
+    ],
     ["a garbage token", "Bearer nonsense.nonsense.nonsense", "Invalid token."],
   ])("rejects %s", async (_label, header, message) => {
     const req = request(app).get("/api/auth/me");
@@ -159,11 +192,22 @@ describe("token handling", () => {
   // the token's claims: revocation has to be immediate.
   it("stops accepting a still-valid token once the user is deactivated", async () => {
     const { token, user } = await signIn(app, "CASHIER");
-    expect((await request(app).get("/api/auth/me").set("Authorization", `Bearer ${token}`)).status).toBe(200);
+    expect(
+      (
+        await request(app)
+          .get("/api/auth/me")
+          .set("Authorization", `Bearer ${token}`)
+      ).status,
+    ).toBe(200);
 
-    await prisma.user.update({ where: { id: user.id }, data: { isActive: false } });
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { isActive: false },
+    });
 
-    const res = await request(app).get("/api/auth/me").set("Authorization", `Bearer ${token}`);
+    const res = await request(app)
+      .get("/api/auth/me")
+      .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(401);
     expect(res.body.message).toBe("User not found or deactivated.");
   });
@@ -172,7 +216,9 @@ describe("token handling", () => {
     const { token, user } = await signIn(app, "CASHIER");
     await prisma.user.delete({ where: { id: user.id } });
 
-    const res = await request(app).get("/api/auth/me").set("Authorization", `Bearer ${token}`);
+    const res = await request(app)
+      .get("/api/auth/me")
+      .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(401);
   });
 
@@ -220,7 +266,9 @@ describe("token handling", () => {
     const expired = jwt.sign({ id: "whoever" }, process.env.JWT_SECRET, {
       expiresIn: "-1s",
     });
-    const res = await request(app).get("/api/auth/me").set("Authorization", `Bearer ${expired}`);
+    const res = await request(app)
+      .get("/api/auth/me")
+      .set("Authorization", `Bearer ${expired}`);
 
     expect(res.status).toBe(401);
     expect(res.body.message).toBe("Token expired.");
@@ -230,7 +278,9 @@ describe("token handling", () => {
     const notYet = jwt.sign({ id: "whoever" }, process.env.JWT_SECRET, {
       notBefore: 3600,
     });
-    const res = await request(app).get("/api/auth/me").set("Authorization", `Bearer ${notYet}`);
+    const res = await request(app)
+      .get("/api/auth/me")
+      .set("Authorization", `Bearer ${notYet}`);
 
     expect(res.status).toBe(401);
     expect(res.body.message).toBe("Invalid token.");
@@ -247,7 +297,9 @@ describe("token handling", () => {
     delete process.env.JWT_SECRET;
 
     try {
-      const res = await request(app).get("/api/auth/me").set("Authorization", `Bearer ${token}`);
+      const res = await request(app)
+        .get("/api/auth/me")
+        .set("Authorization", `Bearer ${token}`);
 
       expect(res.status).toBe(401);
       expect(res.body.message).toBe("Invalid token.");
@@ -263,7 +315,9 @@ describe("POST /api/auth/logout", () => {
   const me = (token) =>
     request(app).get("/api/auth/me").set("Authorization", `Bearer ${token}`);
   const logout = (token) =>
-    request(app).post("/api/auth/logout").set("Authorization", `Bearer ${token}`);
+    request(app)
+      .post("/api/auth/logout")
+      .set("Authorization", `Bearer ${token}`);
 
   it("ends the session it was called with", async () => {
     const { token } = await signIn(app, "CASHIER");
@@ -310,7 +364,10 @@ describe("POST /api/auth/logout", () => {
   });
 
   it("is available to an account that must change its password", async () => {
-    const user = await makeUser({ role: "CASHIER", email: "blocked@test.local" });
+    const user = await makeUser({
+      role: "CASHIER",
+      email: "blocked@test.local",
+    });
     await prisma.user.update({
       where: { id: user.id },
       data: { mustChangePassword: true },
@@ -320,7 +377,13 @@ describe("POST /api/auth/logout", () => {
     // Every other route answers 403 PASSWORD_CHANGE_REQUIRED. Being unable to
     // sign out of an account you cannot otherwise use would be a worse trap
     // than the one the flag exists to set.
-    expect((await request(app).get("/api/inventory/categories").set("Authorization", `Bearer ${token}`)).status).toBe(403);
+    expect(
+      (
+        await request(app)
+          .get("/api/inventory/categories")
+          .set("Authorization", `Bearer ${token}`)
+      ).status,
+    ).toBe(403);
     expect((await logout(token)).status).toBe(200);
   });
 
@@ -368,6 +431,39 @@ describe("POST /api/auth/refresh", () => {
     expect(JSON.stringify(res.body)).not.toContain("refresh_token");
   });
 
+  // Regression guard: frontend and backend on different sites (a Vercel SPA
+  // calling a Render API is exactly this shape) means a Strict — or even
+  // Lax — cookie is never sent on the app's own cross-site XHR calls. That
+  // silently breaks every refresh attempt, and a 30-minute access token then
+  // expires into a full logout instead of the week-long session the split was
+  // built to provide. Only reachable in production; `buildApp()` here runs
+  // under NODE_ENV=test, so this asserts against a request built with the
+  // production branch forced on directly rather than the shared `app`.
+  it("relaxes to SameSite=None in production, where it must cross sites", async () => {
+    const prodApp = buildApp();
+    const originalEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = "production";
+    try {
+      const user = await makeUser({
+        role: "CASHIER",
+        email: "prod-cookie@test.local",
+      });
+      const res = await request(prodApp)
+        .post("/api/auth/login")
+        .send({ email: user.email, password: PASSWORD });
+      const cookie = cookieFrom(res);
+
+      expect(cookie).toMatch(/HttpOnly/i);
+      expect(cookie).toMatch(/SameSite=None/i);
+      // SameSite=None is only honoured by browsers alongside Secure — a cookie
+      // missing this pairing is silently dropped, which would reintroduce the
+      // exact bug this test exists to catch.
+      expect(cookie).toMatch(/Secure/i);
+    } finally {
+      process.env.NODE_ENV = originalEnv;
+    }
+  });
+
   it("issues an access token that expires in 30 minutes, not 7 days", async () => {
     const { res } = await signInFor("shortlived@test.local");
     const { iat, exp } = jwt.decode(res.body.data.token);
@@ -378,17 +474,27 @@ describe("POST /api/auth/refresh", () => {
   it("exchanges the cookie for a fresh access token", async () => {
     const { cookie } = await signInFor("exchange@test.local");
 
-    const res = await request(app).post("/api/auth/refresh").set("Cookie", cookie);
+    const res = await request(app)
+      .post("/api/auth/refresh")
+      .set("Cookie", cookie);
 
     expect(res.status).toBe(200);
     expect(res.body.data.token).toBeTruthy();
-    expect((await request(app).get("/api/auth/me").set("Authorization", `Bearer ${res.body.data.token}`)).status).toBe(200);
+    expect(
+      (
+        await request(app)
+          .get("/api/auth/me")
+          .set("Authorization", `Bearer ${res.body.data.token}`)
+      ).status,
+    ).toBe(200);
   });
 
   it("rotates the cookie on every use", async () => {
     const { cookie } = await signInFor("rotate@test.local");
 
-    const res = await request(app).post("/api/auth/refresh").set("Cookie", cookie);
+    const res = await request(app)
+      .post("/api/auth/refresh")
+      .set("Cookie", cookie);
 
     expect(cookieOf(res)).toBeTruthy();
     expect(cookieOf(res)).not.toBe(cookie);
@@ -402,11 +508,17 @@ describe("POST /api/auth/refresh", () => {
     );
     // A legitimate client never replays a rotated token, so presenting one
     // means two parties hold the same credential.
-    expect((await request(app).post("/api/auth/refresh").set("Cookie", original)).status).toBe(401);
+    expect(
+      (await request(app).post("/api/auth/refresh").set("Cookie", original))
+        .status,
+    ).toBe(401);
 
     // ...and the response is to end everything, including the session the
     // honest client is holding. Losing a session beats leaving a thief in one.
-    expect((await request(app).post("/api/auth/refresh").set("Cookie", rotated)).status).toBe(401);
+    expect(
+      (await request(app).post("/api/auth/refresh").set("Cookie", rotated))
+        .status,
+    ).toBe(401);
   });
 
   it("refuses with no cookie at all", async () => {
@@ -421,14 +533,23 @@ describe("POST /api/auth/refresh", () => {
       .set("Authorization", `Bearer ${res.body.data.token}`);
 
     // Otherwise signing out would last only until the next silent refresh.
-    expect((await request(app).post("/api/auth/refresh").set("Cookie", cookie)).status).toBe(401);
+    expect(
+      (await request(app).post("/api/auth/refresh").set("Cookie", cookie))
+        .status,
+    ).toBe(401);
   });
 
   it("stops working once the account is deactivated", async () => {
     const { user, cookie } = await signInFor("deactivated@test.local");
-    await prisma.user.update({ where: { id: user.id }, data: { isActive: false } });
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { isActive: false },
+    });
 
-    expect((await request(app).post("/api/auth/refresh").set("Cookie", cookie)).status).toBe(401);
+    expect(
+      (await request(app).post("/api/auth/refresh").set("Cookie", cookie))
+        .status,
+    ).toBe(401);
   });
 });
 
@@ -458,14 +579,22 @@ describe("PUT /api/auth/change-password", () => {
   it("revokes every other session for the account", async () => {
     const { token, user } = await signIn(app, "CASHIER");
     const otherDevice = await tokenFor(user.id);
-    expect((await request(app).get("/api/auth/me").set("Authorization", `Bearer ${otherDevice}`)).status).toBe(200);
+    expect(
+      (
+        await request(app)
+          .get("/api/auth/me")
+          .set("Authorization", `Bearer ${otherDevice}`)
+      ).status,
+    ).toBe(200);
 
     await request(app)
       .put("/api/auth/change-password")
       .set("Authorization", `Bearer ${token}`)
       .send({ currentPassword: PASSWORD, newPassword: "a-brand-new-one" });
 
-    const res = await request(app).get("/api/auth/me").set("Authorization", `Bearer ${otherDevice}`);
+    const res = await request(app)
+      .get("/api/auth/me")
+      .set("Authorization", `Bearer ${otherDevice}`);
     expect(res.status).toBe(401);
     expect(res.body.message).toBe("Session ended. Please sign in again.");
   });
@@ -482,9 +611,21 @@ describe("PUT /api/auth/change-password", () => {
     // The old token is gone — the caller's own session was revoked with the
     // rest — but the replacement works, so a successful password change does
     // not sign the user out of the device they changed it on.
-    expect((await request(app).get("/api/auth/me").set("Authorization", `Bearer ${token}`)).status).toBe(401);
+    expect(
+      (
+        await request(app)
+          .get("/api/auth/me")
+          .set("Authorization", `Bearer ${token}`)
+      ).status,
+    ).toBe(401);
     expect(change.body.data.token).toBeTruthy();
-    expect((await request(app).get("/api/auth/me").set("Authorization", `Bearer ${change.body.data.token}`)).status).toBe(200);
+    expect(
+      (
+        await request(app)
+          .get("/api/auth/me")
+          .set("Authorization", `Bearer ${change.body.data.token}`)
+      ).status,
+    ).toBe(200);
   });
 
   // Guards C-1, and it is the other half of the test above.
@@ -501,7 +642,10 @@ describe("PUT /api/auth/change-password", () => {
   // are *forced* through this screen before they can do anything else.
   it("hands the caller a working refresh cookie, not just an access token", async () => {
     const password = "a-real-password-12";
-    const user = await makeUser({ role: "CASHIER", email: "changer@test.local" });
+    const user = await makeUser({
+      role: "CASHIER",
+      email: "changer@test.local",
+    });
     await prisma.user.update({
       where: { id: user.id },
       data: { password: await bcrypt.hash(password, 4) },
@@ -515,7 +659,10 @@ describe("PUT /api/auth/change-password", () => {
     const change = await request(app)
       .put("/api/auth/change-password")
       .set("Authorization", `Bearer ${login.body.data.token}`)
-      .send({ currentPassword: password, newPassword: "another-real-password-34" });
+      .send({
+        currentPassword: password,
+        newPassword: "another-real-password-34",
+      });
     expect(change.status).toBe(200);
 
     // The change must set a replacement cookie...
@@ -524,12 +671,23 @@ describe("PUT /api/auth/change-password", () => {
     expect(fresh).not.toBe(loginCookie);
 
     // ...that still works when the access token expires half an hour later.
-    const refreshed = await request(app).post("/api/auth/refresh").set("Cookie", fresh);
+    const refreshed = await request(app)
+      .post("/api/auth/refresh")
+      .set("Cookie", fresh);
     expect(refreshed.status).toBe(200);
-    expect((await request(app).get("/api/auth/me").set("Authorization", `Bearer ${refreshed.body.data.token}`)).status).toBe(200);
+    expect(
+      (
+        await request(app)
+          .get("/api/auth/me")
+          .set("Authorization", `Bearer ${refreshed.body.data.token}`)
+      ).status,
+    ).toBe(200);
 
     // And the cookie from before the change is dead, like every other session.
-    expect((await request(app).post("/api/auth/refresh").set("Cookie", loginCookie)).status).toBe(401);
+    expect(
+      (await request(app).post("/api/auth/refresh").set("Cookie", loginCookie))
+        .status,
+    ).toBe(401);
   });
 
   it("refuses when the current password is wrong", async () => {
@@ -550,7 +708,10 @@ describe("PUT /api/auth/change-password", () => {
     ["a blocklisted password", "administrator"],
     ["a password containing the account's own email", "cashier-at-test"],
   ])("refuses %s", async (_label, newPassword) => {
-    const user = await makeUser({ role: "CASHIER", email: "cashier@test.local" });
+    const user = await makeUser({
+      role: "CASHIER",
+      email: "cashier@test.local",
+    });
     const token = await tokenFor(user.id);
 
     const res = await request(app)
