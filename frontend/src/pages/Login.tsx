@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuthStore } from "@/store/auth.store";
 import api from "@/lib/api";
@@ -22,27 +22,6 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  // Whether this installation still needs its first account. The signup link is
-  // only shown when it does — offering it on a live system would send people to
-  // a page whose only answer is "closed". A failed check renders as "no link",
-  // which is the harmless way to be wrong.
-  const [needsSetup, setNeedsSetup] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    api
-      .get("/api/auth/setup-status")
-      .then((res) => {
-        if (!cancelled) setNeedsSetup(Boolean(res.data?.data?.needsSetup));
-      })
-      // Swallowed on purpose. This decides whether to render one optional link;
-      // a toast about it would be noise on the screen someone is trying to sign
-      // in on, and the link stays hidden either way.
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -163,22 +142,17 @@ export default function Login() {
               </Button>
             </form>
 
-            {needsSetup && (
-              <div className="mt-6 pt-4 border-t border-slate-700 text-center">
-                <p className="text-sm text-slate-400">
-                  Don't have an account?{" "}
-                  <Link
-                    to="/signup"
-                    className="text-teal-400 hover:text-teal-300 font-medium"
-                  >
-                    Set up this system
-                  </Link>
-                </p>
-                <p className="text-xs text-slate-500 mt-1">
-                  Nobody has claimed this installation yet.
-                </p>
-              </div>
-            )}
+            <div className="mt-6 pt-4 border-t border-slate-700 text-center">
+              <p className="text-sm text-slate-400">
+                New shop?{" "}
+                <Link
+                  to="/signup"
+                  className="text-teal-400 hover:text-teal-300 font-medium"
+                >
+                  Create your account
+                </Link>
+              </p>
+            </div>
 
             {/* Role badges */}
             <div className="mt-6 pt-4 border-t border-slate-700">

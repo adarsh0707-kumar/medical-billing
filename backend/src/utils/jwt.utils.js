@@ -16,16 +16,23 @@ const REFRESH_TOKEN_TTL_DAYS = 7;
 // `tokenVersion` is the revocation counter from the user's row. `protect`
 // compares it and rejects a token that has fallen behind, so bumping the column
 // invalidates every session that user has open.
-const generateToken = (userId, tokenVersion = 0) =>
-  jwt.sign({ id: userId, tokenVersion }, process.env.JWT_SECRET, {
+//
+// `shopId` rides along so every request carries its tenant without an extra
+// database round trip to look it up — `protect` still reloads the user row on
+// every request regardless (to catch deactivation), so this is a convenience
+// for anything that wants the claim before that load finishes, not the source
+// of truth. The source of truth is always `req.user.shopId`, set from the
+// freshly-loaded row.
+const generateToken = (userId, tokenVersion = 0, shopId) =>
+  jwt.sign({ id: userId, tokenVersion, shopId }, process.env.JWT_SECRET, {
     expiresIn: ACCESS_TOKEN_TTL,
   });
 
 // `jti` is the id of the RefreshToken row backing this session, which is what
 // makes rotation and reuse detection possible: the server holds the state and
 // the token is only a pointer to it.
-const generateRefreshToken = (userId, tokenVersion = 0, jti) =>
-  jwt.sign({ id: userId, tokenVersion, jti }, process.env.JWT_SECRET, {
+const generateRefreshToken = (userId, tokenVersion = 0, jti, shopId) =>
+  jwt.sign({ id: userId, tokenVersion, jti, shopId }, process.env.JWT_SECRET, {
     expiresIn: `${REFRESH_TOKEN_TTL_DAYS}d`,
   });
 

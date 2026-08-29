@@ -5,15 +5,16 @@ const getAll = async (req, res, next) => {
   try {
     const { search, page, limit } = req.validatedQuery;
     const skip = (page - 1) * limit;
-    const where = search
-      ? {
-          OR: [
-            { name: { contains: search, mode: "insensitive" } },
-            { phone: { contains: search } },
-            { email: { contains: search, mode: "insensitive" } },
-          ],
-        }
-      : {};
+    const where = {
+      shopId: req.user.shopId,
+      ...(search && {
+        OR: [
+          { name: { contains: search, mode: "insensitive" } },
+          { phone: { contains: search } },
+          { email: { contains: search, mode: "insensitive" } },
+        ],
+      }),
+    };
     const [customers, total] = await Promise.all([
       prisma.customer.findMany({
         where,
@@ -54,8 +55,8 @@ const getOne = async (req, res, next) => {
   try {
     const mayReadHistory = HISTORY_ROLES.includes(req.user.role);
 
-    const customer = await prisma.customer.findUnique({
-      where: { id: req.params.id },
+    const customer = await prisma.customer.findFirst({
+      where: { id: req.params.id, shopId: req.user.shopId },
       include: {
         invoices: mayReadHistory
           ? {
@@ -93,6 +94,7 @@ const create = async (req, res, next) => {
     const { name, phone, email, address, age, gender } = req.body;
     const customer = await prisma.customer.create({
       data: {
+        shopId: req.user.shopId,
         name,
         phone,
         email,
@@ -112,8 +114,8 @@ const create = async (req, res, next) => {
 const update = async (req, res, next) => {
   try {
     const { name, phone, email, address, age, gender } = req.body;
-    const customer = await prisma.customer.update({
-      where: { id: req.params.id },
+    const result = await prisma.customer.updateMany({
+      where: { id: req.params.id, shopId: req.user.shopId },
       data: {
         name,
         phone,
@@ -122,6 +124,14 @@ const update = async (req, res, next) => {
         age: age ? Number(age) : null,
         gender: gender || null,
       },
+    });
+    if (result.count === 0) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Customer not found" });
+    }
+    const customer = await prisma.customer.findUnique({
+      where: { id: req.params.id },
     });
     res.json({ success: true, message: "Customer updated", data: customer });
   } catch (err) {
@@ -134,7 +144,7 @@ const update = async (req, res, next) => {
 // the personal fields are blanked in place instead (PRD Q6). ADMIN only.
 const erase = async (req, res, next) => {
   try {
-    const result = await eraseCustomer(req.params.id);
+    const result = await eraseCustomer(req.params.id, req.user.shopId);
 
     if (!result.found) {
       return res

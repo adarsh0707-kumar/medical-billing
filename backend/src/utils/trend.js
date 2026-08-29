@@ -46,7 +46,7 @@ const APP_TIME_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
  * summary deliberately counts everything raised; the two answer different
  * questions and both are asserted.
  */
-const dailyTrend = (client, start, end, timeZone = APP_TIME_ZONE) =>
+const dailyTrend = (client, start, end, shopId, timeZone = APP_TIME_ZONE) =>
   client.$queryRaw`
     SELECT to_char(
              date_trunc('day', "date" AT TIME ZONE 'UTC' AT TIME ZONE ${timeZone}),
@@ -55,7 +55,8 @@ const dailyTrend = (client, start, end, timeZone = APP_TIME_ZONE) =>
            COUNT(*) FILTER (WHERE "type" = 'SALE')::int   AS invoices,
            COALESCE(SUM("totalAmount"), 0)                AS sales
     FROM "Invoice"
-    WHERE "date" >= ${start} AND "date" <= ${end}
+    WHERE "shopId" = ${shopId}
+      AND "date" >= ${start} AND "date" <= ${end}
       AND "paymentStatus" = 'PAID'::"PaymentStatus"
     GROUP BY 1
     ORDER BY 1`;
@@ -88,14 +89,19 @@ const fillWindow = (rows, days, now = new Date()) => {
 };
 
 /** The whole thing: query the window and zero-fill it. */
-const trendForDays = async (days, client = prisma, now = new Date()) => {
+const trendForDays = async (
+  days,
+  shopId,
+  client = prisma,
+  now = new Date(),
+) => {
   const end = new Date(now);
   end.setHours(23, 59, 59, 999);
   const start = new Date(now);
   start.setDate(start.getDate() - (days - 1));
   start.setHours(0, 0, 0, 0);
 
-  return fillWindow(await dailyTrend(client, start, end), days, now);
+  return fillWindow(await dailyTrend(client, start, end, shopId), days, now);
 };
 
 module.exports = {

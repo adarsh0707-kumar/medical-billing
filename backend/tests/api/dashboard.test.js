@@ -31,7 +31,9 @@ beforeAll(() => {
 });
 
 const stats = (token) =>
-  request(app).get("/api/dashboard/stats").set("Authorization", `Bearer ${token}`);
+  request(app)
+    .get("/api/dashboard/stats")
+    .set("Authorization", `Bearer ${token}`);
 
 /** A date `n` days from now, at noon — clear of either midnight boundary. */
 const daysFromNow = (n) => {
@@ -47,11 +49,19 @@ const midnightToday = () => new Date(new Date().toISOString().slice(0, 10));
 /** An invoice written straight to the database, on any date and in any state. */
 async function invoiceAt(
   date,
-  { total = 100, cgst = 6, sgst = 6, status = "PAID", mode = "CASH", type = "SALE" } = {},
+  {
+    total = 100,
+    cgst = 6,
+    sgst = 6,
+    status = "PAID",
+    mode = "CASH",
+    type = "SALE",
+  } = {},
 ) {
   const user = await makeUser({ email: `dash-${Math.random()}@test.local` });
   return prisma.invoice.create({
     data: {
+      shopId: user.shopId,
       invoiceNumber: `INV-${Math.random().toString(36).slice(2, 10)}`,
       userId: user.id,
       date,
@@ -114,7 +124,9 @@ describe("GET /api/dashboard/stats — access", () => {
     expect(body.data.lowStock).toEqual({ count: 0, items: [] });
     expect(body.data.totals).toEqual({ medicines: 0, customers: 0 });
     expect(body.data.trend).toHaveLength(7);
-    expect(body.data.trend.every((d) => d.sales === 0 && d.invoices === 0)).toBe(true);
+    expect(
+      body.data.trend.every((d) => d.sales === 0 && d.invoices === 0),
+    ).toBe(true);
   });
 });
 
@@ -172,7 +184,10 @@ describe("GET /api/dashboard/stats — today's money", () => {
     const sale = await request(app)
       .post("/api/billing/invoices")
       .set("Authorization", `Bearer ${token}`)
-      .send({ items: [line(medicine, batch, { quantity: 2 })], paymentMode: "CASH" });
+      .send({
+        items: [line(medicine, batch, { quantity: 2 })],
+        paymentMode: "CASH",
+      });
     expect(sale.status).toBe(201);
 
     const voided = await request(app)
@@ -225,15 +240,28 @@ describe("GET /api/dashboard/stats — recent invoices", () => {
 
   it("never carries a customer's contact details", async () => {
     const { token } = await signIn(app);
-    const customer = await prisma.customer.create({
-      data: { name: "Asha", phone: "9990001111", address: "12 Nehru Road", age: 41 },
-    });
     const user = await makeUser({ email: "recent@test.local" });
+    const customer = await prisma.customer.create({
+      data: {
+        shopId: user.shopId,
+        name: "Asha",
+        phone: "9990001111",
+        address: "12 Nehru Road",
+        age: 41,
+      },
+    });
     await prisma.invoice.create({
       data: {
-        invoiceNumber: "INV-RECENT", userId: user.id, customerId: customer.id,
-        subtotal: 100, cgst: 6, sgst: 6, totalAmount: 112,
-        paymentMode: "CASH", paymentStatus: "PAID",
+        shopId: user.shopId,
+        invoiceNumber: "INV-RECENT",
+        userId: user.id,
+        customerId: customer.id,
+        subtotal: 100,
+        cgst: 6,
+        sgst: 6,
+        totalAmount: 112,
+        paymentMode: "CASH",
+        paymentStatus: "PAID",
       },
     });
 
@@ -297,10 +325,31 @@ describe("GET /api/dashboard/stats — expiry panel", () => {
   it("excludes what expired yesterday, what expires past the window, and what is sold out", async () => {
     const { token } = await signIn(app);
     const { medicine, supplier } = await makeMedicine();
-    await makeBatch({ medicineId: medicine.id, supplierId: supplier.id, batchNumber: "GONE", expiryDate: daysFromNow(-1) });
-    await makeBatch({ medicineId: medicine.id, supplierId: supplier.id, batchNumber: "FAR", expiryDate: daysFromNow(31) });
-    await makeBatch({ medicineId: medicine.id, supplierId: supplier.id, batchNumber: "EMPTY", expiryDate: daysFromNow(5), quantity: 0 });
-    await makeBatch({ medicineId: medicine.id, supplierId: supplier.id, batchNumber: "SOON", expiryDate: daysFromNow(29) });
+    await makeBatch({
+      medicineId: medicine.id,
+      supplierId: supplier.id,
+      batchNumber: "GONE",
+      expiryDate: daysFromNow(-1),
+    });
+    await makeBatch({
+      medicineId: medicine.id,
+      supplierId: supplier.id,
+      batchNumber: "FAR",
+      expiryDate: daysFromNow(31),
+    });
+    await makeBatch({
+      medicineId: medicine.id,
+      supplierId: supplier.id,
+      batchNumber: "EMPTY",
+      expiryDate: daysFromNow(5),
+      quantity: 0,
+    });
+    await makeBatch({
+      medicineId: medicine.id,
+      supplierId: supplier.id,
+      batchNumber: "SOON",
+      expiryDate: daysFromNow(29),
+    });
 
     const { count, items } = (await stats(token)).body.data.expiring;
 
@@ -327,7 +376,9 @@ describe("GET /api/dashboard/stats — low-stock panel", () => {
     expect(count).toBe(13);
     expect(items).toHaveLength(10);
     // Scarcest first.
-    expect(items.map((b) => b.quantity)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    expect(items.map((b) => b.quantity)).toEqual([
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
+    ]);
   });
 
   // The dashboard's threshold is 20; /api/reports/low-stock defaults to 10.
@@ -337,9 +388,24 @@ describe("GET /api/dashboard/stats — low-stock panel", () => {
   it("uses a threshold of 20, inclusive, and skips sold-out batches", async () => {
     const { token } = await signIn(app);
     const { medicine, supplier } = await makeMedicine();
-    await makeBatch({ medicineId: medicine.id, supplierId: supplier.id, batchNumber: "AT", quantity: 20 });
-    await makeBatch({ medicineId: medicine.id, supplierId: supplier.id, batchNumber: "OVER", quantity: 21 });
-    await makeBatch({ medicineId: medicine.id, supplierId: supplier.id, batchNumber: "EMPTY", quantity: 0 });
+    await makeBatch({
+      medicineId: medicine.id,
+      supplierId: supplier.id,
+      batchNumber: "AT",
+      quantity: 20,
+    });
+    await makeBatch({
+      medicineId: medicine.id,
+      supplierId: supplier.id,
+      batchNumber: "OVER",
+      quantity: 21,
+    });
+    await makeBatch({
+      medicineId: medicine.id,
+      supplierId: supplier.id,
+      batchNumber: "EMPTY",
+      quantity: 0,
+    });
 
     const { count, items } = (await stats(token)).body.data.lowStock;
 
@@ -353,8 +419,12 @@ describe("GET /api/dashboard/stats — totals", () => {
     const { token } = await signIn(app);
     const { medicine, ...masters } = await makeMedicine({ name: "Active one" });
     await makeMedicine({ name: "Retired one", masters, isActive: false });
-    await prisma.customer.create({ data: { name: "Asha", phone: "9990002222" } });
-    await prisma.customer.create({ data: { name: "Bimal", phone: "9990003333" } });
+    await prisma.customer.create({
+      data: { shopId: medicine.shopId, name: "Asha", phone: "9990002222" },
+    });
+    await prisma.customer.create({
+      data: { shopId: medicine.shopId, name: "Bimal", phone: "9990003333" },
+    });
 
     const totals = (await stats(token)).body.data.totals;
 
@@ -377,7 +447,9 @@ describe("GET /api/dashboard/stats — trend", () => {
     const keys = trend.map((d) => d.date);
     expect(keys).toEqual([...keys].sort());
     expect(trend[6].sales).toBe(100);
-    expect(trend.slice(0, 6).every((d) => d.sales === 0 && d.invoices === 0)).toBe(true);
+    expect(
+      trend.slice(0, 6).every((d) => d.sales === 0 && d.invoices === 0),
+    ).toBe(true);
   });
 
   it("keys days by local date, not UTC", async () => {

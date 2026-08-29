@@ -35,7 +35,11 @@ const AUDITED = new Set([
 // an updateMany and is already attributable through the invoice it belongs to.
 // Auditing it would also mean an audit row for a sale that later rolled back,
 // because the audit write cannot join the caller's transaction.
-const AUDITED_ACTIONS = { create: "CREATE", update: "UPDATE", delete: "DELETE" };
+const AUDITED_ACTIONS = {
+  create: "CREATE",
+  update: "UPDATE",
+  delete: "DELETE",
+};
 
 // `updateMany` is excluded above for a good reason — the stock decrement inside
 // invoice creation is one, and auditing it would double the write volume of the
@@ -50,6 +54,29 @@ const AUDITED_ACTIONS = { create: "CREATE", update: "UPDATE", delete: "DELETE" }
 // that this write is worth recording. The invoice path never does, so it stays
 // out; anything deliberately annotated comes in.
 const BULK_ACTIONS = { updateMany: "UPDATE", deleteMany: "DELETE" };
+
+// Multi-tenancy forced every ordinary admin edit — rename a category, retire a
+// supplier, deactivate a user — onto `updateMany`/`deleteMany` too: Prisma's
+// singular `update`/`delete` accept only a unique selector, and `shopId` has to
+// sit in the same `where` as `id` for the tenant boundary to be the query
+// itself rather than a coincidence (see category.controller.js). Gating every
+// one of those behind `setReason` would mean silently losing the audit trail
+// for exactly the writes NFR-17 cares about, or forcing a reason prompt onto
+// every category rename to get it back.
+//
+// So these models' bulk writes are audited unconditionally, same as their
+// singular writes always were. Batch stays out of this set and keeps the
+// original opt-in-via-`setReason` behaviour: its bulk update is also the stock
+// decrement inside every sale, which is the hot path this exclusion exists to
+// protect, and which is already attributed through `Invoice.userId`.
+const BULK_AUDITED_UNCONDITIONALLY = new Set([
+  "Category",
+  "Manufacturer",
+  "Medicine",
+  "Supplier",
+  "Customer",
+  "User",
+]);
 
 // An audit row must never become a second place credentials live.
 const REDACTED = new Set(["password", "tokenVersion"]);
@@ -118,6 +145,7 @@ const auditMiddleware = (prisma) => async (params, next) => {
     const actor = currentActor();
     await prisma.auditLog.create({
       data: {
+        shopId: actor?.shopId ?? null,
         actorId: actor?.id ?? null,
         actorEmail: actor?.email ?? null,
         requestId: actor?.requestId ?? null,
@@ -127,8 +155,7 @@ const auditMiddleware = (prisma) => async (params, next) => {
         // `updateMany` returns a count, not a row, so fall back to the id the
         // caller targeted — and leave it null when the where clause was not an
         // identity, rather than inventing one.
-        recordId:
-          result?.id ?? before?.id ?? params.args?.where?.id ?? null,
+        recordId: result?.id ?? before?.id ?? params.args?.where?.id ?? null,
         before: action === "CREATE" ? undefined : strip(before),
         after: action === "DELETE" ? undefined : strip(after),
       },

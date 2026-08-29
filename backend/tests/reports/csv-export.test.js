@@ -27,7 +27,10 @@ const get = (token, path) =>
   request(app).get(path).set("Authorization", `Bearer ${token}`);
 
 const parse = (text) => {
-  const body = text.replace(/^\uFEFF/, "").trim().split("\r\n");
+  const body = text
+    .replace(/^\uFEFF/, "")
+    .trim()
+    .split("\r\n");
   return { header: body[0].split(","), rows: body.slice(1) };
 };
 
@@ -36,6 +39,7 @@ async function invoiceAt(date, over = {}) {
   const { subtotal = 100, cgst = 6, sgst = 6, total = 112, ...rest } = over;
   return prisma.invoice.create({
     data: {
+      shopId: user.shopId,
       invoiceNumber: `INV-${Math.random().toString(36).slice(2, 10)}`,
       userId: user.id,
       date,
@@ -88,8 +92,12 @@ describe("CSV export — transport", () => {
   it("keeps the GST export behind the same roles as the report", async () => {
     const { token } = await signIn(app, "CASHIER");
     expect(
-      (await get(token, "/api/billing/invoices/gst-report/export?month=3&year=2026"))
-        .status,
+      (
+        await get(
+          token,
+          "/api/billing/invoices/gst-report/export?month=3&year=2026",
+        )
+      ).status,
     ).toBe(403);
     // The daily summary is open to every role, and stays that way.
     expect(
@@ -116,7 +124,12 @@ describe("CSV export — agreement with the screen", () => {
   it("reports the same GST totals as the JSON report, to the paisa", async () => {
     const { token } = await signIn(app);
     const when = new Date(2026, 4, 12, 10, 0, 0);
-    await invoiceAt(when, { subtotal: 245, cgst: 14.7, sgst: 14.7, total: 274.4 });
+    await invoiceAt(when, {
+      subtotal: 245,
+      cgst: 14.7,
+      sgst: 14.7,
+      total: 274.4,
+    });
     await invoiceAt(when, { subtotal: 99.99, cgst: 9, sgst: 9, total: 117.99 });
 
     const json = await get(
@@ -134,7 +147,10 @@ describe("CSV export — agreement with the screen", () => {
       rows.reduce((n, r) => n + Number(r.split(",")[col(name)]), 0);
 
     expect(rows).toHaveLength(json.body.data.invoices.length);
-    expect(sum("Taxable")).toBeCloseTo(Number(json.body.data.totals.taxable), 2);
+    expect(sum("Taxable")).toBeCloseTo(
+      Number(json.body.data.totals.taxable),
+      2,
+    );
     expect(sum("CGST")).toBeCloseTo(Number(json.body.data.totals.cgst), 2);
     expect(sum("SGST")).toBeCloseTo(Number(json.body.data.totals.sgst), 2);
     expect(sum("Total")).toBeCloseTo(Number(json.body.data.totals.total), 2);
@@ -163,7 +179,12 @@ describe("CSV export — agreement with the screen", () => {
   it("includes credit notes as negative rows so the month nets out", async () => {
     const { token } = await signIn(app);
     const when = new Date(2026, 6, 8, 9, 0, 0);
-    const sale = await invoiceAt(when, { subtotal: 100, cgst: 6, sgst: 6, total: 112 });
+    const sale = await invoiceAt(when, {
+      subtotal: 100,
+      cgst: 6,
+      sgst: 6,
+      total: 112,
+    });
     await invoiceAt(when, {
       subtotal: -100,
       cgst: -6,
@@ -201,7 +222,10 @@ describe("CSV export — inventory reports", () => {
       quantity: 4,
     });
 
-    const res = await get(token, "/api/inventory/batches/expiring/export?days=30");
+    const res = await get(
+      token,
+      "/api/inventory/batches/expiring/export?days=30",
+    );
     const { header, rows } = parse(res.text);
     const row = rows.find((r) => r.includes("EXP-1")).split(",");
 
@@ -215,10 +239,23 @@ describe("CSV export — inventory reports", () => {
   it("exports low stock below the threshold", async () => {
     const { token } = await signIn(app);
     const { medicine, supplier } = await makeMedicine({ name: "Cetirizine" });
-    await makeBatch({ medicineId: medicine.id, supplierId: supplier.id, batchNumber: "LOW-1", quantity: 3 });
-    await makeBatch({ medicineId: medicine.id, supplierId: supplier.id, batchNumber: "FINE-1", quantity: 90 });
+    await makeBatch({
+      medicineId: medicine.id,
+      supplierId: supplier.id,
+      batchNumber: "LOW-1",
+      quantity: 3,
+    });
+    await makeBatch({
+      medicineId: medicine.id,
+      supplierId: supplier.id,
+      batchNumber: "FINE-1",
+      quantity: 90,
+    });
 
-    const res = await get(token, "/api/inventory/batches/low-stock/export?threshold=10");
+    const res = await get(
+      token,
+      "/api/inventory/batches/low-stock/export?threshold=10",
+    );
     const { rows } = parse(res.text);
 
     expect(rows.some((r) => r.includes("LOW-1"))).toBe(true);
@@ -238,7 +275,10 @@ describe("CSV export — inventory reports", () => {
       quantity: 2,
     });
 
-    const res = await get(token, "/api/inventory/batches/low-stock/export?threshold=10");
+    const res = await get(
+      token,
+      "/api/inventory/batches/low-stock/export?threshold=10",
+    );
     const row = parse(res.text).rows.find((r) => r.includes("INJ-1"));
 
     // Quoted because it contains a comma, and prefixed so Excel treats it as

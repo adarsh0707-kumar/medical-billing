@@ -31,11 +31,12 @@ const currentActor = () => auditContext.getStore() ?? null;
  * store the request already owns keeps this to a single mount point, instead of
  * a line in every router that someone will eventually forget.
  */
-const setActor = ({ id, email }) => {
+const setActor = ({ id, email, shopId }) => {
   const store = auditContext.getStore();
   if (!store) return;
   store.id = id ?? null;
   store.email = email ?? null;
+  store.shopId = shopId ?? null;
 };
 
 /**

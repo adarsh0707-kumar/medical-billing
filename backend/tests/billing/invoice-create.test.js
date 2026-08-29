@@ -9,16 +9,24 @@ beforeAll(() => {
 });
 
 const post = (token, body) =>
-  request(app).post("/api/billing/invoices").set("Authorization", `Bearer ${token}`).send(body);
+  request(app)
+    .post("/api/billing/invoices")
+    .set("Authorization", `Bearer ${token}`)
+    .send(body);
 
 // The acceptance set from docs/09-testing-strategy.md §4. These numbers are the
 // contract: what the customer is charged and what is declared as tax.
 describe("GST engine fixtures", () => {
   it("F1 — single line, no discount", async () => {
     const { token } = await signIn(app);
-    const { medicine, batch } = await makeSellable({ gstPercent: 12, sellingPrice: 24.5 });
+    const { medicine, batch } = await makeSellable({
+      gstPercent: 12,
+      sellingPrice: 24.5,
+    });
 
-    const res = await post(token, { items: [line(medicine, batch, { quantity: 10 })] });
+    const res = await post(token, {
+      items: [line(medicine, batch, { quantity: 10 })],
+    });
 
     expect(res.status).toBe(201);
     expect(res.body.data).toMatchObject({
@@ -32,22 +40,40 @@ describe("GST engine fixtures", () => {
 
   it("F2 — 10% line discount", async () => {
     const { token } = await signIn(app);
-    const { medicine, batch } = await makeSellable({ gstPercent: 5, sellingPrice: 100 });
+    const { medicine, batch } = await makeSellable({
+      gstPercent: 5,
+      sellingPrice: 100,
+    });
 
     const res = await post(token, {
       items: [line(medicine, batch, { quantity: 3, discount: 10 })],
     });
 
-    expect(res.body.data).toMatchObject({ subtotal: 270, cgst: 6.75, sgst: 6.75, totalAmount: 283.5 });
+    expect(res.body.data).toMatchObject({
+      subtotal: 270,
+      cgst: 6.75,
+      sgst: 6.75,
+      totalAmount: 283.5,
+    });
   });
 
   it("F3 — zero-rated medicine attracts no tax", async () => {
     const { token } = await signIn(app);
-    const { medicine, batch } = await makeSellable({ gstPercent: 0, sellingPrice: 250 });
+    const { medicine, batch } = await makeSellable({
+      gstPercent: 0,
+      sellingPrice: 250,
+    });
 
-    const res = await post(token, { items: [line(medicine, batch, { quantity: 2 })] });
+    const res = await post(token, {
+      items: [line(medicine, batch, { quantity: 2 })],
+    });
 
-    expect(res.body.data).toMatchObject({ subtotal: 500, cgst: 0, sgst: 0, totalAmount: 500 });
+    expect(res.body.data).toMatchObject({
+      subtotal: 500,
+      cgst: 0,
+      sgst: 0,
+      totalAmount: 500,
+    });
   });
 
   it("F4 — multiple lines with a bill-level discount", async () => {
@@ -73,20 +99,40 @@ describe("GST engine fixtures", () => {
 
   it("F5 — a fully discounted line costs nothing", async () => {
     const { token } = await signIn(app);
-    const { medicine, batch } = await makeSellable({ gstPercent: 18, sellingPrice: 80 });
+    const { medicine, batch } = await makeSellable({
+      gstPercent: 18,
+      sellingPrice: 80,
+    });
 
-    const res = await post(token, { items: [line(medicine, batch, { discount: 100 })] });
+    const res = await post(token, {
+      items: [line(medicine, batch, { discount: 100 })],
+    });
 
-    expect(res.body.data).toMatchObject({ subtotal: 0, cgst: 0, sgst: 0, totalAmount: 0 });
+    expect(res.body.data).toMatchObject({
+      subtotal: 0,
+      cgst: 0,
+      sgst: 0,
+      totalAmount: 0,
+    });
   });
 
   it("F6 — rounding: 33.33 x 3 at 18%", async () => {
     const { token } = await signIn(app);
-    const { medicine, batch } = await makeSellable({ gstPercent: 18, sellingPrice: 33.33 });
+    const { medicine, batch } = await makeSellable({
+      gstPercent: 18,
+      sellingPrice: 33.33,
+    });
 
-    const res = await post(token, { items: [line(medicine, batch, { quantity: 3 })] });
+    const res = await post(token, {
+      items: [line(medicine, batch, { quantity: 3 })],
+    });
 
-    expect(res.body.data).toMatchObject({ subtotal: 99.99, cgst: 9, sgst: 9, totalAmount: 117.99 });
+    expect(res.body.data).toMatchObject({
+      subtotal: 99.99,
+      cgst: 9,
+      sgst: 9,
+      totalAmount: 117.99,
+    });
   });
 
   // Settled 2026-08-21: refused, not clamped. Clamping the total would break
@@ -94,7 +140,10 @@ describe("GST engine fixtures", () => {
   // never typed. Money going back to a customer is a credit note.
   it("F7 — a bill discount larger than the bill is refused", async () => {
     const { token } = await signIn(app);
-    const { medicine, batch } = await makeSellable({ gstPercent: 0, sellingPrice: 250 });
+    const { medicine, batch } = await makeSellable({
+      gstPercent: 0,
+      sellingPrice: 250,
+    });
 
     const res = await post(token, {
       items: [line(medicine, batch, { quantity: 2 })],
@@ -109,7 +158,11 @@ describe("GST engine fixtures", () => {
 
   it("F7 — nothing is written when the discount is refused", async () => {
     const { token } = await signIn(app);
-    const { medicine, batch } = await makeSellable({ gstPercent: 0, sellingPrice: 250, quantity: 10 });
+    const { medicine, batch } = await makeSellable({
+      gstPercent: 0,
+      sellingPrice: 250,
+      quantity: 10,
+    });
 
     const before = await prisma.invoice.count();
     await post(token, {
@@ -120,12 +173,17 @@ describe("GST engine fixtures", () => {
     // The guard runs before the transaction, so a refused bill must leave no
     // invoice behind and no stock deducted.
     expect(await prisma.invoice.count()).toBe(before);
-    expect((await prisma.batch.findUnique({ where: { id: batch.id } })).quantity).toBe(10);
+    expect(
+      (await prisma.batch.findUnique({ where: { id: batch.id } })).quantity,
+    ).toBe(10);
   });
 
   it("F7 — a discount equal to the bill is allowed and totals zero", async () => {
     const { token } = await signIn(app);
-    const { medicine, batch } = await makeSellable({ gstPercent: 0, sellingPrice: 250 });
+    const { medicine, batch } = await makeSellable({
+      gstPercent: 0,
+      sellingPrice: 250,
+    });
 
     const res = await post(token, {
       items: [line(medicine, batch, { quantity: 2 })],
@@ -143,10 +201,22 @@ describe("GST engine fixtures", () => {
 // stored and computed as Decimal.
 describe("invoice arithmetic invariants", () => {
   const cases = [
-    ["12% single line", { gstPercent: 12, sellingPrice: 24.5, quantity: 10, discount: 0 }],
-    ["5% with discount", { gstPercent: 5, sellingPrice: 100, quantity: 3, discount: 10 }],
-    ["18% odd price", { gstPercent: 18, sellingPrice: 33.33, quantity: 3, discount: 0 }],
-    ["18% odd price and discount", { gstPercent: 18, sellingPrice: 10.1, quantity: 7, discount: 3.5 }],
+    [
+      "12% single line",
+      { gstPercent: 12, sellingPrice: 24.5, quantity: 10, discount: 0 },
+    ],
+    [
+      "5% with discount",
+      { gstPercent: 5, sellingPrice: 100, quantity: 3, discount: 10 },
+    ],
+    [
+      "18% odd price",
+      { gstPercent: 18, sellingPrice: 33.33, quantity: 3, discount: 0 },
+    ],
+    [
+      "18% odd price and discount",
+      { gstPercent: 18, sellingPrice: 10.1, quantity: 7, discount: 3.5 },
+    ],
   ];
 
   it.each(cases)("%s reconciles exactly", async (_label, spec) => {
@@ -154,13 +224,21 @@ describe("invoice arithmetic invariants", () => {
     const { medicine, batch } = await makeSellable(spec);
 
     const res = await post(token, {
-      items: [line(medicine, batch, { quantity: spec.quantity, discount: spec.discount })],
+      items: [
+        line(medicine, batch, {
+          quantity: spec.quantity,
+          discount: spec.discount,
+        }),
+      ],
       discountAmt: 5,
     });
     const inv = res.body.data;
 
     expect(inv.cgst).toBe(inv.sgst);
-    expect(inv.subtotal + inv.cgst + inv.sgst - inv.discountAmt).toBeCloseTo(inv.totalAmount, 10);
+    expect(inv.subtotal + inv.cgst + inv.sgst - inv.discountAmt).toBeCloseTo(
+      inv.totalAmount,
+      10,
+    );
     const lineSum = inv.items.reduce((s, i) => s + i.totalPrice, 0);
     expect(lineSum).toBeCloseTo(inv.subtotal + inv.cgst + inv.sgst, 10);
   });
@@ -169,9 +247,16 @@ describe("invoice arithmetic invariants", () => {
     const { token } = await signIn(app);
     const { medicine, batch } = await makeSellable();
 
-    const inv = (await post(token, { items: [line(medicine, batch)] })).body.data;
+    const inv = (await post(token, { items: [line(medicine, batch)] })).body
+      .data;
 
-    for (const key of ["subtotal", "cgst", "sgst", "totalAmount", "discountAmt"]) {
+    for (const key of [
+      "subtotal",
+      "cgst",
+      "sgst",
+      "totalAmount",
+      "discountAmt",
+    ]) {
       expect(typeof inv[key]).toBe("number");
     }
     expect(typeof inv.items[0].unitPrice).toBe("number");
@@ -182,9 +267,14 @@ describe("invoice creation", () => {
   it("records the operator, the customer and a snapshot of the medicine name", async () => {
     const { token, user } = await signIn(app, "CASHIER");
     const { medicine, batch } = await makeSellable();
-    const customer = await prisma.customer.create({ data: { name: "Ramesh", phone: "9876543210" } });
+    const customer = await prisma.customer.create({
+      data: { shopId: user.shopId, name: "Ramesh", phone: "9876543210" },
+    });
 
-    const res = await post(token, { items: [line(medicine, batch)], customerId: customer.id });
+    const res = await post(token, {
+      items: [line(medicine, batch)],
+      customerId: customer.id,
+    });
     const inv = res.body.data;
 
     expect(inv.userId).toBe(user.id);
@@ -192,7 +282,10 @@ describe("invoice creation", () => {
     expect(inv.items[0].medicineName).toBe(medicine.name);
 
     // Renaming the medicine must not rewrite history.
-    await prisma.medicine.update({ where: { id: medicine.id }, data: { name: "Renamed" } });
+    await prisma.medicine.update({
+      where: { id: medicine.id },
+      data: { name: "Renamed" },
+    });
     const again = await request(app)
       .get(`/api/billing/invoices/${inv.id}`)
       .set("Authorization", `Bearer ${token}`);
@@ -213,7 +306,8 @@ describe("invoice creation", () => {
     const { token } = await signIn(app);
     const { medicine, batch } = await makeSellable();
 
-    const inv = (await post(token, { items: [line(medicine, batch)] })).body.data;
+    const inv = (await post(token, { items: [line(medicine, batch)] })).body
+      .data;
 
     expect(inv.paymentMode).toBe("CASH");
     expect(inv.paymentStatus).toBe("PAID");
@@ -223,12 +317,16 @@ describe("invoice creation", () => {
     const { token } = await signIn(app);
     const { medicine, batch } = await makeSellable();
 
-    const first = (await post(token, { items: [line(medicine, batch)] })).body.data;
-    const second = (await post(token, { items: [line(medicine, batch)] })).body.data;
+    const first = (await post(token, { items: [line(medicine, batch)] })).body
+      .data;
+    const second = (await post(token, { items: [line(medicine, batch)] })).body
+      .data;
 
     expect(first.invoiceNumber).toMatch(/^INV\d{6}-\d{4}$/);
     expect(second.invoiceNumber).toMatch(/^INV\d{6}-\d{4}$/);
-    expect(Number(second.invoiceNumber.slice(-4))).toBe(Number(first.invoiceNumber.slice(-4)) + 1);
+    expect(Number(second.invoiceNumber.slice(-4))).toBe(
+      Number(first.invoiceNumber.slice(-4)) + 1,
+    );
   });
 
   it("deducts stock from the batch", async () => {
@@ -267,10 +365,14 @@ describe("invoice rejections", () => {
     const { token } = await signIn(app);
     const { medicine, batch } = await makeSellable({ quantity: 5 });
 
-    const res = await post(token, { items: [line(medicine, batch, { quantity: 6 })] });
+    const res = await post(token, {
+      items: [line(medicine, batch, { quantity: 6 })],
+    });
 
     expect(res.status).toBe(400);
-    expect(res.body.message).toBe(`Insufficient stock for ${medicine.name}. Available: 5`);
+    expect(res.body.message).toBe(
+      `Insufficient stock for ${medicine.name}. Available: 5`,
+    );
     expect(await prisma.invoice.count()).toBe(0);
   });
 
@@ -285,7 +387,9 @@ describe("invoice rejections", () => {
     const { token } = await signIn(app);
     const { medicine, batch } = await makeSellable();
 
-    const res = await post(token, { items: [line(medicine, batch, overrides)] });
+    const res = await post(token, {
+      items: [line(medicine, batch, overrides)],
+    });
 
     expect(res.status).toBe(400);
     expect(res.body.message).toBe("Validation failed");
@@ -295,7 +399,10 @@ describe("invoice rejections", () => {
     const { token } = await signIn(app);
     const { medicine, batch } = await makeSellable();
 
-    const res = await post(token, { items: [line(medicine, batch)], paymentMode: "BITCOIN" });
+    const res = await post(token, {
+      items: [line(medicine, batch)],
+      paymentMode: "BITCOIN",
+    });
     expect(res.status).toBe(400);
   });
 });
@@ -318,8 +425,13 @@ describe("atomicity", () => {
     expect(res.status).toBe(400);
     expect(await prisma.invoice.count()).toBe(0);
     expect(await prisma.invoiceItem.count()).toBe(0);
-    expect((await prisma.batch.findUnique({ where: { id: ok.batch.id } })).quantity).toBe(100);
-    expect((await prisma.batch.findUnique({ where: { id: short.batch.id } })).quantity).toBe(1);
+    expect(
+      (await prisma.batch.findUnique({ where: { id: ok.batch.id } })).quantity,
+    ).toBe(100);
+    expect(
+      (await prisma.batch.findUnique({ where: { id: short.batch.id } }))
+        .quantity,
+    ).toBe(1);
   });
 });
 
@@ -389,7 +501,9 @@ describe("expired stock cannot be sold", () => {
 
     // A refused sale must not have moved anything — the expired units are still
     // on the shelf to be written off, and no invoice exists.
-    expect((await prisma.batch.findUnique({ where: { id: batch.id } })).quantity).toBe(10);
+    expect(
+      (await prisma.batch.findUnique({ where: { id: batch.id } })).quantity,
+    ).toBe(10);
     expect(await prisma.invoice.count()).toBe(0);
   });
 
@@ -425,7 +539,10 @@ describe("expired stock cannot be sold", () => {
     expect(res.status).toBe(400);
     // Same guarantee the oversell case gives: nothing is written unless
     // everything can be.
-    expect((await prisma.batch.findUnique({ where: { id: good.batch.id } })).quantity).toBe(10);
+    expect(
+      (await prisma.batch.findUnique({ where: { id: good.batch.id } }))
+        .quantity,
+    ).toBe(10);
     expect(await prisma.invoice.count()).toBe(0);
   });
 
@@ -494,7 +611,10 @@ describe("Schedule H sales require a prescription", () => {
     const { token } = await signIn(app, "CASHIER");
     const { medicine, batch } = await scheduledH();
 
-    const res = await sell(token, { items: [line(medicine, batch)], prescription: rx() });
+    const res = await sell(token, {
+      items: [line(medicine, batch)],
+      prescription: rx(),
+    });
 
     expect(res.status).toBe(201);
     const stored = await prisma.prescription.findUnique({
@@ -513,7 +633,9 @@ describe("Schedule H sales require a prescription", () => {
 
     // Requiring a prescription for paracetamol would make the control something
     // staff route around.
-    expect((await sell(token, { items: [line(medicine, batch)] })).status).toBe(201);
+    expect((await sell(token, { items: [line(medicine, batch)] })).status).toBe(
+      201,
+    );
   });
 
   it("requires it when only one line of a mixed basket is Schedule H", async () => {

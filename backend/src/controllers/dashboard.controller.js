@@ -62,10 +62,14 @@ const getStats = async (req, res, next) => {
     // there first; this third site was missed in that pass, which is the case
     // for one shared boundary rather than three hand-written ones.
     const expiringWhere = {
+      shopId: req.user.shopId,
       expiryDate: { lte: expiryCutoff, gte: startOfDay },
       quantity: { gt: 0 },
     };
-    const lowStockWhere = { quantity: { lte: LOW_STOCK_THRESHOLD, gt: 0 } };
+    const lowStockWhere = {
+      shopId: req.user.shopId,
+      quantity: { lte: LOW_STOCK_THRESHOLD, gt: 0 },
+    };
 
     // One round trip from the client, and the queries run concurrently on one
     // connection pool rather than across six HTTP requests.
@@ -85,18 +89,25 @@ const getStats = async (req, res, next) => {
       // notes reversing them — so the takings are net. Counts come from the
       // grouping below, which can tell the two apart.
       prisma.invoice.aggregate({
-        where: { date: { gte: startOfDay, lte: endOfDay } },
+        where: {
+          shopId: req.user.shopId,
+          date: { gte: startOfDay, lte: endOfDay },
+        },
         _sum: { totalAmount: true, cgst: true, sgst: true },
       }),
       // Grouped by type as well as mode: the same query yields net money per
       // mode, the number of sales raised, and the number reversed.
       prisma.invoice.groupBy({
         by: ["paymentMode", "type"],
-        where: { date: { gte: startOfDay, lte: endOfDay } },
+        where: {
+          shopId: req.user.shopId,
+          date: { gte: startOfDay, lte: endOfDay },
+        },
         _sum: { totalAmount: true },
         _count: { id: true },
       }),
       prisma.invoice.findMany({
+        where: { shopId: req.user.shopId },
         take: RECENT_INVOICES,
         orderBy: { date: "desc" },
         select: {
@@ -123,16 +134,21 @@ const getStats = async (req, res, next) => {
         take: PANEL_ROWS,
         ...batchPreview,
       }),
-      prisma.medicine.count({ where: { isActive: true } }),
-      prisma.customer.count(),
+      prisma.medicine.count({
+        where: { shopId: req.user.shopId, isActive: true },
+      }),
+      prisma.customer.count({ where: { shopId: req.user.shopId } }),
       // The same query the reports trend uses — literally the same function, so
       // the two cannot drift. It buckets by the store's local day rather than
       // by UTC; see utils/trend.js for why that distinction is load-bearing.
-      dailyTrend(prisma, trendStart, endOfDay),
+      dailyTrend(prisma, trendStart, endOfDay, req.user.shopId),
     ]);
 
     const countOf = (type) =>
-      byModeAndType.reduce((n, r) => (r.type === type ? n + r._count.id : n), 0);
+      byModeAndType.reduce(
+        (n, r) => (r.type === type ? n + r._count.id : n),
+        0,
+      );
 
     // Folded back to one row per mode, the shape the client reads: net money,
     // sales-only count. `_count` is an object here, matching the daily summary —
@@ -152,7 +168,10 @@ const getStats = async (req, res, next) => {
           ),
         },
         _count: {
-          id: rows.reduce((n, r) => (r.type === "SALE" ? n + r._count.id : n), 0),
+          id: rows.reduce(
+            (n, r) => (r.type === "SALE" ? n + r._count.id : n),
+            0,
+          ),
         },
       };
     });

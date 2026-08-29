@@ -29,7 +29,9 @@ describe("concurrent checkout", () => {
     const statuses = results.map((r) => r.status).sort();
 
     expect(statuses).toEqual([201, 400]);
-    expect((await prisma.batch.findUnique({ where: { id: batch.id } })).quantity).toBe(0);
+    expect(
+      (await prisma.batch.findUnique({ where: { id: batch.id } })).quantity,
+    ).toBe(0);
     expect(await prisma.invoice.count()).toBe(1);
   });
 
@@ -101,17 +103,29 @@ describe("concurrent checkout", () => {
     yesterday.setDate(yesterday.getDate() - 1);
     const old = await prisma.invoice.create({
       data: {
+        shopId: user.shopId,
         invoiceNumber: "INV-FROM-YESTERDAY",
         userId: user.id,
         date: yesterday,
         createdAt: yesterday,
-        subtotal: 100, cgst: 6, sgst: 6, totalAmount: 112,
-        paymentMode: "CASH", paymentStatus: "PAID",
+        subtotal: 100,
+        cgst: 6,
+        sgst: 6,
+        totalAmount: 112,
+        paymentMode: "CASH",
+        paymentStatus: "PAID",
         items: {
-          create: [{
-            batchId: batch.id, medicineName: medicine.name, quantity: 1,
-            unitPrice: 100, discount: 0, gstPercent: 12, totalPrice: 112,
-          }],
+          create: [
+            {
+              batchId: batch.id,
+              medicineName: medicine.name,
+              quantity: 1,
+              unitPrice: 100,
+              discount: 0,
+              gstPercent: 12,
+              totalPrice: 112,
+            },
+          ],
         },
       },
     });

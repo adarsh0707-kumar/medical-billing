@@ -1,7 +1,6 @@
 const express = require("express");
 const router = express.Router();
 const {
-  setupStatus,
   signup,
   register,
   login,
@@ -27,11 +26,11 @@ router.post(
   validate(createUserSchema),
   register,
 ); // only admin can create users
-// ─── First-run setup ─────────────────────────────────
-// Public, both of them, and they have to be: before the first account exists
-// there is nobody who could authenticate. `signup` closes itself permanently
-// once it succeeds — see the controller for why that is the whole design.
-router.get("/setup-status", setupStatus);
+// ─── Signup ───────────────────────────────────────────
+// Public, and stays public: this is how a new shopkeeper gets onto the system
+// at all, so there is nobody signed in yet for `protect` to check. Each call
+// creates its own Shop, so unlike the single-tenant bootstrap this replaced,
+// there is nothing here to close.
 router.post("/signup", validate(signupSchema), signup);
 
 router.post("/login", login); // public

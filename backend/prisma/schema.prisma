@@ -8,11 +8,49 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ─── Shops (tenants) ────────────────────────────────────
+
+/// One row per pharmacy. Every other table that holds shop-specific data
+/// carries a `shopId` back to this and every query that reads or writes that
+/// data is expected to filter on it — this is the whole of the isolation
+/// boundary between one shopkeeper's business and another's.
+///
+/// There is deliberately no cross-shop relation anywhere in this schema.
+/// Two shops sharing so much as a Category or a Customer row would be a
+/// tenant-isolation break, not a feature, so shared-lookup tables that used to
+/// be global (Category, Manufacturer) are now per-shop too, at the cost of
+/// each shop typing "Tablet" into its own category list once.
+model Shop {
+  id        String   @id @default(cuid())
+  name      String
+  address   String?
+  phone     String?
+  gstNumber String?
+  createdAt DateTime @default(now())
+
+  users         User[]
+  categories    Category[]
+  manufacturers Manufacturer[]
+  medicines     Medicine[]
+  batches       Batch[]
+  customers     Customer[]
+  suppliers     Supplier[]
+  invoices      Invoice[]
+  invoiceCounters InvoiceCounter[]
+  auditLogs     AuditLog[]
+}
+
 // ─── Users & Auth ─────────────────────────────────────
 
 model User {
   id        String   @id @default(cuid())
+  shopId    String
   name      String
+  /// Global, not per-shop. Login only ever takes an email and a password —
+  /// no shop selector — so two accounts sharing an address would be
+  /// ambiguous at the one place this table is looked up by it. A person who
+  /// runs two shops gets two accounts with two addresses, same as they would
+  /// with any other SaaS.
   email     String   @unique
   password  String
   role      Role     @default(CASHIER)
@@ -33,8 +71,11 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  shop      Shop     @relation(fields: [shopId], references: [id])
   invoices  Invoice[]
   refreshTokens RefreshToken[]
+
+  @@index([shopId])
 }
 
 /// Who changed what, and to what (NFR-17, threat T-12).
@@ -50,6 +91,10 @@ model User {
 model AuditLog {
   id         String   @id @default(cuid())
   at         DateTime @default(now())
+  /// Null for writes with no signed-in user — the seed script, a migration —
+  /// and so is this: an unauthenticated write has no shop to attribute it to
+  /// either.
+  shopId     String?
   /// Null for writes with no signed-in user — the seed script, a migration.
   actorId    String?
   actorEmail String?
@@ -70,9 +115,12 @@ model AuditLog {
   /// joined back to the log lines for the same request.
   requestId  String?
 
+  shop       Shop?    @relation(fields: [shopId], references: [id])
+
   @@index([at])
   @@index([model, recordId])
   @@index([actorId])
+  @@index([shopId])
 }
 
 /// One row per signed-in device (FR-AUTH-10). The refresh token's `jti` is this
@@ -107,14 +155,27 @@ enum Role {
 
 model Category {
   id        String     @id @default(cuid())
-  name      String     @unique
+  shopId    String
+  /// Unique per shop rather than globally now — each shop keeps its own
+  /// category list, so two shops can both have a "Tablet" category without
+  /// colliding.
+  name      String
+  shop      Shop       @relation(fields: [shopId], references: [id])
   medicines Medicine[]
+
+  @@unique([shopId, name])
+  @@index([shopId])
 }
 
 model Manufacturer {
   id        String     @id @default(cuid())
-  name      String     @unique
+  shopId    String
+  name      String
+  shop      Shop       @relation(fields: [shopId], references: [id])
   medicines Medicine[]
+
+  @@unique([shopId, name])
+  @@index([shopId])
 }
 
 /// POS search runs `ILIKE '%q%'` against name and genericName. No b-tree can
@@ -123,6 +184,7 @@ model Manufacturer {
 /// so it is invisible here — see the migration.
 model Medicine {
   id             String       @id @default(cuid())
+  shopId         String
   name           String
   genericName    String?
   categoryId     String
@@ -135,13 +197,22 @@ model Medicine {
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
+  shop           Shop         @relation(fields: [shopId], references: [id])
   category       Category     @relation(fields: [categoryId], references: [id])
   manufacturer   Manufacturer @relation(fields: [manufacturerId], references: [id])
   batches        Batch[]
+
+  @@index([shopId])
 }
 
 model Batch {
   id             String   @id @default(cuid())
+  /// Denormalised from `medicine.shopId` (and equal to `supplier.shopId`).
+  /// The POS search and the low-stock/expiry scans filter batches directly and
+  /// in bulk, and both would otherwise need a join through Medicine just to
+  /// enforce tenant isolation on every row they touch. Kept in sync because it
+  /// is only ever set once, at creation, from the medicine being batched.
+  shopId         String
   medicineId     String
   batchNumber    String
   expiryDate     DateTime
@@ -167,14 +238,20 @@ model Batch {
   @@index([quantity])
   // Prisma does not create FK-side indexes, so the POS search join had none.
   @@index([medicineId])
+  // Every dashboard/report/POS query filters on this first.
+  @@index([shopId])
 }
 
 // ─── Customers ─────────────────────────────────────────
 
 model Customer {
   id        String    @id @default(cuid())
+  shopId    String
   name      String
-  phone     String?   @unique
+  /// Unique per shop, not globally: the same phone number walking into two
+  /// different pharmacies is two different customer records now, same as it
+  /// would be with two independent paper registers.
+  phone     String?
   email     String?
   address   String?
   age       Int?
@@ -186,11 +263,14 @@ model Customer {
   /// here means the person is no longer identifiable, not that the sale is gone.
   anonymisedAt DateTime?
 
+  shop      Shop      @relation(fields: [shopId], references: [id])
   invoices  Invoice[]
 
+  @@unique([shopId, phone])
   /// The retention sweep looks for customers whose last invoice predates the
   /// window, and skips anyone already done.
   @@index([anonymisedAt])
+  @@index([shopId])
 }
 
 enum Gender {
@@ -203,6 +283,7 @@ enum Gender {
 
 model Supplier {
   id          String     @id @default(cuid())
+  shopId      String
   name        String
   contactName String?
   phone       String?
@@ -211,14 +292,21 @@ model Supplier {
   address     String?
   createdAt   DateTime   @default(now())
 
+  shop        Shop       @relation(fields: [shopId], references: [id])
   batches     Batch[]
+
+  @@index([shopId])
 }
 
 // ─── Billing / Invoices ────────────────────────────────
 
 model Invoice {
   id            String        @id @default(cuid())
-  invoiceNumber String        @unique
+  shopId        String
+  /// Unique per shop, not globally — each shop numbers its own invoices from
+  /// its own `InvoiceCounter`, so "INV-260101-0001" exists once per shop, not
+  /// once in the whole system.
+  invoiceNumber String
   customerId    String?
   userId        String
   date          DateTime      @default(now())
@@ -241,6 +329,7 @@ model Invoice {
   notes         String?
   createdAt     DateTime      @default(now())
 
+  shop          Shop          @relation(fields: [shopId], references: [id])
   customer      Customer?     @relation(fields: [customerId], references: [id])
   user          User          @relation(fields: [userId], references: [id])
   items         InvoiceItem[]
@@ -250,10 +339,12 @@ model Invoice {
   reverses      Invoice?      @relation("InvoiceReversal", fields: [reversesId], references: [id])
   reversedBy    Invoice[]     @relation("InvoiceReversal")
 
+  @@unique([shopId, invoiceNumber])
   // The hottest filter in the reporting layer: every report, the invoice list
   // and the trend chart order or range-scan on this.
   @@index([date])
   @@index([customerId])
+  @@index([shopId])
 }
 
 /// The prescription a Schedule H sale was dispensed against (FR-MED-12, PRD Q4).
@@ -370,6 +461,15 @@ enum InvoiceStatus {
 // makes concurrent checkouts safe — a COUNT() of today's invoices is a
 // read-then-write race that two counters lose simultaneously.
 model InvoiceCounter {
-  day String @id // yymmdd, matching the INV prefix
-  seq Int
+  shopId String
+  day    String // yymmdd, matching the INV prefix
+  seq    Int
+
+  shop   Shop   @relation(fields: [shopId], references: [id])
+
+  // One row per shop per day, not one per day: two shops issuing their INV-
+  // 260101-0001 on the same date must not share a counter, or the atomic
+  // upsert that hands out serials would serialise unrelated shops' checkouts
+  // against each other and hand out numbers neither shop's series expects.
+  @@id([shopId, day])
 }

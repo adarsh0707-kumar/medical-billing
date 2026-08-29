@@ -7,6 +7,7 @@ const getAll = async (req, res, next) => {
     const skip = (page - 1) * limit;
 
     const where = {
+      shopId: req.user.shopId,
       isActive: true,
       ...(search && {
         OR: [
@@ -40,6 +41,10 @@ const getAll = async (req, res, next) => {
     // Stock is summed in its own query. The included `batches` array is capped
     // at the nearest-expiry batch — reducing over it reported that one batch's
     // quantity as the medicine's total, understating anything multi-batch.
+    //
+    // No shopId filter needed here beyond `medicineId: { in: ... }` — every id
+    // in that list already came from the shop-scoped query above, and a batch's
+    // shopId always matches its medicine's.
     const stockByMedicine = medicines.length
       ? await prisma.batch.groupBy({
           by: ["medicineId"],
@@ -80,8 +85,11 @@ const getAll = async (req, res, next) => {
 
 const getOne = async (req, res, next) => {
   try {
-    const medicine = await prisma.medicine.findUnique({
-      where: { id: req.params.id },
+    // findFirst rather than findUnique-by-id-then-check: a medicine id that
+    // belongs to another shop should read exactly like an id that does not
+    // exist at all, not like a 404 arrived at by a separate ownership check.
+    const medicine = await prisma.medicine.findFirst({
+      where: { id: req.params.id, shopId: req.user.shopId },
       include: {
         category: true,
         manufacturer: true,
@@ -116,6 +124,7 @@ const search = async (req, res, next) => {
 
     const medicines = await prisma.medicine.findMany({
       where: {
+        shopId: req.user.shopId,
         isActive: true,
         OR: [
           { name: { contains: q, mode: "insensitive" } },
@@ -188,7 +197,7 @@ const search = async (req, res, next) => {
 const create = async (req, res, next) => {
   try {
     const medicine = await prisma.medicine.create({
-      data: req.body,
+      data: { ...req.body, shopId: req.user.shopId },
       include: { category: true, manufacturer: true },
     });
     res
@@ -199,11 +208,22 @@ const create = async (req, res, next) => {
   }
 };
 
+// updateMany/deleteMany-shaped for the same reason as category and
+// manufacturer: the where clause carries the tenant boundary, and Prisma's
+// singular update() only accepts a unique selector, which shopId is not.
 const update = async (req, res, next) => {
   try {
-    const medicine = await prisma.medicine.update({
-      where: { id: req.params.id },
+    const result = await prisma.medicine.updateMany({
+      where: { id: req.params.id, shopId: req.user.shopId },
       data: req.body,
+    });
+    if (result.count === 0) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Medicine not found" });
+    }
+    const medicine = await prisma.medicine.findUnique({
+      where: { id: req.params.id },
       include: { category: true, manufacturer: true },
     });
     res.json({ success: true, message: "Medicine updated", data: medicine });
@@ -215,10 +235,15 @@ const update = async (req, res, next) => {
 const remove = async (req, res, next) => {
   try {
     // Soft delete
-    await prisma.medicine.update({
-      where: { id: req.params.id },
+    const result = await prisma.medicine.updateMany({
+      where: { id: req.params.id, shopId: req.user.shopId },
       data: { isActive: false },
     });
+    if (result.count === 0) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Medicine not found" });
+    }
     res.json({ success: true, message: "Medicine deleted" });
   } catch (err) {
     next(err);

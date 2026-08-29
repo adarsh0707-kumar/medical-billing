@@ -32,6 +32,7 @@ const getAll = async (req, res, next) => {
     thirtyDaysLater.setDate(thirtyDaysLater.getDate() + 30);
 
     const where = {
+      shopId: req.user.shopId,
       ...(medicineId && { medicineId }),
       ...(expiringSoon && {
         expiryDate: { lte: thirtyDaysLater, gte: today },
@@ -74,12 +75,13 @@ const getAll = async (req, res, next) => {
  * Batches expiring inside the window, shared by the screen and the CSV export so
  * the two cannot drift apart.
  */
-const expiringData = async ({ days }) => {
+const expiringData = async ({ days, shopId }) => {
   const futureDate = new Date();
   futureDate.setDate(futureDate.getDate() + days);
 
   const batches = await prisma.batch.findMany({
     where: {
+      shopId,
       expiryDate: { lte: futureDate, gte: startOfToday() },
       quantity: { gt: 0 },
     },
@@ -95,7 +97,10 @@ const expiringData = async ({ days }) => {
 
 const getExpiring = async (req, res, next) => {
   try {
-    const { batches } = await expiringData(req.validatedQuery);
+    const { batches } = await expiringData({
+      ...req.validatedQuery,
+      shopId: req.user.shopId,
+    });
     res.json({ success: true, data: batches });
   } catch (err) {
     next(err);
@@ -103,9 +108,9 @@ const getExpiring = async (req, res, next) => {
 };
 
 /** Same split, same reason, for the low-stock report. */
-const lowStockData = async ({ threshold }) => {
+const lowStockData = async ({ threshold, shopId }) => {
   const batches = await prisma.batch.findMany({
-    where: { quantity: { lte: threshold, gt: 0 } },
+    where: { shopId, quantity: { lte: threshold, gt: 0 } },
     include: {
       medicine: { select: { name: true, unit: true, category: true } },
       supplier: { select: { name: true } },
@@ -118,7 +123,10 @@ const lowStockData = async ({ threshold }) => {
 
 const getLowStock = async (req, res, next) => {
   try {
-    const { batches } = await lowStockData(req.validatedQuery);
+    const { batches } = await lowStockData({
+      ...req.validatedQuery,
+      shopId: req.user.shopId,
+    });
     res.json({ success: true, data: batches });
   } catch (err) {
     next(err);
@@ -167,7 +175,10 @@ const LOW_STOCK_COLUMNS = [
 
 const exportExpiring = async (req, res, next) => {
   try {
-    const { days, batches } = await expiringData(req.validatedQuery);
+    const { days, batches } = await expiringData({
+      ...req.validatedQuery,
+      shopId: req.user.shopId,
+    });
     sendCsv(res, `expiring-${days}-days.csv`, toCsv(EXPIRING_COLUMNS, batches));
   } catch (err) {
     next(err);
@@ -176,7 +187,10 @@ const exportExpiring = async (req, res, next) => {
 
 const exportLowStock = async (req, res, next) => {
   try {
-    const { threshold, batches } = await lowStockData(req.validatedQuery);
+    const { threshold, batches } = await lowStockData({
+      ...req.validatedQuery,
+      shopId: req.user.shopId,
+    });
     sendCsv(
       res,
       `low-stock-at-${threshold}.csv`,
@@ -189,8 +203,24 @@ const exportLowStock = async (req, res, next) => {
 
 const create = async (req, res, next) => {
   try {
+    // The medicine being batched has to be this shop's own, or a batch would
+    // attach itself — and its denormalised shopId — to another tenant's
+    // medicine. findFirst rather than findUnique-then-check for the same
+    // reason as medicine.controller.js: a foreign id should read as "not
+    // found", not as a separate ownership rejection.
+    const medicine = await prisma.medicine.findFirst({
+      where: { id: req.body.medicineId, shopId: req.user.shopId },
+      select: { id: true },
+    });
+    if (!medicine) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Medicine not found" });
+    }
+
     const data = {
       ...req.body,
+      shopId: req.user.shopId,
       mfgDate: req.body.mfgDate ? new Date(req.body.mfgDate) : null,
       expiryDate: new Date(req.body.expiryDate),
       initialQty: req.body.quantity,
@@ -212,8 +242,8 @@ const create = async (req, res, next) => {
 
 const update = async (req, res, next) => {
   try {
-    const batch = await prisma.batch.update({
-      where: { id: req.params.id },
+    const result = await prisma.batch.updateMany({
+      where: { id: req.params.id, shopId: req.user.shopId },
       data: {
         ...req.body,
         ...(req.body.expiryDate && {
@@ -221,6 +251,14 @@ const update = async (req, res, next) => {
         }),
         ...(req.body.mfgDate && { mfgDate: new Date(req.body.mfgDate) }),
       },
+    });
+    if (result.count === 0) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Batch not found" });
+    }
+    const batch = await prisma.batch.findUnique({
+      where: { id: req.params.id },
     });
     res.json({ success: true, message: "Batch updated", data: batch });
   } catch (err) {
@@ -255,18 +293,21 @@ const adjust = async (req, res, next) => {
     // Conditional update, the same shape as the sale's decrement: a negative
     // adjustment that would take stock below zero matches no rows instead of
     // reaching the database CHECK and surfacing as a 500. Two operators writing
-    // off the same last unit cannot both succeed.
+    // off the same last unit cannot both succeed. shopId is part of the same
+    // where clause, not a separate check, so a foreign batch id fails the same
+    // conditional match rather than a distinguishable ownership branch.
     const { count } = await prisma.batch.updateMany({
       where: {
         id: req.params.id,
+        shopId: req.user.shopId,
         ...(delta < 0 && { quantity: { gte: -delta } }),
       },
       data: { quantity: { increment: delta } },
     });
 
     if (count === 0) {
-      const batch = await prisma.batch.findUnique({
-        where: { id: req.params.id },
+      const batch = await prisma.batch.findFirst({
+        where: { id: req.params.id, shopId: req.user.shopId },
         select: { quantity: true, batchNumber: true },
       });
       if (!batch) {

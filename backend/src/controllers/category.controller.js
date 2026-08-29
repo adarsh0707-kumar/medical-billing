@@ -3,6 +3,7 @@ const prisma = require("../config/db");
 const getAll = async (req, res, next) => {
   try {
     const categories = await prisma.category.findMany({
+      where: { shopId: req.user.shopId },
       include: { _count: { select: { medicines: true } } },
       orderBy: { name: "asc" },
     });
@@ -14,7 +15,9 @@ const getAll = async (req, res, next) => {
 
 const create = async (req, res, next) => {
   try {
-    const category = await prisma.category.create({ data: req.body });
+    const category = await prisma.category.create({
+      data: { ...req.body, shopId: req.user.shopId },
+    });
     res
       .status(201)
       .json({ success: true, message: "Category created", data: category });
@@ -23,11 +26,24 @@ const create = async (req, res, next) => {
   }
 };
 
+// updateMany/deleteMany scoped by shopId rather than update/delete by id alone
+// — otherwise a valid category id from a different shop would 404 by accident
+// today and by nothing tomorrow, once ids from two shops can collide in a
+// support ticket or a script. Scoping the where clause makes the boundary the
+// query itself enforces, not a coincidence of who happens to guess right.
 const update = async (req, res, next) => {
   try {
-    const category = await prisma.category.update({
-      where: { id: req.params.id },
+    const result = await prisma.category.updateMany({
+      where: { id: req.params.id, shopId: req.user.shopId },
       data: req.body,
+    });
+    if (result.count === 0) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Category not found." });
+    }
+    const category = await prisma.category.findUnique({
+      where: { id: req.params.id },
     });
     res.json({ success: true, message: "Category updated", data: category });
   } catch (err) {
@@ -37,7 +53,14 @@ const update = async (req, res, next) => {
 
 const remove = async (req, res, next) => {
   try {
-    await prisma.category.delete({ where: { id: req.params.id } });
+    const result = await prisma.category.deleteMany({
+      where: { id: req.params.id, shopId: req.user.shopId },
+    });
+    if (result.count === 0) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Category not found." });
+    }
     res.json({ success: true, message: "Category deleted" });
   } catch (err) {
     next(err);

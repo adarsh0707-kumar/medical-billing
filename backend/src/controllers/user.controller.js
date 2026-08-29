@@ -2,10 +2,12 @@ const prisma = require("../config/db");
 const bcrypt = require("bcryptjs");
 const { generateTempPassword } = require("../utils/temp-password");
 
-// Get all users — Admin only
+// Get all users — Admin only. Scoped to the caller's own shop: an
+// administrator manages their own staff, not every account on the platform.
 const getAll = async (req, res, next) => {
   try {
     const users = await prisma.user.findMany({
+      where: { shopId: req.user.shopId },
       select: {
         id: true,
         name: true,
@@ -22,11 +24,13 @@ const getAll = async (req, res, next) => {
   }
 };
 
-// Create user — Admin only
+// Create user — Admin only, always into the caller's own shop.
 const create = async (req, res, next) => {
   try {
     const { name, email, password, role } = req.body;
 
+    // Email is global, not per-shop — see schema.prisma on User.email — so an
+    // existing account anywhere blocks this, not just one in this shop.
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) {
       return res
@@ -36,7 +40,13 @@ const create = async (req, res, next) => {
 
     const hashed = await bcrypt.hash(password, 12);
     const user = await prisma.user.create({
-      data: { name, email, password: hashed, role: role || "CASHIER" },
+      data: {
+        shopId: req.user.shopId,
+        name,
+        email,
+        password: hashed,
+        role: role || "CASHIER",
+      },
       select: {
         id: true,
         name: true,
@@ -46,24 +56,22 @@ const create = async (req, res, next) => {
       },
     });
 
-    res
-      .status(201)
-      .json({
-        success: true,
-        message: "User created successfully",
-        data: user,
-      });
+    res.status(201).json({
+      success: true,
+      message: "User created successfully",
+      data: user,
+    });
   } catch (err) {
     next(err);
   }
 };
 
-// Update user — Admin only
+// Update user — Admin only, and only within the caller's own shop.
 const update = async (req, res, next) => {
   try {
     const { name, email, role, isActive } = req.body;
-    const user = await prisma.user.update({
-      where: { id: req.params.id },
+    const result = await prisma.user.updateMany({
+      where: { id: req.params.id, shopId: req.user.shopId },
       data: {
         name,
         email,
@@ -80,6 +88,14 @@ const update = async (req, res, next) => {
         // update, and renaming somebody should not sign them out.
         ...(isActive === false && { tokenVersion: { increment: 1 } }),
       },
+    });
+    if (result.count === 0) {
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
+    }
+    const user = await prisma.user.findUnique({
+      where: { id: req.params.id },
       select: { id: true, name: true, email: true, role: true, isActive: true },
     });
     res.json({
@@ -92,7 +108,7 @@ const update = async (req, res, next) => {
   }
 };
 
-// Delete user — Admin only
+// Delete user — Admin only, and only within the caller's own shop.
 const remove = async (req, res, next) => {
   try {
     if (req.params.id === req.user.id) {
@@ -101,7 +117,14 @@ const remove = async (req, res, next) => {
         message: "You can't delete your own account",
       });
     }
-    await prisma.user.delete({ where: { id: req.params.id } });
+    const result = await prisma.user.deleteMany({
+      where: { id: req.params.id, shopId: req.user.shopId },
+    });
+    if (result.count === 0) {
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
+    }
     res.json({ success: true, message: "User deleted successfully" });
   } catch (err) {
     next(err);
@@ -113,7 +136,7 @@ const updateProfile = async (req, res, next) => {
   try {
     const { name, email } = req.body;
 
-    // Check email not taken by another user
+    // Check email not taken by another user. Global, same as above.
     if (email) {
       const existing = await prisma.user.findFirst({
         where: { email, NOT: { id: req.user.id } },
@@ -141,7 +164,7 @@ const updateProfile = async (req, res, next) => {
   }
 };
 
-// Reset another user's password — Admin only (FR-AUTH-10)
+// Reset another user's password — Admin only (FR-AUTH-10), own shop only.
 //
 // The recovery path for a locked-out account. There is no email in this stack,
 // so a self-service "forgot password" link has nowhere to send a token; the
@@ -151,12 +174,14 @@ const updateProfile = async (req, res, next) => {
 // where there is nobody left holding a session to call it.
 const resetPassword = async (req, res, next) => {
   try {
-    const target = await prisma.user.findUnique({
-      where: { id: req.params.id },
+    const target = await prisma.user.findFirst({
+      where: { id: req.params.id, shopId: req.user.shopId },
       select: { id: true, name: true, email: true },
     });
     if (!target) {
-      return res.status(404).json({ success: false, message: "User not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
     }
 
     // Generated, never taken from the request body. An administrator choosing

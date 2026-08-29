@@ -53,16 +53,23 @@ const createUserSchema = z
     }
   });
 
-// POST /api/auth/signup — the first-run bootstrap, and the only public way an
-// account is ever created.
+const shopName = z.string().min(2, "Shop name must be at least 2 characters");
+
+// POST /api/auth/signup — the public, self-serve way a new shopkeeper creates
+// their shop and its first account.
 //
 // **`.strict()`, and no `role`.** The role is not a field here: the controller
-// hard-codes ADMIN, because the only account this endpoint can create is the
-// first one and a shop with no administrator cannot be administered. Accepting
-// a role and ignoring it would look like a privilege-escalation hole to anyone
-// reading the request; rejecting the key outright says what is true.
+// hard-codes ADMIN, because the account this endpoint creates is always the
+// new shop's first one, and a shop with no administrator cannot be
+// administered. Accepting a role and ignoring it would look like a
+// privilege-escalation hole to anyone reading the request; rejecting the key
+// outright says what is true.
+//
+// **No `shopId`.** Also rejected by `.strict()` rather than merely unused —
+// this is the entire tenant-isolation boundary for this endpoint. A signup
+// creates its own shop and can never be aimed at an existing one.
 const signupSchema = z
-  .object({ name, email, password })
+  .object({ shopName, name, email, password })
   .strict()
   .superRefine((data, ctx) => {
     if (typeof data.password !== "string") return;

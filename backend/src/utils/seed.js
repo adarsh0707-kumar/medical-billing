@@ -6,10 +6,21 @@ const prisma = new PrismaClient();
 async function main() {
   const hashedPassword = await bcrypt.hash("admin123", 12);
 
+  // Multi-tenant now, so the seeded admin needs a shop to belong to as much
+  // as it needs a password. upsert on Shop.name isn't available (name isn't
+  // unique — two shops may share one), so this looks the dev shop up by a
+  // fixed id instead, which is stable across repeated `npm run seed` runs.
+  const shop = await prisma.shop.upsert({
+    where: { id: "seed-dev-shop" },
+    update: {},
+    create: { id: "seed-dev-shop", name: "Dev Pharmacy" },
+  });
+
   const admin = await prisma.user.upsert({
     where: { email: "admin@medstore.com" },
     update: {},
     create: {
+      shopId: shop.id,
       name: "Admin",
       email: "admin@medstore.com",
       password: hashedPassword,
@@ -22,7 +33,9 @@ async function main() {
 
   console.log("✅ Admin user created:", admin.email);
   console.log("🔑 Password: admin123");
-  console.log("⚠️  The API will refuse every other request until it is changed.");
+  console.log(
+    "⚠️  The API will refuse every other request until it is changed.",
+  );
 }
 
 // A non-zero exit on failure, which this did not have.

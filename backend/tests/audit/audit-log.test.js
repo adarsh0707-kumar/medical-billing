@@ -1,7 +1,13 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import request from "supertest";
 import prisma from "../../src/config/db.js";
-import { buildApp, signIn, makeSellable, line } from "../helpers/factory.js";
+import {
+  buildApp,
+  signIn,
+  makeSellable,
+  makeShop,
+  line,
+} from "../helpers/factory.js";
 
 /**
  * Audit log — NFR-17, docs/07 P1-11, threat T-12.
@@ -67,7 +73,11 @@ describe("audit log", () => {
       name: "Doomed Manufacturer",
     });
 
-    await as(token, "delete", `/api/inventory/manufacturers/${created.body.data.id}`);
+    await as(
+      token,
+      "delete",
+      `/api/inventory/manufacturers/${created.body.data.id}`,
+    );
 
     const row = await auditFor("Manufacturer", created.body.data.id);
     expect(row.action).toBe("DELETE");
@@ -116,8 +126,9 @@ describe("audit log", () => {
   it("attributes a write with no signed-in user to nobody, rather than guessing", async () => {
     // Mirrors the seed script and migrations: writes that happen outside a
     // request run outside the actor context.
+    const shop = await makeShop();
     const category = await prisma.category.create({
-      data: { name: "Written By The System" },
+      data: { shopId: shop.id, name: "Written By The System" },
     });
 
     const row = await auditFor("Category", category.id);

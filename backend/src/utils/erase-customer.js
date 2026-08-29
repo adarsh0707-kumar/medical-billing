@@ -66,9 +66,9 @@ const redactAuditTrail = (customerId) =>
     data: { before: REDACTION, after: REDACTION },
   });
 
-const eraseCustomer = async (customerId) => {
-  const existing = await prisma.customer.findUnique({
-    where: { id: customerId },
+const eraseCustomer = async (customerId, shopId) => {
+  const existing = await prisma.customer.findFirst({
+    where: { id: customerId, ...(shopId && { shopId }) },
     select: { id: true, anonymisedAt: true },
   });
   if (!existing) return { found: false };

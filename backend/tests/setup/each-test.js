@@ -21,6 +21,8 @@ const TABLES = [
   "Customer",
   "User",
   "InvoiceCounter",
+  // Referenced by everything above, so it has to be last.
+  "Shop",
 ];
 
 // A clean database per test. Slower than wrapping each test in a transaction

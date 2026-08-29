@@ -68,8 +68,8 @@ const createInvoice = async (req, res, next) => {
     const scheduledH = [];
 
     for (const item of items) {
-      const batch = await prisma.batch.findUnique({
-        where: { id: item.batchId },
+      const batch = await prisma.batch.findFirst({
+        where: { id: item.batchId, shopId: req.user.shopId },
         // Resolved through the batch, never from `item.medicineId`. That field
         // is validated but not persisted, so a caller could otherwise pair a
         // Schedule H batch with a harmless medicineId and walk past the
@@ -201,10 +201,14 @@ const createInvoice = async (req, res, next) => {
     for (let attempt = 1; ; attempt++) {
       try {
         invoice = await prisma.$transaction(async (tx) => {
-          const invoiceNumber = await generateInvoiceNumber(tx);
+          const invoiceNumber = await generateInvoiceNumber(
+            tx,
+            req.user.shopId,
+          );
 
           const newInvoice = await tx.invoice.create({
             data: {
+              shopId: req.user.shopId,
               invoiceNumber,
               customerId: customerId || null,
               userId: req.user.id,
@@ -241,6 +245,7 @@ const createInvoice = async (req, res, next) => {
             const { count } = await tx.batch.updateMany({
               where: {
                 id: item.batchId,
+                shopId: req.user.shopId,
                 quantity: { gte: item.quantity },
                 // Expiry joins the same atomic statement as the quantity guard,
                 // for the reason G-09 gives about stock: a check made before the
@@ -324,8 +329,8 @@ const voidInvoice = async (req, res, next) => {
     const { id } = req.params;
     const { reason, items: requested } = req.body;
 
-    const original = await prisma.invoice.findUnique({
-      where: { id },
+    const original = await prisma.invoice.findFirst({
+      where: { id, shopId: req.user.shopId },
       include: { items: true },
     });
 
@@ -526,10 +531,11 @@ const voidInvoice = async (req, res, next) => {
         });
       }
 
-      const number = await generateCreditNoteNumber(tx);
+      const number = await generateCreditNoteNumber(tx, req.user.shopId);
 
       const created = await tx.invoice.create({
         data: {
+          shopId: req.user.shopId,
           invoiceNumber: number,
           type: "CREDIT_NOTE",
           status: "ACTIVE",
@@ -590,6 +596,7 @@ const getAll = async (req, res, next) => {
     const skip = (page - 1) * limit;
 
     const where = {
+      shopId: req.user.shopId,
       ...(search && {
         OR: [
           { invoiceNumber: { contains: search, mode: "insensitive" } },
@@ -643,8 +650,8 @@ const getAll = async (req, res, next) => {
 // ─── Get Single Invoice (for printing) ────────────────
 const getOne = async (req, res, next) => {
   try {
-    const invoice = await prisma.invoice.findUnique({
-      where: { id: req.params.id },
+    const invoice = await prisma.invoice.findFirst({
+      where: { id: req.params.id, shopId: req.user.shopId },
       include: {
         items: {
           include: {
@@ -673,7 +680,7 @@ const getOne = async (req, res, next) => {
  * and a second query written to serve the export would be free to disagree with
  * the screen the moment either changed.
  */
-const dailySummaryData = async (query) => {
+const dailySummaryData = async (query, shopId) => {
   // Absent means today; a garbage date is a 400 from validateQuery rather than
   // an Invalid Date that silently matched nothing.
   const date = query.date ?? new Date();
@@ -690,7 +697,7 @@ const dailySummaryData = async (query) => {
   const endOfDay = new Date(date);
   endOfDay.setHours(23, 59, 59, 999);
 
-  const period = { date: { gte: startOfDay, lte: endOfDay } };
+  const period = { shopId, date: { gte: startOfDay, lte: endOfDay } };
 
   const [invoices, totalStats] = await Promise.all([
     prisma.invoice.findMany({
@@ -770,7 +777,10 @@ const dailySummaryData = async (query) => {
 
 const getDailySummary = async (req, res, next) => {
   try {
-    const { invoices, summary } = await dailySummaryData(req.validatedQuery);
+    const { invoices, summary } = await dailySummaryData(
+      req.validatedQuery,
+      req.user.shopId,
+    );
     res.json({ success: true, data: { invoices, summary } });
   } catch (err) {
     next(err);
@@ -794,7 +804,10 @@ const getTrend = async (req, res, next) => {
     // `utils/trend.js` holds the query and the zero-filling, so the dashboard's
     // copy of this chart cannot answer differently — it calls the same function
     // rather than carrying a duplicate of the SQL.
-    res.json({ success: true, data: await trendForDays(days) });
+    res.json({
+      success: true,
+      data: await trendForDays(days, req.user.shopId),
+    });
   } catch (err) {
     next(err);
   }
@@ -805,7 +818,7 @@ const getTrend = async (req, res, next) => {
  * The month's filing figures, shared by the screen and the CSV export. Same
  * reasoning as `dailySummaryData`: one query, so the two cannot disagree.
  */
-const gstReportData = async ({ month, year }) => {
+const gstReportData = async ({ month, year }, shopId) => {
   const startDate = new Date(year, month - 1, 1);
   // `.999`, not `.000`. Omitting the milliseconds argument closed the month at
   // 23:59:59.000 while the next one opens at 00:00:00.000, so a sale committed
@@ -816,6 +829,7 @@ const gstReportData = async ({ month, year }) => {
 
   const invoices = await prisma.invoice.findMany({
     where: {
+      shopId,
       date: { gte: startDate, lte: endDate },
       paymentStatus: "PAID",
     },
@@ -838,7 +852,10 @@ const gstReportData = async ({ month, year }) => {
 
 const getGstReport = async (req, res, next) => {
   try {
-    const { invoices, totals } = await gstReportData(req.validatedQuery);
+    const { invoices, totals } = await gstReportData(
+      req.validatedQuery,
+      req.user.shopId,
+    );
     res.json({ success: true, data: { invoices, totals } });
   } catch (err) {
     next(err);
@@ -870,7 +887,10 @@ const INVOICE_COLUMNS = [
 
 const exportDailySummary = async (req, res, next) => {
   try {
-    const { date, invoices } = await dailySummaryData(req.validatedQuery);
+    const { date, invoices } = await dailySummaryData(
+      req.validatedQuery,
+      req.user.shopId,
+    );
     const day = date.toISOString().slice(0, 10);
     sendCsv(res, `daily-summary-${day}.csv`, toCsv(INVOICE_COLUMNS, invoices));
   } catch (err) {
@@ -880,7 +900,10 @@ const exportDailySummary = async (req, res, next) => {
 
 const exportGstReport = async (req, res, next) => {
   try {
-    const { month, year, invoices } = await gstReportData(req.validatedQuery);
+    const { month, year, invoices } = await gstReportData(
+      req.validatedQuery,
+      req.user.shopId,
+    );
     const period = `${year}-${String(month).padStart(2, "0")}`;
     sendCsv(res, `gst-report-${period}.csv`, toCsv(INVOICE_COLUMNS, invoices));
   } catch (err) {
