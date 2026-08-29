@@ -616,7 +616,7 @@ export default function Billing() {
 
   // ─── Render ───────────────────────────────────────────
   return (
-    <div className="flex gap-4 h-[calc(160vh-112px)]">
+    <div className="flex gap-4 h-[calc(180vh-112px)]">
       <PrintInvoice invoice={lastInvoice} shop={shop} />
 
       {/* Batch override (FR-BILL-19). FEFO remains what a plain click does; this
