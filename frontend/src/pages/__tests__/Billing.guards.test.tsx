@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import MockAdapter from "axios-mock-adapter";
 import api from "@/lib/api";
 import Billing from "@/pages/Billing";
+import { createQueryWrapper } from "@/test/query-wrapper";
 
 /**
  * docs/09 §5.6 — the two stock guards on the POS screen.
@@ -81,19 +82,32 @@ const twoBatches = (over: Record<string, unknown> = {}) => {
 const resultButton = () =>
   screen.findByRole("button", { name: /Paracetamol 500mg/ });
 
+// Search requests only. The page also GETs /api/shop on mount for the invoice
+// header, and counting every GET let that one satisfy the wait below — so a
+// search could be reported as sent while it was still inside its debounce.
+const searchCount = () =>
+  mock.history.get.filter((r) => /medicines\/search/.test(r.url ?? "")).length;
+
 const searchFor = async (user: ReturnType<typeof userEvent.setup>, term = "para") => {
-  const before = mock.history.get.length;
+  const before = searchCount();
   const box = screen.getByPlaceholderText(/search medicine by name/i);
   await user.type(box, term);
   // The search is debounced by 300ms. Counting from `before` matters on the
   // second search of a test — waiting for "any request" would return instantly.
-  await waitFor(() => expect(mock.history.get.length).toBeGreaterThan(before), {
+  await waitFor(() => expect(searchCount()).toBeGreaterThan(before), {
     timeout: 2000,
   });
 };
 
 beforeEach(() => {
   mock = new MockAdapter(api);
+  // The page reads the shop's own details on mount, for the printed invoice
+  // header. Nothing here asserts on them — the stub exists so the query
+  // resolves instead of leaving an unhandled rejection behind every test.
+  mock.onGet("/api/shop").reply(200, {
+    success: true,
+    data: { name: "Test Pharmacy", address: null, phone: null, gstNumber: null },
+  });
   vi.mocked(toast.error).mockClear();
   vi.mocked(toast.warning).mockClear();
 });
@@ -113,7 +127,7 @@ describe("POS cart guards", () => {
       data: [result({ batchId: null, batchNumber: "No Stock", stock: 0 })],
     });
 
-    render(<Billing />);
+    render(<Billing />, { wrapper: createQueryWrapper() });
     await searchFor(user);
 
     await user.click(await resultButton());
@@ -132,7 +146,7 @@ describe("POS cart guards", () => {
       data: [result({ stock: 3 })],
     });
 
-    render(<Billing />);
+    render(<Billing />, { wrapper: createQueryWrapper() });
     await searchFor(user);
     await user.click(await resultButton());
 
@@ -162,7 +176,7 @@ describe("POS cart guards", () => {
       data: [result({ stock: 1 })],
     });
 
-    render(<Billing />);
+    render(<Billing />, { wrapper: createQueryWrapper() });
     await searchFor(user);
     await user.click(await resultButton());
     expect(vi.mocked(toast.error)).not.toHaveBeenCalled();
@@ -183,7 +197,7 @@ describe("POS cart guards", () => {
       data: [result({ isScheduledH: true })],
     });
 
-    render(<Billing />);
+    render(<Billing />, { wrapper: createQueryWrapper() });
     await searchFor(user);
 
     await user.click(await resultButton());
@@ -213,7 +227,7 @@ describe("batch selection at the POS", () => {
       data: [twoBatches()],
     });
 
-    render(<Billing />);
+    render(<Billing />, { wrapper: createQueryWrapper() });
     await searchFor(user);
     await user.click(await resultButton());
 
@@ -230,7 +244,7 @@ describe("batch selection at the POS", () => {
       data: [result()],
     });
 
-    render(<Billing />);
+    render(<Billing />, { wrapper: createQueryWrapper() });
     await searchFor(user);
     await screen.findByRole("button", { name: /Paracetamol 500mg/ });
 
@@ -245,7 +259,7 @@ describe("batch selection at the POS", () => {
       data: [twoBatches()],
     });
 
-    render(<Billing />);
+    render(<Billing />, { wrapper: createQueryWrapper() });
     await searchFor(user);
     await user.click(await batchesButton());
 
@@ -269,7 +283,7 @@ describe("batch selection at the POS", () => {
       data: [twoBatches()],
     });
 
-    render(<Billing />);
+    render(<Billing />, { wrapper: createQueryWrapper() });
     await searchFor(user);
     await user.click(await batchesButton());
     await user.click(await screen.findByRole("button", { name: /B-002/ }));
@@ -308,7 +322,7 @@ describe("batch selection at the POS", () => {
       ],
     });
 
-    render(<Billing />);
+    render(<Billing />, { wrapper: createQueryWrapper() });
     await searchFor(user);
 
     expect(await screen.findByText("Stock Expired")).toBeInTheDocument();
