@@ -13,7 +13,7 @@ const { randomUUID } = require("crypto");
  * stream via pino-pretty, because a developer reads logs with their eyes.
  */
 
-const isProduction = process.env.NODE_ENV === "production";
+const isProduction = process.env.NODE_ENV === "production" || "";
 const isTest = process.env.NODE_ENV === "test";
 
 const prettyTransport = () => {
