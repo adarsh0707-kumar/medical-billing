@@ -54,6 +54,9 @@ const AUDITED_ACTIONS = {
 // The opt-in is the reason itself: a handler that calls `setReason` is stating
 // that this write is worth recording. The invoice path never does, so it stays
 // out; anything deliberately annotated comes in.
+//
+// That opt-in is now one of three ways in, not the only one — see
+// `auditsBulkWrite` below, which multi-tenancy made necessary.
 const BULK_ACTIONS = { updateMany: "UPDATE", deleteMany: "DELETE" };
 
 // Multi-tenancy forced every ordinary admin edit — rename a category, retire a
@@ -66,10 +69,7 @@ const BULK_ACTIONS = { updateMany: "UPDATE", deleteMany: "DELETE" };
 // every category rename to get it back.
 //
 // So these models' bulk writes are audited unconditionally, same as their
-// singular writes always were. Batch stays out of this set and keeps the
-// original opt-in-via-`setReason` behaviour: its bulk update is also the stock
-// decrement inside every sale, which is the hot path this exclusion exists to
-// protect, and which is already attributed through `Invoice.userId`.
+// singular writes always were.
 const BULK_AUDITED_UNCONDITIONALLY = new Set([
   "Category",
   "Manufacturer",
@@ -78,6 +78,34 @@ const BULK_AUDITED_UNCONDITIONALLY = new Set([
   "Customer",
   "User",
 ]);
+
+// Batch cannot be settled by set membership either way, because one model's
+// `updateMany` serves two writes with opposite requirements:
+//
+//   - the stock decrement inside every sale — the hot path the exclusion above
+//     exists to protect, already attributed through `Invoice.userId`, and the
+//     thing `leaves the invoice path alone` pins down;
+//   - `PUT /batches/:id`, an ordinary admin edit of price and dates, which is
+//     the write NFR-17 names first: "who changed this price, and from what".
+//
+// What separates them is the field list, not the route — a Prisma middleware
+// cannot see a route. The sale's decrement writes nothing but `quantity`. The
+// edit's schema is strict and deliberately *excludes* `quantity` (G-05), so it
+// can never write it. A manual adjustment writes only `quantity` too, and comes
+// in through the `setReason` opt-in it already declares (FR-BATCH-11).
+//
+// Hence: audit a Batch bulk write when it touches any field other than
+// `quantity`. Keying off the data actually written rather than the caller means
+// a future path that edits a price gets the trail without having to remember to
+// ask for it — which is the whole reason this lives in a middleware.
+const BULK_AUDIT_EXEMPT_FIELDS = { Batch: new Set(["quantity"]) };
+
+const auditsBulkWrite = (model, args) => {
+  if (BULK_AUDITED_UNCONDITIONALLY.has(model)) return true;
+  const exempt = BULK_AUDIT_EXEMPT_FIELDS[model];
+  if (!exempt) return false;
+  return Object.keys(args?.data ?? {}).some((field) => !exempt.has(field));
+};
 
 // An audit row must never become a second place credentials live.
 const REDACTED = new Set(["password", "tokenVersion"]);
@@ -99,19 +127,29 @@ const strip = (value) => {
 
 const auditMiddleware = (prisma) => async (params, next) => {
   const declared = currentActor()?.reason;
+  const bulk = BULK_ACTIONS[params.action];
   const action =
     AUDITED_ACTIONS[params.action] ??
-    (declared ? BULK_ACTIONS[params.action] : undefined);
+    (bulk && (declared || auditsBulkWrite(params.model, params.args))
+      ? bulk
+      : undefined);
   if (!action || !AUDITED.has(params.model)) return next(params);
 
   // Read the prior state before the write lands. One extra query per audited
   // write, on master data only — the hot paths are excluded above.
+  //
+  // `findFirst` for a bulk write, `findUnique` for a singular one. They are not
+  // interchangeable: a tenant-scoped `updateMany` selects on `{ id, shopId }`,
+  // and `findUnique` rejects a non-unique field outright rather than filtering
+  // by it. Sent there, every bulk `before` was thrown away by the catch below
+  // and the audit row recorded a change from nothing.
   let before = null;
   if (action !== "CREATE" && params.args?.where) {
+    const model = prisma[modelAccessor(params.model)];
     try {
-      before = await prisma[modelAccessor(params.model)].findUnique({
-        where: params.args.where,
-      });
+      before = bulk
+        ? await model.findFirst({ where: params.args.where })
+        : await model.findUnique({ where: params.args.where });
     } catch {
       // A `where` this lookup cannot use is not a reason to fail the write.
       before = null;
@@ -123,9 +161,8 @@ const auditMiddleware = (prisma) => async (params, next) => {
   // A bulk write returns `{ count }`, not the row, so the resulting state has to
   // be read back — otherwise `after` records how many rows changed instead of
   // what they changed to, which is not an audit trail.
-  const isBulk = Boolean(BULK_ACTIONS[params.action]);
   let after = result;
-  if (isBulk) {
+  if (bulk) {
     after = null;
     const id = params.args?.where?.id;
     if (id && action !== "DELETE") {
