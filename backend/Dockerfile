@@ -54,6 +54,19 @@ COPY --from=build /app/prisma ./prisma
 COPY package*.json ./
 COPY src ./src
 
+# Applies any pending migration before the server starts, then hands off to
+# `node` with `exec` so it becomes PID 1 — not a child of this script — and
+# still receives SIGTERM directly. Without `exec`, npm's problem repeats one
+# layer down: the shell wrapper eats the signal instead of the node process.
+#
+# `migrate deploy` only applies migrations already committed to
+# prisma/migrations; it never generates new ones and is safe to run on every
+# boot, including against a database that's already up to date. Copied and
+# made executable as root, before dropping to the unprivileged user below —
+# `node` cannot chmod a file it doesn't own.
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
 # node:22-slim ships a `node` user (uid 1000). Running as root inside a container
 # is not a sandbox escape on its own, but it removes a layer for no benefit.
 RUN chown -R node:node /app
@@ -61,6 +74,5 @@ USER node
 
 EXPOSE 5000
 
-# `node`, not `npm start`: npm swallows signals, so the container would ignore
-# SIGTERM and be killed after the stop grace period on every deploy.
+ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["node", "src/index.js"]
