@@ -158,13 +158,16 @@ function DailyReport() {
   // Summary and invoices come from one response and are now held as one value.
   // Split across two useStates they could be rendered mismatched for a frame,
   // and a slow response for an earlier date could overwrite half of a newer one.
-  const { data, isLoading: loading, refetch } = useQuery({
+  const {
+    data,
+    isLoading: loading,
+    refetch,
+  } = useQuery({
     queryKey: ["daily-summary", date],
     queryFn: async ({ signal }) => {
-      const res = await api.get(
-        `/api/reports/daily-summary?date=${date}`,
-        { signal },
-      );
+      const res = await api.get(`/api/reports/daily-summary?date=${date}`, {
+        signal,
+      });
       return {
         summary: res.data.data.summary as DailySummary,
         invoices: res.data.data.invoices as Invoice[],
@@ -190,8 +193,6 @@ function DailyReport() {
       setExporting(false);
     }
   };
-
-
 
   const paymentData =
     summary?.byPaymentMode.map((p) => ({
@@ -288,7 +289,7 @@ function DailyReport() {
                     cy="50%"
                     outerRadius={70}
                     label={({ name, percent }) =>
-                      `${name} ${((percent ?? 0 )* 100).toFixed(0)}%`
+                      `${name} ${((percent ?? 0) * 100).toFixed(0)}%`
                     }
                   >
                     {paymentData.map((_, i) => (
@@ -404,7 +405,11 @@ function GstReport() {
   // Invoices and totals are one response; docs/09 section 4 treats the totals as
   // a contract with those invoices, so they must never be rendered from
   // different requests.
-  const { data, isLoading: loading, refetch } = useQuery({
+  const {
+    data,
+    isLoading: loading,
+    refetch,
+  } = useQuery({
     queryKey: ["gst-report", month, year],
     queryFn: async ({ signal }) => {
       const res = await api.get(
@@ -685,16 +690,18 @@ function StockAlerts() {
   // the expiring list depends on `days`, and pairing them meant changing the
   // window refetched the low-stock list too. They also cache separately now, so
   // the notifications bell and this panel share the same low-stock response.
-  const { data: expiring = [], isLoading: expiringLoading } = useQuery<Batch[]>({
-    queryKey: ["batches", "expiring", days],
-    queryFn: async ({ signal }) => {
-      const res = await api.get(`/api/reports/expiring?days=${days}`, {
-        signal,
-      });
-      return res.data.data;
+  const { data: expiring = [], isLoading: expiringLoading } = useQuery<Batch[]>(
+    {
+      queryKey: ["batches", "expiring", days],
+      queryFn: async ({ signal }) => {
+        const res = await api.get(`/api/reports/expiring?days=${days}`, {
+          signal,
+        });
+        return res.data.data;
+      },
+      meta: { errorMessage: "Failed to fetch expiry alerts" },
     },
-    meta: { errorMessage: "Failed to fetch expiry alerts" },
-  });
+  );
 
   const { data: lowStock = [], isLoading: lowLoading } = useQuery<Batch[]>({
     queryKey: ["batches", "low-stock", 20],
@@ -968,6 +975,13 @@ function SalesTrend() {
               />
               <Tooltip
                 formatter={(val) => [formatINR(Number(val ?? 0)), "Revenue"]}
+                // Recharts' default bar-hover cursor is a solid, near-opaque
+                // rectangle spanning the full chart height — on this dark
+                // theme it renders tall and bright enough to be mistaken for
+                // an actual ~₹2k revenue bar on a day that had none. A
+                // faint, theme-matched fill reads as a hover highlight
+                // instead of a second, contradictory bar.
+                cursor={{ fill: "#334155", opacity: 0.35 }}
                 contentStyle={{
                   background: "#1e293b",
                   border: "1px solid #334155",
