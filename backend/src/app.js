@@ -75,6 +75,7 @@ const createApp = ({
           "http://localhost:5173",
           "http://127.0.0.1:5173",
           "http://172.17.0.1:5173", // Docker network IP
+          "http://0.0.0.0:5173",
           process.env.FRONTEND_URL,
         ].filter(Boolean);
 
