@@ -1,7 +1,17 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach } from "vitest";
 import request from "supertest";
 import prisma from "../../src/config/db.js";
-import { buildApp, makeUser, PASSWORD } from "../helpers/factory.js";
+import {
+  buildApp,
+  makeUser,
+  makeShop,
+  makeMasters,
+  makeMedicine,
+  makeBatch,
+  signIn,
+  line,
+  PASSWORD,
+} from "../helpers/factory.js";
 
 /**
  * `POST /api/auth/signup` — a new shopkeeper's own shop, self-serve
@@ -138,14 +148,19 @@ describe("POST /api/auth/signup — every call opens its own shop", () => {
       password: "another-long-passphrase",
     });
 
+    // /api/inventory/categories, not /api/categories: the 2.0.0 resource layout
+    // keeps batches, categories and manufacturers under /api/inventory, because
+    // each is a stock-keeping concern reached through the medicine it belongs
+    // to. This test posted to the top-level path for its first three days and
+    // 404'd there, so the assertion below was never reached.
     const category = await request(app)
-      .post("/api/categories")
+      .post("/api/inventory/categories")
       .set("Authorization", `Bearer ${a.body.data.token}`)
       .send({ name: "Antibiotics" });
     expect(category.status).toBe(201);
 
     const asB = await request(app)
-      .get("/api/categories")
+      .get("/api/inventory/categories")
       .set("Authorization", `Bearer ${b.body.data.token}`);
     expect(asB.body.data).toEqual([]);
   });
@@ -255,5 +270,199 @@ describe("POST /api/auth/signup — it is not a second way in", () => {
       .send({ email: existing.email, password: PASSWORD });
     expect(login.status).toBe(200);
     expect(await prisma.shop.count()).toBe(1);
+  });
+});
+
+/**
+ * The tenant boundary, swept across the resource controllers.
+ *
+ * The test above proves it holds from the signup request onward. This proves it
+ * holds everywhere afterwards, which is a different claim and the one that has
+ * to survive every future change: a `where` clause that forgets `shopId` leaks
+ * one shop's customers, stock and takings into another's screen, and nothing
+ * about the response would look wrong to whoever reads it.
+ *
+ * Both shops are built through the factory rather than through signup — the
+ * behaviour under test is the same, and this pays for two cost-4 hashes instead
+ * of two cost-12 ones.
+ *
+ * **A failure here is not a broken test.** It is a cross-tenant leak, and the
+ * fix belongs in the controller the assertion names, not in this file.
+ */
+describe("tenant isolation across the resource controllers", () => {
+  let tokenA, tokenB, shopA, shopB, aData, bMasters;
+
+  const asB = (method, path) =>
+    request(app)[method](path).set("Authorization", `Bearer ${tokenB}`);
+
+  beforeEach(async () => {
+    [shopA, shopB] = await Promise.all([
+      makeShop({ name: "Shop A" }),
+      makeShop({ name: "Shop B" }),
+    ]);
+
+    // Distinct emails: User.email is globally unique, deliberately, because
+    // login takes an email and a password with no shop selector.
+    const [a, b] = await Promise.all([
+      signIn(app, "ADMIN", { shopId: shopA.id, email: "admin-a@test.local" }),
+      signIn(app, "ADMIN", { shopId: shopB.id, email: "admin-b@test.local" }),
+    ]);
+    tokenA = a.token;
+    tokenB = b.token;
+
+    // Shop A's world: masters, a medicine in stock, a customer and a sale.
+    const masters = await makeMasters({ shopId: shopA.id });
+    const { medicine } = await makeMedicine({
+      masters,
+      name: "A's Paracetamol",
+    });
+    const batch = await makeBatch({
+      medicineId: medicine.id,
+      supplierId: masters.supplier.id,
+      shopId: shopA.id,
+    });
+
+    const customer = await request(app)
+      .post("/api/customers")
+      .set("Authorization", `Bearer ${tokenA}`)
+      .send({ name: "A's Customer", phone: "9990000001" });
+    expect(customer.status).toBe(201);
+
+    const invoice = await request(app)
+      .post("/api/billing/invoices")
+      .set("Authorization", `Bearer ${tokenA}`)
+      .send({
+        items: [line(medicine, batch, { quantity: 2 })],
+        paymentMode: "CASH",
+        paymentStatus: "PAID",
+      });
+    expect(invoice.status).toBe(201);
+
+    aData = {
+      category: masters.category,
+      supplier: masters.supplier,
+      medicine,
+      customer: customer.body.data,
+      invoice: invoice.body.data,
+    };
+
+    // B's own masters, so a PUT from B carries a body that passes validation on
+    // its own merits — otherwise a 400 would masquerade as the 404 being tested.
+    bMasters = await makeMasters({ shopId: shopB.id });
+  });
+
+  it("shows shop B none of shop A's rows", async () => {
+    const [medicines, customers, suppliers, invoices, categories] =
+      await Promise.all([
+        asB("get", "/api/medicines"),
+        asB("get", "/api/customers"),
+        asB("get", "/api/suppliers"),
+        asB("get", "/api/billing/invoices"),
+        asB("get", "/api/inventory/categories"),
+      ]);
+
+    for (const res of [
+      medicines,
+      customers,
+      suppliers,
+      invoices,
+      categories,
+    ]) {
+      expect(res.status).toBe(200);
+    }
+
+    expect(medicines.body.data).toEqual([]);
+    expect(customers.body.data).toEqual([]);
+    expect(invoices.body.data).toEqual([]);
+    // B has masters of its own, so these are not empty — the assertion is that
+    // A's rows are not among them. An `toEqual([])` here would pass for the
+    // wrong reason the day B's own fixtures changed.
+    expect(suppliers.body.data.map((s) => s.id)).not.toContain(
+      aData.supplier.id,
+    );
+    expect(categories.body.data.map((c) => c.id)).not.toContain(
+      aData.category.id,
+    );
+  });
+
+  it("answers 404 — not 403, and not 200 — when B edits A's rows", async () => {
+    const attempts = await Promise.all([
+      asB("put", `/api/inventory/categories/${aData.category.id}`).send({
+        name: "Hijacked",
+      }),
+      asB("put", `/api/suppliers/${aData.supplier.id}`).send({
+        name: "Hijacked",
+      }),
+      asB("put", `/api/customers/${aData.customer.id}`).send({
+        name: "Hijacked",
+      }),
+      asB("put", `/api/medicines/${aData.medicine.id}`).send({
+        name: "Hijacked",
+        categoryId: bMasters.category.id,
+        manufacturerId: bMasters.manufacturer.id,
+        unit: "tablet",
+        gstPercent: 12,
+      }),
+    ]);
+
+    // 404 rather than 403 is the point. A 403 would confirm the id exists,
+    // which turns a guessed id into a probe for another shop's catalogue.
+    for (const res of attempts) expect(res.status).toBe(404);
+
+    // And nothing moved.
+    const category = await prisma.category.findUnique({
+      where: { id: aData.category.id },
+    });
+    expect(category.name).toBe(aData.category.name);
+  });
+
+  it("answers 404 when B deletes A's rows, and leaves them standing", async () => {
+    const attempts = await Promise.all([
+      asB("delete", `/api/inventory/categories/${aData.category.id}`),
+      asB("delete", `/api/suppliers/${aData.supplier.id}`),
+      asB("delete", `/api/medicines/${aData.medicine.id}`),
+      asB("delete", `/api/customers/${aData.customer.id}`),
+    ]);
+
+    for (const res of attempts) expect(res.status).toBe(404);
+
+    expect(
+      await prisma.category.findUnique({ where: { id: aData.category.id } }),
+    ).not.toBeNull();
+    expect(
+      await prisma.supplier.findUnique({ where: { id: aData.supplier.id } }),
+    ).not.toBeNull();
+    // Medicine delete is a soft delete and customer delete anonymises in place,
+    // so "still there" is not enough for these two — read the field each one
+    // would have changed.
+    const medicine = await prisma.medicine.findUnique({
+      where: { id: aData.medicine.id },
+    });
+    expect(medicine.isActive).toBe(true);
+    const customer = await prisma.customer.findUnique({
+      where: { id: aData.customer.id },
+    });
+    expect(customer.anonymisedAt).toBeNull();
+    expect(customer.name).toBe("A's Customer");
+  });
+
+  it("lists only shop B's own user accounts", async () => {
+    const res = await asB("get", "/api/users");
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.map((u) => u.email)).toEqual(["admin-b@test.local"]);
+  });
+
+  it("reports none of shop A's takings on B's dashboard", async () => {
+    const res = await asB("get", "/api/dashboard/stats");
+
+    expect(res.status).toBe(200);
+    const { summary, totals, recentInvoices } = res.body.data;
+    // A sold two units at 24.50 a moment ago. None of it is B's.
+    expect(Number(summary.totalSales)).toBe(0);
+    expect(summary.totalInvoices).toBe(0);
+    expect(recentInvoices).toEqual([]);
+    expect(totals.medicines).toBe(0);
+    expect(totals.customers).toBe(0);
   });
 });
