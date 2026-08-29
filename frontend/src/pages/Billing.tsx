@@ -616,7 +616,7 @@ export default function Billing() {
 
   // ─── Render ───────────────────────────────────────────
   return (
-    <div className="flex gap-4 h-[calc(130vh-112px)]">
+    <div className="flex gap-4 h-[calc(100vh-112px)]">
       <PrintInvoice invoice={lastInvoice} shop={shop} />
 
       {/* Batch override (FR-BILL-19). FEFO remains what a plain click does; this
@@ -928,7 +928,7 @@ export default function Billing() {
       </div>
 
       {/* ── Right: Customer + Summary ── */}
-      <div className="w-80 flex flex-col gap-4 shrink-0">
+      <div className="w-80 flex flex-col gap-4 shrink-0 h-full min-h-0">
         {/* Customer */}
         <Card className="bg-slate-800 border-slate-700">
           <CardHeader className="py-3 px-4 border-b border-slate-700">
@@ -1025,13 +1025,19 @@ export default function Billing() {
         </Card>
 
         {/* Bill Summary */}
-        <Card className="bg-slate-800 border-slate-700 flex-1">
-          <CardHeader className="py-3 px-4 border-b border-slate-700">
+        <Card className="bg-slate-800 border-slate-700 flex-1 overflow-hidden flex flex-col min-h-0">
+          <CardHeader className="py-3 px-4 border-b border-slate-700 shrink-0">
             <CardTitle className="text-white text-sm font-medium">
               Bill Summary
             </CardTitle>
           </CardHeader>
-          <CardContent className="pt-4 space-y-3">
+          {/* Everything that varies in height — the GST breakdown and, above
+              all, the Schedule H prescription form — scrolls in its own
+              region instead of pushing Payment Mode and the checkout button
+              off the bottom of the screen. Those two stay in a pinned footer
+              below, so they're always reachable regardless of how much is
+              above them. */}
+          <CardContent className="pt-4 space-y-3 flex-1 overflow-y-auto min-h-0">
             <div className="space-y-2 text-sm">
               <div className="flex justify-between text-slate-400">
                 <span>Subtotal</span>
@@ -1142,7 +1148,12 @@ export default function Billing() {
                 </div>
               </div>
             )}
+          </CardContent>
 
+          {/* Pinned footer — never scrolls away. Payment mode and the
+              checkout button are the two things a cashier must always be able
+              to reach, however tall the scrollable content above gets. */}
+          <div className="p-4 pt-3 border-t border-slate-700 space-y-3 shrink-0">
             {/* Payment Mode */}
             <div className="space-y-1.5">
               <Label className="text-slate-400 text-xs">Payment Mode</Label>
@@ -1172,7 +1183,7 @@ export default function Billing() {
             </div>
 
             {/* Actions */}
-            <div className="space-y-2 pt-2">
+            <div className="space-y-2">
               <Button
                 onClick={handleSubmit}
                 disabled={submitting || cart.length === 0 || grandTotal < 0}
@@ -1198,7 +1209,7 @@ export default function Billing() {
                 <Printer className="w-4 h-4 mr-2" /> Print Last Invoice
               </Button>
             </div>
-          </CardContent>
+          </div>
         </Card>
       </div>
     </div>
