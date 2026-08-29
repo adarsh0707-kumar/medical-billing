@@ -28,6 +28,7 @@ const AUDITED = new Set([
   "Manufacturer",
   "Customer",
   "User",
+  "Shop",
 ]);
 
 // Single-record writes only. `updateMany`/`deleteMany` are excluded on purpose:

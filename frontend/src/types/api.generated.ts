@@ -210,6 +210,14 @@ export type UpdateProfileInput = {
   email?: string | undefined;
 };
 
+/** `updateShopSchema` — `backend/src/validators/shop.validator.js` */
+export type UpdateShopInput = {
+  name: string;
+  address?: string | null | undefined;
+  phone?: string | null | undefined;
+  gstNumber?: string | null | undefined;
+};
+
 /** `updateUserSchema` — `backend/src/validators/user.validator.js` */
 export type UpdateUserInput = {
   name?: string | undefined;

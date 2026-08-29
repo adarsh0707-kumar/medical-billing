@@ -1,5 +1,6 @@
 import api from "@/lib/api";
 import type { CreateInvoiceInput } from "@/types/api.generated";
+import { useQuery } from "@tanstack/react-query";
 import { calcItemTotal, calcCartTotals } from "@/lib/cart-math";
 import { toast } from "sonner";
 import { useState, useEffect, useRef } from "react";
@@ -187,10 +188,19 @@ function AddCustomerDialog({ onAdd }: { onAdd: (c: Customer) => void }) {
 
 // ─── Invoice Print View ─────────────────────────────────
 
+interface ShopInfo {
+  name: string;
+  address?: string | null;
+  phone?: string | null;
+  gstNumber?: string | null;
+}
+
 function PrintInvoice({
   invoice,
+  shop,
 }: {
   invoice: Record<string, unknown> | null;
+  shop?: ShopInfo;
 }) {
   if (!invoice) return null;
   const inv = invoice as {
@@ -213,15 +223,27 @@ function PrintInvoice({
     paymentMode: string;
   };
 
+  // Falls back to the product name if the shop hasn't filled in its own yet —
+  // a brand-new shop that hasn't visited Settings still gets a printable
+  // invoice, just without its own details on it.
+  const shopName = shop?.name || "MedBill Pro";
+  // Only the details the shop has actually entered — an address or GST line
+  // built from missing pieces would print "undefined" or a bare ", ".
+  const addressLine = shop?.address;
+  const gstLine = shop?.gstNumber ? `GSTIN: ${shop.gstNumber}` : null;
+  const phoneLine = shop?.phone ? `Phone: ${shop.phone}` : null;
+  const contactLine = [addressLine, phoneLine, gstLine]
+    .filter(Boolean)
+    .join(" | ");
+
   return (
     <div
       id="print-invoice"
       className="hidden print:block text-black p-8 font-mono text-sm"
     >
       <div className="text-center border-b pb-4 mb-4">
-        <h1 className="text-xl font-bold">MedBill Pro</h1>
-        <p className="text-xs">Medical Store Billing System</p>
-        <p className="text-xs">Patna, Bihar | GSTIN: XXXXXXXXXXXX</p>
+        <h1 className="text-xl font-bold">{shopName}</h1>
+        {contactLine && <p className="text-xs">{contactLine}</p>}
       </div>
 
       {/* Header Info */}
@@ -318,6 +340,12 @@ function PrintInvoice({
 // ─── Main Billing Page ──────────────────────────────────
 
 export default function Billing() {
+  // Fetched once and cached — the invoice header needs it at print time, and
+  // it changes rarely enough that react-query's default staleness is fine.
+  const { data: shop } = useQuery<ShopInfo>({
+    queryKey: ["shop"],
+    queryFn: async () => (await api.get("/api/shop")).data.data,
+  });
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<MedicineResult[]>([]);
   const [searching, setSearching] = useState(false);
@@ -589,7 +617,7 @@ export default function Billing() {
   // ─── Render ───────────────────────────────────────────
   return (
     <div className="flex gap-4 h-[calc(130vh-112px)]">
-      <PrintInvoice invoice={lastInvoice} />
+      <PrintInvoice invoice={lastInvoice} shop={shop} />
 
       {/* Batch override (FR-BILL-19). FEFO remains what a plain click does; this
           exists for the two cases FEFO cannot see — the customer needs a
@@ -601,9 +629,7 @@ export default function Billing() {
       >
         <DialogContent className="bg-slate-800 border-slate-700 text-white">
           <DialogHeader>
-            <DialogTitle>
-              Choose a batch — {batchPicker?.name}
-            </DialogTitle>
+            <DialogTitle>Choose a batch — {batchPicker?.name}</DialogTitle>
           </DialogHeader>
           <p className="text-slate-400 text-xs -mt-2">
             Earliest expiry first. The first is what the till would pick on its
@@ -686,63 +712,63 @@ export default function Billing() {
                       onClick={() => addToCart(med)}
                       className="flex-1 min-w-0 flex items-center justify-between px-4 py-3 text-left"
                     >
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <p className="text-white font-medium text-sm">
-                          {med.name}
-                        </p>
-                        {med.isScheduledH && (
-                          <Badge
-                            variant="destructive"
-                            className="text-xs px-1.5 py-0"
-                          >
-                            Sch-H
-                          </Badge>
-                        )}
-                        {med.expiryDate && isExpired(med.expiryDate) && (
-                          <Badge
-                            variant="destructive"
-                            className="text-xs px-1.5 py-0"
-                          >
-                            Expired
-                          </Badge>
-                        )}
-                        {med.expiryDate &&
-                          !isExpired(med.expiryDate) &&
-                          isExpiringSoon(med.expiryDate) && (
-                            <Badge className="text-xs px-1.5 py-0 bg-yellow-600">
-                              Expiring Soon
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <p className="text-white font-medium text-sm">
+                            {med.name}
+                          </p>
+                          {med.isScheduledH && (
+                            <Badge
+                              variant="destructive"
+                              className="text-xs px-1.5 py-0"
+                            >
+                              Sch-H
                             </Badge>
                           )}
-                        {!med.batchId && med.expiredBatches > 0 && (
-                          <Badge
-                            variant="destructive"
-                            className="text-xs px-1.5 py-0"
-                          >
-                            Stock Expired
-                          </Badge>
-                        )}
-                        {!med.batchId && med.expiredBatches === 0 && (
-                          <Badge className="text-xs px-1.5 py-0 bg-slate-600 text-slate-400">
-                            No Stock
-                          </Badge>
-                        )}
+                          {med.expiryDate && isExpired(med.expiryDate) && (
+                            <Badge
+                              variant="destructive"
+                              className="text-xs px-1.5 py-0"
+                            >
+                              Expired
+                            </Badge>
+                          )}
+                          {med.expiryDate &&
+                            !isExpired(med.expiryDate) &&
+                            isExpiringSoon(med.expiryDate) && (
+                              <Badge className="text-xs px-1.5 py-0 bg-yellow-600">
+                                Expiring Soon
+                              </Badge>
+                            )}
+                          {!med.batchId && med.expiredBatches > 0 && (
+                            <Badge
+                              variant="destructive"
+                              className="text-xs px-1.5 py-0"
+                            >
+                              Stock Expired
+                            </Badge>
+                          )}
+                          {!med.batchId && med.expiredBatches === 0 && (
+                            <Badge className="text-xs px-1.5 py-0 bg-slate-600 text-slate-400">
+                              No Stock
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="text-slate-400 text-xs mt-0.5">
+                          {med.genericName}
+                          {med.batchNumber && ` • Batch: ${med.batchNumber}`}
+                          {med.expiryDate &&
+                            ` • Exp: ${new Date(med.expiryDate).toLocaleDateString("en-IN")}`}
+                        </p>
                       </div>
-                      <p className="text-slate-400 text-xs mt-0.5">
-                        {med.genericName}
-                        {med.batchNumber && ` • Batch: ${med.batchNumber}`}
-                        {med.expiryDate &&
-                          ` • Exp: ${new Date(med.expiryDate).toLocaleDateString("en-IN")}`}
-                      </p>
-                    </div>
-                    <div className="text-right shrink-0 ml-4">
-                      <p className="text-teal-400 font-bold">
-                        {med.sellingPrice ? `₹${med.sellingPrice}` : "—"}
-                      </p>
-                      <p className="text-slate-500 text-xs">
-                        Stock: {med.stock} {med.unit}
-                      </p>
-                    </div>
+                      <div className="text-right shrink-0 ml-4">
+                        <p className="text-teal-400 font-bold">
+                          {med.sellingPrice ? `₹${med.sellingPrice}` : "—"}
+                        </p>
+                        <p className="text-slate-500 text-xs">
+                          Stock: {med.stock} {med.unit}
+                        </p>
+                      </div>
                     </button>
                     {/* Overriding FEFO is a separate, explicit action — never
                         something a hurried click on the row can do by accident
@@ -1072,7 +1098,10 @@ export default function Billing() {
                     placeholder="Prescriber's name"
                     value={prescription.prescriberName}
                     onChange={(e) =>
-                      setPrescription((p) => ({ ...p, prescriberName: e.target.value }))
+                      setPrescription((p) => ({
+                        ...p,
+                        prescriberName: e.target.value,
+                      }))
                     }
                     className="bg-slate-700 border-slate-600 text-white h-9 text-sm col-span-2"
                   />
@@ -1080,7 +1109,10 @@ export default function Billing() {
                     placeholder="Registration no."
                     value={prescription.prescriberRegNo}
                     onChange={(e) =>
-                      setPrescription((p) => ({ ...p, prescriberRegNo: e.target.value }))
+                      setPrescription((p) => ({
+                        ...p,
+                        prescriberRegNo: e.target.value,
+                      }))
                     }
                     className="bg-slate-700 border-slate-600 text-white h-9 text-sm"
                   />
@@ -1089,7 +1121,10 @@ export default function Billing() {
                     value={prescription.prescribedOn}
                     max={new Date().toISOString().slice(0, 10)}
                     onChange={(e) =>
-                      setPrescription((p) => ({ ...p, prescribedOn: e.target.value }))
+                      setPrescription((p) => ({
+                        ...p,
+                        prescribedOn: e.target.value,
+                      }))
                     }
                     className="bg-slate-700 border-slate-600 text-white h-9 text-sm"
                   />
@@ -1097,7 +1132,10 @@ export default function Billing() {
                     placeholder="Patient's name"
                     value={prescription.patientName}
                     onChange={(e) =>
-                      setPrescription((p) => ({ ...p, patientName: e.target.value }))
+                      setPrescription((p) => ({
+                        ...p,
+                        patientName: e.target.value,
+                      }))
                     }
                     className="bg-slate-700 border-slate-600 text-white h-9 text-sm col-span-2"
                   />
@@ -1111,7 +1149,9 @@ export default function Billing() {
               <Select
                 value={paymentMode}
                 onValueChange={(v) =>
-                  setPaymentMode(v as CreateInvoiceInput["paymentMode"] & string)
+                  setPaymentMode(
+                    v as CreateInvoiceInput["paymentMode"] & string,
+                  )
                 }
               >
                 <SelectTrigger className="bg-slate-700 border-slate-600 text-white h-9">

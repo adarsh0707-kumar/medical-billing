@@ -91,6 +91,7 @@ const MODULES = [
   "billing.validator.js",
   "inventory.validator.js",
   "user.validator.js",
+  "shop.validator.js",
 ];
 
 /**
@@ -254,10 +255,10 @@ function printExpandedTypes(schemas) {
   const readFile = host.readFile.bind(host);
   const getSourceFile = host.getSourceFile.bind(host);
 
-  host.fileExists = ((original) => (fileName) =>
-    fileName === entryPath || original(fileName))(
-    host.fileExists.bind(host),
-  );
+  host.fileExists = (
+    (original) => (fileName) =>
+      fileName === entryPath || original(fileName)
+  )(host.fileExists.bind(host));
   host.readFile = (fileName) =>
     fileName === entryPath ? entrySource : readFile(fileName);
   host.getSourceFile = (fileName, languageVersion, ...rest) =>
@@ -354,7 +355,9 @@ function main() {
       );
       process.exit(1);
     }
-    console.log(`api.generated.ts is up to date (${schemas.length} contracts).`);
+    console.log(
+      `api.generated.ts is up to date (${schemas.length} contracts).`,
+    );
     return;
   }
 

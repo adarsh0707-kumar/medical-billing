@@ -17,6 +17,7 @@ const supplierRoutes = require("./routes/supplier.routes");
 const reportRoutes = require("./routes/report.routes");
 const userRoutes = require("./routes/user.routes");
 const dashboardRoutes = require("./routes/dashboard.routes");
+const shopRoutes = require("./routes/shop.routes");
 const auditContextMiddleware = require("./middlewares/audit-context.middleware");
 
 /**
@@ -75,7 +76,6 @@ const createApp = ({
           "http://localhost:5173",
           "http://127.0.0.1:5173",
           "http://172.17.0.1:5173", // Docker network IP
-          "http://0.0.0.0:5173",
           process.env.FRONTEND_URL,
         ].filter(Boolean);
 
@@ -128,7 +128,8 @@ const createApp = ({
     skipSuccessfulRequests: true,
     message: {
       success: false,
-      message: "Too many failed login attempts. Please try again in 15 minutes.",
+      message:
+        "Too many failed login attempts. Please try again in 15 minutes.",
     },
   });
   app.use("/api/auth/login", loginLimiter);
@@ -205,6 +206,7 @@ const createApp = ({
   app.use("/api/billing", billingRoutes);
   app.use("/api/users", userRoutes);
   app.use("/api/dashboard", dashboardRoutes);
+  app.use("/api/shop", shopRoutes);
 
   // ─── Error Handlers ────────────────────────────────────
   app.use(notFound);

@@ -4,6 +4,7 @@ import {
   User,
   Lock,
   Users,
+  Store,
   Plus,
   Edit2,
   Trash2,
@@ -16,7 +17,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import api from "@/lib/api";
-import type { UpdateUserInput } from "@/types/api.generated";
+import type { UpdateUserInput, UpdateShopInput } from "@/types/api.generated";
 import { useAuthStore } from "@/store/auth.store";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -164,6 +165,135 @@ function ProfileTab() {
 }
 
 // ═══════════════════════════════════════════════════════
+// SHOP TAB
+// ═══════════════════════════════════════════════════════
+
+// The business details that print on every invoice header — name, address,
+// phone, GST number. Read by any signed-in role (the billing screen needs it
+// to print), but only an administrator can change it: PUT /api/shop is
+// ADMIN-only on the server, so this form is the one place that matters.
+function ShopTab() {
+  const queryClient = useQueryClient();
+  const { data: shop, isLoading } = useQuery({
+    queryKey: ["shop"],
+    queryFn: async () => (await api.get("/api/shop")).data.data,
+  });
+
+  const [form, setForm] = useState<UpdateShopInput | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  // Seeded from the fetched shop once, not on every refetch — otherwise
+  // in-progress edits would be overwritten the moment react-query
+  // revalidates in the background.
+  if (shop && form === null) {
+    setForm({
+      name: shop.name ?? "",
+      address: shop.address ?? "",
+      phone: shop.phone ?? "",
+      gstNumber: shop.gstNumber ?? "",
+    });
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form) return;
+    setSaving(true);
+    try {
+      // Blank optional fields go as null, not "" — an empty string would print
+      // as "Address: " on the invoice instead of omitting the line.
+      const body: UpdateShopInput = {
+        name: form.name,
+        address: form.address || null,
+        phone: form.phone || null,
+        gstNumber: form.gstNumber || null,
+      };
+      const res = await api.put("/api/shop", body);
+      queryClient.setQueryData(["shop"], res.data.data);
+      toast.success("Shop details updated");
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { message?: string } } };
+      toast.error(e.response?.data?.message || "Failed to update shop details");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (isLoading || !form) {
+    return (
+      <div className="flex justify-center py-12">
+        <Loader2 className="w-6 h-6 animate-spin text-teal-400" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-md space-y-4">
+      <Card className="bg-slate-800 border-slate-700">
+        <CardHeader className="py-4 px-5 border-b border-slate-700">
+          <CardTitle className="text-white text-sm flex items-center gap-2">
+            <Store className="w-4 h-4 text-teal-400" />
+            Business Details
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="pt-5">
+          <p className="text-slate-400 text-xs mb-4">
+            This is what prints on every invoice header — shop name, address,
+            phone and GST number.
+          </p>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <Field label="Shop Name *">
+              <Input
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                required
+                minLength={2}
+                className={inputCls}
+              />
+            </Field>
+            <Field label="Address">
+              <Input
+                value={form.address ?? ""}
+                onChange={(e) => setForm({ ...form, address: e.target.value })}
+                placeholder="Shop address, city, state"
+                className={inputCls}
+              />
+            </Field>
+            <Field label="Phone">
+              <Input
+                value={form.phone ?? ""}
+                onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                placeholder="10-digit phone number"
+                className={inputCls}
+              />
+            </Field>
+            <Field label="GST Number">
+              <Input
+                value={form.gstNumber ?? ""}
+                onChange={(e) =>
+                  setForm({ ...form, gstNumber: e.target.value })
+                }
+                placeholder="e.g. 09AAACM1234A1Z5"
+                className={inputCls}
+              />
+            </Field>
+            <Button
+              type="submit"
+              disabled={saving}
+              className="w-full bg-teal-600 hover:bg-teal-500 text-white"
+            >
+              {saving ? (
+                <Loader2 className="w-4 h-4 animate-spin mr-2" />
+              ) : null}
+              Save Changes
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
 // CHANGE PASSWORD TAB
 // ═══════════════════════════════════════════════════════
 
@@ -228,7 +358,9 @@ function PasswordTab() {
         useAuthStore.setState({ token: fresh });
       }
 
-      toast.success("Password changed. Any other devices have been signed out.");
+      toast.success(
+        "Password changed. Any other devices have been signed out.",
+      );
       setForm({ currentPassword: "", newPassword: "", confirmPassword: "" });
       setStrength(0);
     } catch (err: unknown) {
@@ -394,7 +526,9 @@ function PasswordTab() {
                   form.newPassword.length >= 12 &&
                     !form.newPassword
                       .toLowerCase()
-                      .includes((user?.email ?? "@").split("@")[0].toLowerCase()),
+                      .includes(
+                        (user?.email ?? "@").split("@")[0].toLowerCase(),
+                      ),
                 ],
               ].map(([label, met]) => (
                 <div key={String(label)} className="flex items-center gap-2">
@@ -709,9 +843,10 @@ function UsersTab() {
           </DialogHeader>
           <div className="space-y-4">
             <p className="text-sm text-slate-400">
-              Give this to <span className="text-white">{resetResult?.email}</span>.
-              They must change it at next sign-in, and every session they had
-              open has ended.
+              Give this to{" "}
+              <span className="text-white">{resetResult?.email}</span>. They
+              must change it at next sign-in, and every session they had open
+              has ended.
             </p>
             <div
               className="flex items-center gap-2 rounded-md border border-slate-600
@@ -924,6 +1059,14 @@ export default function Settings() {
           </TabsTrigger>
           {user?.role === "ADMIN" && (
             <TabsTrigger
+              value="shop"
+              className="data-[state=active]:bg-teal-600 data-[state=active]:text-white text-slate-400"
+            >
+              <Store className="w-4 h-4 mr-2" /> Shop
+            </TabsTrigger>
+          )}
+          {user?.role === "ADMIN" && (
+            <TabsTrigger
               value="users"
               className="data-[state=active]:bg-teal-600 data-[state=active]:text-white text-slate-400"
             >
@@ -938,6 +1081,11 @@ export default function Settings() {
         <TabsContent value="password">
           <PasswordTab />
         </TabsContent>
+        {user?.role === "ADMIN" && (
+          <TabsContent value="shop">
+            <ShopTab />
+          </TabsContent>
+        )}
         {user?.role === "ADMIN" && (
           <TabsContent value="users">
             <UsersTab />
