@@ -31,7 +31,9 @@ const asRole = (role: User["role"]) =>
 const renderSidebar = () =>
   render(
     <MemoryRouter>
-      <Sidebar collapsed={false} />
+      {/* The drawer props belong to the phone layout; this file is about the
+          role filter, which is the same either side of the breakpoint. */}
+      <Sidebar collapsed={false} open={false} onClose={() => {}} />
     </MemoryRouter>,
   );
 

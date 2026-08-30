@@ -30,7 +30,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
+import { TabSwitcher, type TabItem } from "@/components/layout/TabSwitcher";
 import { Separator } from "@/components/ui/separator";
 import {
   Dialog,
@@ -1555,7 +1556,16 @@ function SuppliersTab() {
 // MAIN INVENTORY PAGE
 // ═══════════════════════════════════════════════════════
 
+const INVENTORY_TABS: TabItem[] = [
+  { value: "medicines", label: "Medicines", icon: Package },
+  { value: "batches", label: "Stock Batches", icon: Layers },
+  { value: "categories", label: "Categories", icon: FlaskConical },
+  { value: "suppliers", label: "Suppliers", icon: Truck },
+];
+
 export default function Inventory() {
+  const [tab, setTab] = useState("medicines");
+
   return (
     <div className="space-y-4">
       <div>
@@ -1567,33 +1577,8 @@ export default function Inventory() {
 
       <Separator className="bg-slate-800" />
 
-      <Tabs defaultValue="medicines" className="space-y-4">
-        <TabsList className="bg-slate-800 border border-slate-700">
-          <TabsTrigger
-            value="medicines"
-            className="data-[state=active]:bg-teal-600 data-[state=active]:text-white text-slate-400"
-          >
-            <Package className="w-4 h-4 mr-2" /> Medicines
-          </TabsTrigger>
-          <TabsTrigger
-            value="batches"
-            className="data-[state=active]:bg-teal-600 data-[state=active]:text-white text-slate-400"
-          >
-            <Layers className="w-4 h-4 mr-2" /> Stock Batches
-          </TabsTrigger>
-          <TabsTrigger
-            value="categories"
-            className="data-[state=active]:bg-teal-600 data-[state=active]:text-white text-slate-400"
-          >
-            <FlaskConical className="w-4 h-4 mr-2" /> Categories
-          </TabsTrigger>
-          <TabsTrigger
-            value="suppliers"
-            className="data-[state=active]:bg-teal-600 data-[state=active]:text-white text-slate-400"
-          >
-            <Truck className="w-4 h-4 mr-2" /> Suppliers
-          </TabsTrigger>
-        </TabsList>
+      <Tabs value={tab} onValueChange={setTab} className="space-y-4">
+        <TabSwitcher tabs={INVENTORY_TABS} value={tab} onValueChange={setTab} />
 
         <TabsContent value="medicines">
           <MedicinesTab />

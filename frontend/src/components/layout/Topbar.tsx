@@ -73,16 +73,24 @@ export default function Topbar({ collapsed, onToggle, title }: TopbarProps) {
 
   return (
     <header
-      className={`fixed top-0 right-0 h-16 bg-slate-900 border-b border-slate-800
-      flex items-center gap-4 px-4 z-20 transition-all duration-300
-      ${collapsed ? "left-16" : "left-60"}`}
+      className={cn(
+        `fixed top-0 right-0 h-16 bg-slate-900 border-b border-slate-800
+         flex items-center gap-2 sm:gap-4 px-3 sm:px-4 z-20 transition-all duration-300`,
+        // Flush to the edge on a phone: the sidebar is a drawer there, not a
+        // column, so there is nothing beside the topbar to leave room for.
+        "left-0",
+        collapsed ? "md:left-16" : "md:left-60",
+      )}
     >
       {/* Toggle */}
       <Button
         variant="ghost"
         size="icon"
         onClick={onToggle}
-        className="text-slate-400 hover:text-white hover:bg-slate-800"
+        // An icon-only button with no name at all: a screen reader announced
+        // "button", and nothing could address it by role either.
+        aria-label="Toggle navigation"
+        className="text-slate-400 hover:text-white hover:bg-slate-800 shrink-0"
       >
         <Menu className="w-5 h-5" />
       </Button>

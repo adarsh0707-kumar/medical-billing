@@ -25,7 +25,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
+import { TabSwitcher, type TabItem } from "@/components/layout/TabSwitcher";
 import {
   Dialog,
   DialogContent,
@@ -1031,6 +1032,19 @@ function UsersTab() {
 
 export default function Settings() {
   const { user } = useAuthStore();
+  const [tab, setTab] = useState("profile");
+
+  const isAdmin = user?.role === "ADMIN";
+  const tabs: TabItem[] = [
+    { value: "profile", label: "Profile", icon: User },
+    { value: "password", label: "Password", icon: Lock },
+    ...(isAdmin
+      ? ([
+          { value: "shop", label: "Shop", icon: Store },
+          { value: "users", label: "User Management", icon: Users },
+        ] as TabItem[])
+      : []),
+  ];
 
   return (
     <div className="space-y-4">
@@ -1043,37 +1057,8 @@ export default function Settings() {
 
       <Separator className="bg-slate-800" />
 
-      <Tabs defaultValue="profile" className="space-y-4">
-        <TabsList className="bg-slate-800 border border-slate-700">
-          <TabsTrigger
-            value="profile"
-            className="data-[state=active]:bg-teal-600 data-[state=active]:text-white text-slate-400"
-          >
-            <User className="w-4 h-4 mr-2" /> Profile
-          </TabsTrigger>
-          <TabsTrigger
-            value="password"
-            className="data-[state=active]:bg-teal-600 data-[state=active]:text-white text-slate-400"
-          >
-            <Lock className="w-4 h-4 mr-2" /> Password
-          </TabsTrigger>
-          {user?.role === "ADMIN" && (
-            <TabsTrigger
-              value="shop"
-              className="data-[state=active]:bg-teal-600 data-[state=active]:text-white text-slate-400"
-            >
-              <Store className="w-4 h-4 mr-2" /> Shop
-            </TabsTrigger>
-          )}
-          {user?.role === "ADMIN" && (
-            <TabsTrigger
-              value="users"
-              className="data-[state=active]:bg-teal-600 data-[state=active]:text-white text-slate-400"
-            >
-              <Users className="w-4 h-4 mr-2" /> User Management
-            </TabsTrigger>
-          )}
-        </TabsList>
+      <Tabs value={tab} onValueChange={setTab} className="space-y-4">
+        <TabSwitcher tabs={tabs} value={tab} onValueChange={setTab} />
 
         <TabsContent value="profile">
           <ProfileTab />

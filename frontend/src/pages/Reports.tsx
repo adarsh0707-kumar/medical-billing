@@ -32,7 +32,8 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
+import { TabSwitcher, type TabItem } from "@/components/layout/TabSwitcher";
 import { Separator } from "@/components/ui/separator";
 import api from "@/lib/api";
 import { downloadCsv } from "@/lib/download";
@@ -1067,6 +1068,19 @@ function SalesTrend() {
 export default function Reports() {
   const { user } = useAuthStore();
   const canViewGst = user?.role === "ADMIN" || user?.role === "PHARMACIST";
+  const [tab, setTab] = useState("daily");
+
+  // GST is filtered out for a cashier rather than rendered disabled: a tab that
+  // cannot be opened is worse on a phone, where it costs a line of the dropdown
+  // and explains nothing.
+  const tabs: TabItem[] = [
+    { value: "daily", label: "Daily Report", icon: Receipt },
+    ...(canViewGst
+      ? [{ value: "gst", label: "GST Report", icon: FileText }]
+      : []),
+    { value: "trend", label: "Sales Trend", icon: TrendingUp },
+    { value: "alerts", label: "Stock Alerts", icon: AlertTriangle },
+  ];
 
   return (
     <div className="space-y-4">
@@ -1079,35 +1093,8 @@ export default function Reports() {
 
       <Separator className="bg-slate-800" />
 
-      <Tabs defaultValue="daily" className="space-y-4">
-        <TabsList className="bg-slate-800 border border-slate-700">
-          <TabsTrigger
-            value="daily"
-            className="data-[state=active]:bg-teal-600 data-[state=active]:text-white text-slate-400"
-          >
-            <Receipt className="w-4 h-4 mr-2" /> Daily Report
-          </TabsTrigger>
-          {canViewGst && (
-            <TabsTrigger
-              value="gst"
-              className="data-[state=active]:bg-teal-600 data-[state=active]:text-white text-slate-400"
-            >
-              <FileText className="w-4 h-4 mr-2" /> GST Report
-            </TabsTrigger>
-          )}
-          <TabsTrigger
-            value="trend"
-            className="data-[state=active]:bg-teal-600 data-[state=active]:text-white text-slate-400"
-          >
-            <TrendingUp className="w-4 h-4 mr-2" /> Sales Trend
-          </TabsTrigger>
-          <TabsTrigger
-            value="alerts"
-            className="data-[state=active]:bg-teal-600 data-[state=active]:text-white text-slate-400"
-          >
-            <AlertTriangle className="w-4 h-4 mr-2" /> Stock Alerts
-          </TabsTrigger>
-        </TabsList>
+      <Tabs value={tab} onValueChange={setTab} className="space-y-4">
+        <TabSwitcher tabs={tabs} value={tab} onValueChange={setTab} />
 
         <TabsContent value="daily">
           <DailyReport />
