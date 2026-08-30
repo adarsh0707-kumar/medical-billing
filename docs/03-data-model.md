@@ -539,7 +539,9 @@ These must hold at all times. Any new write path must preserve them.
 | `20260824113643_add_partial_returns`     | 2026-08-24 | Adds`InvoiceItem.returnedQty` and **drops** the unique index on `Invoice.reversesId`. A sale may now have several credit notes, so the single-shot guarantee moves from that index to a cumulative per-line counter applied with a conditional update (FR-BILL-17) |
 | `20260828120000_add_shops_multi_tenant`  | 2026-08-28 | Adds the`Shop` table and a `shopId` on User, Category, Manufacturer, Medicine, Batch, Customer, Supplier, Invoice, InvoiceCounter and AuditLog, with an index on each. Re-keys `Category` and `Manufacturer` to `@@unique([shopId, name])`, `Customer` to `@@unique([shopId, phone])`, `Invoice` to `@@unique([shopId, invoiceNumber])`, and `InvoiceCounter` to `@@id([shopId, day])`. See §3.0 |
 
-All 17 are applied — confirmed against `_prisma_migrations` on 2026-08-29. Two of them contain SQL that exists **only** in migration history and cannot be reproduced from `schema.prisma`; see the note in §4 before rebuilding a database with `db push`.
+| `20260830190000_drop_stale_global_unique_indexes` | 2026-08-30 | **Hand-written.** Drops`Category_name_key`, `Manufacturer_name_key`, `Customer_phone_key` and `Invoice_invoiceNumber_key`, which the multi-tenant migration meant to remove and did not — it used `ALTER TABLE ... DROP CONSTRAINT IF EXISTS`, and Prisma writes `@unique` as a bare `CREATE UNIQUE INDEX`, so all four missed silently. See the note below |
+
+All 18 are applied — confirmed against `_prisma_migrations` on 2026-08-30. Two of them contain SQL that exists **only** in migration history and cannot be reproduced from `schema.prisma`; see the note in §4 before rebuilding a database with `db push`.
 
 Workflow:
 
@@ -551,6 +553,20 @@ npx prisma studio                        # browse data
 ```
 
 The client is generated for `["native", "linux-musl-openssl-3.0.x"]` so the same generated client works on the host and inside Alpine-based images.
+
+---
+
+### A migration that half-applied without saying so
+
+`20260828120000_add_shops_multi_tenant` re-keyed four columns from global to per-shop and removed the old keys with `ALTER TABLE "Category" DROP CONSTRAINT IF EXISTS "Category_name_key"`. Prisma emits `@unique` as a bare `CREATE UNIQUE INDEX`, not a table constraint, so `DROP CONSTRAINT` matched nothing — and `IF EXISTS` turned the miss into a silent success. The migration reported applied, the per-shop keys were added *alongside* the global ones, and `_prisma_migrations` said tenancy had landed.
+
+It ran undetected for two days because the development database had only ever had one real shop. What it cost, measured before the fix:
+
+- **`Invoice_invoiceNumber_key` — the severe one.** Serials restart at `-0001` per shop per day, so the **second shop to sell on any given day could not sell at all**: `409 A record with this value already exists`. `createInvoice`'s `P2002` retry could not help, because every attempt re-derives the same per-shop serial.
+- **`Category_name_key` / `Manufacturer_name_key`** — a new shop could not create a category any other shop had already named. Whoever typed "Tablet" first held it system-wide.
+- **`Customer_phone_key`** — two shops could not both hold a customer with the same phone, which for two chemists on one street is ordinary.
+
+**When dropping a Prisma `@unique` by hand, use `DROP INDEX IF EXISTS`.** `DROP CONSTRAINT IF EXISTS` is not the same statement and will not tell you it did nothing. The guard is behavioural rather than a check on the index list — `backend/tests/auth/signup.test.js` asserts two shops can hold the same category name, the same customer phone and the same invoice number.
 
 ---
 

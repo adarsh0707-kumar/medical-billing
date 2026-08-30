@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+#### Only one shop could trade — the multi-tenant migration half-applied
+
+`20260828120000_add_shops_multi_tenant` re-keyed `Category.name`, `Manufacturer.name`, `Customer.phone` and `Invoice.invoiceNumber` from global to per-shop, and dropped the old keys with `ALTER TABLE ... DROP CONSTRAINT IF EXISTS`. Prisma writes `@unique` as a bare `CREATE UNIQUE INDEX`, so that statement matched nothing, and `IF EXISTS` made the miss silent. The migration reported applied with every global key still in place.
+
+**Invoice serials restart at `-0001` per shop per day, so the second shop to sell on any given day could not sell at all** — `409 A record with this value already exists`, on a sale the customer had already paid for. The `P2002` retry in `createInvoice` was no help: every attempt re-derives the same per-shop serial. A new shop also could not create a category or manufacturer any other shop had named, and two shops could not hold a customer with the same phone number.
+
+Found while investigating a report that the new monthly report showed no invoices. It showed none because the shop had none: its sales were being refused. Fixed by `20260830190000_drop_stale_global_unique_indexes`, using `DROP INDEX`. The guard asserts the behaviour rather than the index list, so it fails the same way if the keys return by another route.
+
 ### Added
 
 #### Monthly and yearly reports (FR-RPT-10, FR-RPT-11)

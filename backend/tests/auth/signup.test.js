@@ -8,6 +8,7 @@ import {
   makeMasters,
   makeMedicine,
   makeBatch,
+  makeSellable,
   signIn,
   line,
   PASSWORD,
@@ -444,6 +445,78 @@ describe("tenant isolation across the resource controllers", () => {
     });
     expect(customer.anonymisedAt).toBeNull();
     expect(customer.name).toBe("A's Customer");
+  });
+
+  /**
+   * GUARD — the per-shop keys are the *only* uniqueness on these four columns.
+   *
+   * The multi-tenant migration re-keyed Category.name, Manufacturer.name,
+   * Customer.phone and Invoice.invoiceNumber from global to per-shop, and tried
+   * to drop the old keys with `ALTER TABLE ... DROP CONSTRAINT IF EXISTS`.
+   * Prisma writes `@unique` as a bare `CREATE UNIQUE INDEX`, so that matched
+   * nothing and `IF EXISTS` made the miss silent: the migration reported
+   * applied with every global key still in place.
+   *
+   * The cost was not subtle. Serials restart at `-0001` per shop per day, so
+   * with `Invoice_invoiceNumber_key` still global the **second shop to sell on
+   * any day could not sell at all** — a 409 on a sale the customer had paid
+   * for. Fixed by `20260830190000_drop_stale_global_unique_indexes`.
+   *
+   * This asserts the behaviour rather than the index list, so it fails the same
+   * way if the keys ever come back by another route.
+   */
+  it("lets two shops hold the same names, phones and invoice numbers", async () => {
+    const name = `Tablet ${Date.now()}`;
+    const phone = `9${Date.now()}`.slice(0, 10);
+
+    for (const token of [tokenA, tokenB]) {
+      const category = await request(app)
+        .post("/api/inventory/categories")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ name });
+      expect(category.status).toBe(201);
+
+      const customer = await request(app)
+        .post("/api/customers")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ name: "Shared Phone", phone });
+      expect(customer.status).toBe(201);
+    }
+
+    // The one that stopped a shop trading. Shop A already sold once in the
+    // beforeEach, so its series is ahead; shop B must still open its own at
+    // -0001 and walk into a number A is already holding.
+    const sell = async (token, shopId) => {
+      const { medicine, batch } = await makeSellable({ shopId, quantity: 5 });
+      const sale = await request(app)
+        .post("/api/billing/invoices")
+        .set("Authorization", `Bearer ${token}`)
+        .send({
+          items: [line(medicine, batch)],
+          paymentMode: "CASH",
+          paymentStatus: "PAID",
+        });
+      expect(sale.status).toBe(201);
+      return sale.body.data.invoiceNumber;
+    };
+
+    const aSecond = await sell(tokenA, shopA.id);
+    const bFirst = await sell(tokenB, shopB.id);
+    const bSecond = await sell(tokenB, shopB.id);
+
+    // B's series is its own and starts at 1, regardless of what A has done.
+    expect(bFirst).toMatch(/-0001$/);
+    expect(bSecond).toBe(aSecond);
+
+    // And both rows genuinely exist under that one number, in different shops.
+    const shared = await prisma.invoice.findMany({
+      where: { invoiceNumber: aSecond },
+      select: { shopId: true },
+    });
+    expect(shared).toHaveLength(2);
+    expect(new Set(shared.map((i) => i.shopId))).toEqual(
+      new Set([shopA.id, shopB.id]),
+    );
   });
 
   it("lists only shop B's own user accounts", async () => {
