@@ -139,6 +139,39 @@ Batches, categories and manufacturers stay under `/api/inventory`, and invoices 
 
 New routes go on the resource router, never on an alias.
 
+### Every query is scoped to one shop, and forgetting is silent
+
+One installation holds many pharmacies. Every shop-specific table carries a
+`shopId`, and **a query that omits it leaks one shop's data into another's
+screen** — without throwing, and with a response that looks entirely normal to
+whoever reads it. This is the easiest serious mistake to make in this codebase.
+
+The shop comes from the token, never from the request:
+
+```js
+where: { id: req.params.id, shopId: req.user.shopId }
+```
+
+Two rules follow, and both look wrong until you know why:
+
+- **Scoped writes use `updateMany` / `deleteMany`, never `update` / `delete`.**
+  The singular forms accept only a unique selector, so `shopId` cannot join `id`
+  in the same `where` — it would have to be a check *after* the read, which
+  makes the boundary a property of control flow rather than of the query. With
+  the bulk forms, `count === 0` **is** the 404. Read the row back afterwards if
+  you need to return it.
+- **Answer `404`, not `403`, for another shop's id.** A 403 confirms the row
+  exists, which turns a guessed id into a probe for another pharmacy's
+  catalogue. The scoped `where` gives you this for free — it cannot tell the two
+  cases apart, and that is the point.
+
+`backend/tests/auth/signup.test.js` asserts this across the resource
+controllers, the user list and the dashboard. If you add a resource, add it
+there too.
+
+Full rules: [FR-SHOP](./docs/01-product-requirements.md#60-tenancy--fr-shop) and
+[03 §3.0](./docs/03-data-model.md#30-shop--the-tenant).
+
 ### Never select the password hash
 
 Every user query uses an explicit `select` that omits `password`. The only exceptions are `login` and `changePassword`, which need it to compare. Preserve that.

@@ -106,7 +106,8 @@ These are **already documented** in [`docs/07-security.md`](./docs/07-security.m
 
 | Issue | Status |
 |---|---|
-| Seeded admin credentials (`admin@medstore.com` / `admin123`) are in the repository | By design for first-run setup. **Fixed 2026-08-20**: the account is created needing a password change, and the API refuses everything else until it happens. **Avoidable entirely since 2026-08-28**: `POST /api/auth/signup` lets the operator create the first administrator with a password of their own on an unclaimed installation, so there is no published credential to change. `npm run seed` remains for development |
+| Seeded admin credentials (`admin@medstore.com` / `admin123`) are in the repository | By design for first-run setup. **Fixed 2026-08-20**: the account is created needing a password change, and the API refuses everything else until it happens. **Avoidable entirely since 2026-08-28**: `POST /api/auth/signup` lets an operator create their own administrator with a password of their own choosing, so there is no published credential to change. `npm run seed` remains for development |
+| Signup is open to the public — anyone can create an account | **By design since 2026-08-29**, and a deliberate reversal. See [Open signup](#open-signup-and-what-changed-the-argument) below |
 | The PostgreSQL password is hard-coded in `docker-compose.yml` | Development default, and still true of the *development* file. `docker-compose.prod.yml` has no credential literals |
 | No TLS anywhere — nginx listens on `:80` only | **Fixed 2026-08-20** for the production stack: TLS, HSTS and an 80 → 443 redirect. The development stack is still plain HTTP, deliberately |
 | JWTs are stored in `localStorage` and are valid for 7 days | **Reduced 2026-08-22.** The access token is still in `localStorage` but now lasts **30 minutes**. The 7-day half is a `refresh_token` cookie marked `HttpOnly`, so script cannot read it. XSS gets a short-lived token rather than a renewable session |
@@ -120,6 +121,30 @@ These are **already documented** in [`docs/07-security.md`](./docs/07-security.m
 | PostgreSQL and Redis publish host ports, and Redis has no password | **Fixed 2026-08-20**: the production stack publishes only 80 and 443, and Redis was removed as an unused dependency |
 
 If you can demonstrate impact **beyond** what's described here — a way to exploit one of these that the documentation doesn't anticipate — that is a genuine finding. Please report it.
+
+---
+
+## Open signup, and what changed the argument
+
+`POST /api/auth/signup` is public and stays public. Anyone who can reach the API can create an account. Until **2026-08-29** the opposite was true, and this document argued for it at length, so the reversal is worth setting out rather than quietly editing away.
+
+**The old argument, which was correct at the time.** Signup was a one-shot bootstrap that sealed itself after the first account. The reasoning: every authenticated role can read customer records, and purchase history in a pharmacy reveals health conditions — [threat T-9](./docs/07-security.md). On a single-tenant installation a second account meant a second person inside *the same* pharmacy's customer list. A signup that worked twice would have been a data breach with a form in front of it.
+
+**What changed is not the risk appetite — it is what a second signup produces.** Since the multi-tenant conversion, each signup creates its own `Shop`, and a shop's rows are visible only to its own accounts ([FR-SHOP](./docs/01-product-requirements.md#60-tenancy--fr-shop)). A stranger signing up does not join your pharmacy; they get an empty one of their own. The old argument has not been rebutted — it has been made inapplicable, because the thing it protected against is no longer what the endpoint does.
+
+**What the boundary now rests on.** Previously, isolation was a consequence of there being only one shop: nothing could leak across a line that did not exist. Now the line exists and is enforced per query — a `shopId` carried in the token, and a `where` clause on every read and write that filters by it. That is a real change in the shape of the risk, not just in its size:
+
+- **A missing `shopId` in one query is a cross-tenant leak.** It would not throw, and the response would look entirely normal to whoever read it. This is why scoped writes use `updateMany`/`deleteMany` — the tenant condition sits in the same `where` as the id, so the boundary is the statement rather than a check someone remembered to write beside it ([03 §3.0](./docs/03-data-model.md#30-shop--the-tenant)).
+- **It is guarded, not assumed.** `backend/tests/auth/signup.test.js` creates two shops and asserts across the resource controllers, the user list and the dashboard that neither sees the other, and that a foreign id answers 404 rather than 403 — a 403 would confirm the row exists and turn a guessed id into a probe.
+- **A cross-tenant read is the highest-severity finding this project can receive.** If you can get one shop's data out of another shop's session, please report it under the process above; it takes precedence over everything in the known-issues table.
+
+**What open signup does still cost**, and these are accepted rather than solved:
+
+- **Unbounded account and shop creation.** Nothing limits how many shops one person opens. The failed-login limiter covers the endpoint at 10 per 15 minutes per client, which bounds the rate but not the total; a determined caller can still fill the table over time. There is no email verification, so the addresses are not proven either.
+- **Each call spends a cost-12 bcrypt hash** before anything is written. That is deliberate — a cheaper hash for signup would be a cheaper hash for the password it stores — but it does make the endpoint the most expensive unauthenticated work in the API.
+- **`User.email` is unique system-wide**, so one signup can discover whether an address already has an account, in any shop, from the `409`. Accepted: the alternative is a signup that silently does nothing, and login takes an email with no shop selector, so the address has to be unique regardless ([FR-SHOP-06](./docs/01-product-requirements.md#60-tenancy--fr-shop)).
+
+If open signup is not what your deployment wants — an internal installation for one pharmacy, say — put the API behind a network boundary or a reverse-proxy rule on `POST /api/auth/signup`, and use `npm run seed` plus `POST /api/auth/register` to create accounts. There is no configuration flag for this today.
 
 ---
 
@@ -174,6 +199,7 @@ Briefly, so you know what to expect when reviewing:
 | Sessions | JWT (HS256) access token, **30-minute** expiry, carrying `{ id, tokenVersion }`. The week is carried by a rotating `HttpOnly` `refresh_token` cookie |
 | Revocation | Three levers, all effective on the next request because every protected request reloads the user: `POST /api/auth/logout`, a password change, and deactivating an account. Each bumps `User.tokenVersion`, which every token carries a copy of, so all of that account's sessions end. A password change hands the caller a replacement token so only the other sessions drop |
 | Authorisation | Server-side `authorize(...roles)` on every mutating route; client-side checks are cosmetic only |
+| Tenant isolation | Every shop-specific row carries a `shopId`; the caller's comes from a JWT claim, never from the request. Reads and writes scope by `{ id, shopId }` in the same `where`, so a foreign id is a 404 rather than a 403 |
 | Input validation | Zod on every mutating route; unknown keys stripped, and rejected outright on the most sensitive routes |
 | SQL injection | Prisma parameterises everything. Five raw statements exist — two document-serial upserts, two trend aggregations and the readiness probe — and every one is a bound `$queryRaw` tagged template. `$queryRawUnsafe` appears nowhere ([full list](./docs/07-security.md#5-injection--data-access-safety)) |
 | Rate limiting | 500 requests / 15 min per client, plus 10 failed logins / 15 min |
@@ -184,4 +210,4 @@ Full detail, including the threat model and the prioritised hardening backlog: [
 
 ---
 
-*Last reviewed: 22 August 2026.*
+*Last reviewed: 29 August 2026.*

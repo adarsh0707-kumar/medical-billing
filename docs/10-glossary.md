@@ -24,6 +24,8 @@ Domain and system vocabulary used across this documentation and in the code.
 
 **Schedule H** — A category under India's Drugs and Cosmetics Rules covering medicines that may be sold only against a registered practitioner's prescription. `Medicine.isScheduledH` flags them, the POS shows a badge, and since 2026-08-24 an invoice containing such a line **cannot be created without a register entry** — prescriber, council registration number, prescription date and patient name, written in the same transaction as the sale ([FR-MED-12](./01-product-requirements.md#64-medicine-catalogue--fr-med)).
 
+**Shop** — A pharmacy, and the tenant boundary. One installation holds many; every row of shop-specific data carries a `shopId`, and a shop's data is visible only to its own accounts. A caller's shop comes from a claim in their token, never from the request, so there is nothing a client can name but its own ([03 §3.0](./03-data-model.md#30-shop--the-tenant)).
+
 **Supplier** — The distributor or stockist a batch is purchased from. Carries a GSTIN. Every batch records its supplier, which is what makes a recall traceable back to source.
 
 **Unit** — The dispensing form: tablet, capsule, syrup, injection, cream, drops, powder, inhaler, other. Constrained by the Zod validator, not by the database.

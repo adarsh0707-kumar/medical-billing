@@ -12,7 +12,7 @@ A conventional **three-tier layered monolith**, containerised:
 - **Application** — a single stateless Express process exposing REST/JSON. Layered `routes → middleware → validator → controller → Prisma`.
 - **Data** — PostgreSQL as the system of record. There is no cache layer: a Redis service was provisioned before it had a consumer and removed in Phase 8 without ever acquiring one ([G-03](./08-gap-analysis.md#g-03)).
 
-There is no service mesh, message queue, or background worker. Every operation is a synchronous request/response. This is a deliberate fit for the target deployment: one store, one host, a handful of concurrent users.
+There is no service mesh, message queue, or background worker. Every operation is a synchronous request/response. This is a deliberate fit for the target deployment: one host, a handful of concurrent users per shop. Since 2026-08-29 a single process serves **many** pharmacies — see [03 §3.0](./03-data-model.md#30-shop--the-tenant) — but each is a small shop, and they share the process rather than straining it.
 
 **Why a monolith:** the domain is small and highly transactional (invoice + stock must commit together). Splitting billing from inventory would force a distributed transaction for the single most important write path in the product.
 
@@ -453,7 +453,7 @@ Everything [Phase 8](./05-roadmap-and-phases.md#phase-8--production-readiness) l
 
 ## 10. Scalability & performance notes
 
-**Current ceiling.** One backend process, one Postgres instance. Comfortable for a single store: a few concurrent users, thousands of medicines, tens of thousands of invoices.
+**Current ceiling.** One backend process, one Postgres instance, shared by every shop on the installation. Comfortable for a handful of small pharmacies: a few concurrent users each, thousands of medicines, tens of thousands of invoices. The tenancy model puts no ceiling on shop *count* — every table is indexed on `shopId` — but they compete for one connection pool, which is where the limit will show up first.
 
 **First bottlenecks, in the order they will bite:**
 

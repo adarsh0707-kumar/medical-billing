@@ -35,14 +35,34 @@ docker compose exec backend npm run seed     # creates the bootstrap admin
 Sign in with `admin@medstore.com` / `admin123`. **Change that password before the
 system is reachable by anyone else** — see [SECURITY.md](./SECURITY.md).
 
-Or skip the seed entirely: on an installation with no accounts the login page
-offers **Set up this system**, which creates the first administrator with a
-password you choose. That link disappears the moment an account exists, and the
-endpoint behind it refuses regardless of what the page renders — it is first-run
-setup, not open registration.
+Or skip the seed entirely: the login page offers **New shop? Create your
+account**, which opens a shop of your own and signs you in as its administrator
+with a password you choose. That is open registration, deliberately — see
+[Multiple shops](#multiple-shops).
 
 Both entry points serve the SPA and proxy `/api` to the backend on the **same
 origin**, so CORS never applies to the browser.
+
+---
+
+## Multiple shops
+
+Since **2026-08-29** one installation holds any number of pharmacies. Each is a
+`Shop`; every row of shop-specific data carries a `shopId`; and a shop's data is
+visible only to its own accounts. A caller's shop comes from their token, never
+from the request, so there is nothing for a client to target — the only shop a
+request can reach is the one its token names.
+
+`POST /api/auth/signup` is public and stays public. Signing up creates a new,
+empty shop rather than joining an existing one, which is why it is no longer the
+one-shot bootstrap it was for its first day. [SECURITY.md](./SECURITY.md#open-signup-and-what-changed-the-argument)
+sets out the argument that changed, what the boundary rests on now, and what
+open signup still costs. If you want a single-pharmacy installation, put a
+proxy rule in front of that one endpoint and create accounts with
+`POST /api/auth/register`; there is no configuration flag for it today.
+
+Requirements: [FR-SHOP](./docs/01-product-requirements.md#60-tenancy--fr-shop).
+Schema: [03 §3.0](./docs/03-data-model.md#30-shop--the-tenant).
 
 ---
 
@@ -92,6 +112,33 @@ paths still work, now marked deprecated, and are removed in 2.1.0. The mapping
 is in [04 §2a](./docs/04-api-reference.md).
 
 ---
+
+## Hosted deployment — one origin, and an open question
+
+The Docker stack is unambiguously same-origin: nginx and the Vite dev server
+both serve the SPA and proxy `/api` to the backend, so CORS never applies to the
+browser.
+
+The hosted deployment is meant to work the same way. `frontend/vercel.json`
+rewrites `/api/:path*` to the Render backend, and a Vercel rewrite is a
+**server-side proxy** — the browser requests `/api/...` on the Vercel origin and
+never learns that Render answered. `frontend/Dockerfile` and `lib/api.ts` agree:
+no `VITE_API_URL` is set, so the client uses a relative base URL.
+
+**But the refresh cookie was relaxed to `SameSite=None` on 2026-08-29** to fix
+silent refresh failing, on the reasoning that the SPA and API are cross-site.
+Both cannot be true. The rewrite predates that change by two days, so if it is
+what the deployment actually uses, `SameSite=None` is unnecessary — and it is
+not free: it widens CSRF exposure on `POST /api/auth/refresh`, which
+`SameSite=Strict` was chosen to close.
+
+The one thing that would make the deployment genuinely cross-site is
+`VITE_API_URL` being set in the Vercel project's environment, which is not
+visible in this repository. **To settle it:** check that variable in the Vercel
+dashboard, or open the deployed app and look at whether the network panel shows
+`/api/...` on the app's own origin or an absolute `onrender.com` URL. If it is
+same-origin, revert `refreshCookieOptions()` in
+`backend/src/controllers/auth.controller.js` to `sameSite: "strict"`.
 
 ## Tests
 

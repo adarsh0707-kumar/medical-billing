@@ -83,6 +83,21 @@ See non-goals, §3.
 
 Status legend: `✅` implemented · `🟡` partial · `⬜` planned. "Roles" is the server-enforced authorisation, verified in `backend/src/routes/`.
 
+### 6.0 Tenancy — `FR-SHOP`
+
+Added 2026-08-29. The system holds any number of pharmacies side by side; each is a `Shop`, and a shop's data is visible only to its own accounts. This supersedes the "multi-store is a non-goal for 1.x" line that stood in the roadmap until that date.
+
+| ID         | Requirement                                                                                      | Roles  | Status | Evidence                                                                                                                                                                       |
+| ---------- | ------------------------------------------------------------------------------------------------ | ------ | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| FR-SHOP-01 | Every row of shop-specific data carries a `shopId`, and every query filters on it              | —     | ✅     | `Shop` in [schema.prisma](../backend/prisma/schema.prisma); `shopId` on User, Category, Manufacturer, Medicine, Batch, Customer, Supplier, Invoice, InvoiceCounter, AuditLog |
+| FR-SHOP-02 | A caller's shop comes from their token, never from the request                                   | All    | ✅     | `shopId` is a JWT claim, read as `req.user.shopId`. No endpoint accepts one in a body or query string                                                                       |
+| FR-SHOP-03 | A record belonging to another shop is indistinguishable from one that does not exist             | All    | ✅     | Reads and writes scope by `{ id, shopId }` in the same `where`, so a foreign id answers **404**, never 403 — a 403 would confirm the row exists                       |
+| FR-SHOP-04 | Categories and manufacturers are per-shop, not shared                                            | —     | ✅     | `@@unique([shopId, name])` on both. Each shop types "Tablet" into its own list once; a shared lookup row would be a boundary break, not a convenience                       |
+| FR-SHOP-05 | Invoice serials are per-shop, so two shops both start at`-0001`                                | —     | ✅     | `InvoiceCounter` is keyed `@@id([shopId, day])`; `Invoice` is `@@unique([shopId, invoiceNumber])`                                                                     |
+| FR-SHOP-06 | An email identifies one account system-wide                                                      | —     | ✅     | `User.email` is globally unique **by design** — login takes an email and a password with no shop selector, so a shared address would be ambiguous at the one lookup that matters. Somebody running two shops holds two accounts |
+| FR-SHOP-07 | An administrator maintains their shop's own business details, which the invoice header prints    | ADMIN  | ✅     | `GET /api/shop` (any signed-in role — printing a bill is a cashier's job), `PUT /api/shop` (ADMIN). Always the caller's own shop; there is no id in the request to target another |
+| FR-SHOP-08 | Nothing in the schema relates one shop to another                                                | —     | ✅     | No cross-shop foreign key exists. Asserted end-to-end in `tests/auth/signup.test.js` across the resource controllers, the user list and the dashboard                     |
+
 ### 6.1 Authentication & session — `FR-AUTH`
 
 | ID         | Requirement                                                                                               | Roles  | Status | Evidence                                                                       |
@@ -96,9 +111,9 @@ Status legend: `✅` implemented · `🟡` partial · `⬜` planned. "Roles" is 
 | FR-AUTH-07 | An admin can register a new user through the auth route                                                   | ADMIN  | ✅     | `POST /api/auth/register`                                                    |
 | FR-AUTH-08 | Client discards the token on 401 and returns the user to login                                            | —     | ✅     | [api.ts](../frontend/src/lib/api.ts) response interceptor                       |
 | FR-AUTH-09 | Server-side logout / token revocation                                                                     | All    | ✅     | `POST /api/auth/logout` since 2026-08-22, **called by the SPA since 2026-08-25**. Increments `User.tokenVersion`, which every token carries a copy of, so **all** of that account's sessions end — not just the caller's. Between those dates the endpoint existed but the **Sign out** button was still only a client-side `localStorage` clear, leaving the refresh cookie renewable |
-| FR-AUTH-10 | Refresh-token rotation                                                                                    | All    | 🟡     | `generateRefreshToken` exists in `jwt.utils.js` but no route consumes it   |
+| FR-AUTH-10 | Refresh-token rotation                                                                                    | All    | ✅     | `POST /api/auth/refresh` consumes the `HttpOnly` cookie, retires its `RefreshToken` row and issues the next one in a single transaction. Presenting an already-rotated token is treated as theft rather than as a mistake: the counter is bumped and every row for that account revoked, ending all its sessions |
 | FR-AUTH-11 | Password reset by email                                                                                   | Public | ⬜     | Documented in`backend/README.md`; not implemented                            |
-| FR-AUTH-12 | First-run signup creates the one administrator, then closes permanently | Public | ✅ | `POST /api/auth/signup`; guarded by an advisory lock and asserted under a concurrent burst |
+| FR-AUTH-12 | Public signup creates a new shop and its first administrator | Public | ✅ | `POST /api/auth/signup`. Open permanently — every call creates its own `Shop` and one `ADMIN` who owns it. See [§6.0](#60-tenancy--fr-shop) |
 
 ### 6.2 User administration — `FR-USER`
 
@@ -179,7 +194,7 @@ Status legend: `✅` implemented · `🟡` partial · `⬜` planned. "Roles" is 
 | FR-CUST-05 | Register a new customer inline from the billing screen without leaving the cart    | All   | ✅                                            |
 | FR-CUST-06 | Update a customer                                                                  | All   | ✅                                            |
 | FR-CUST-07 | Bill a walk-in customer with no customer record                                    | All   | ✅ (`customerId` is optional on an invoice) |
-| FR-CUST-08 | Delete a customer                                                                  | ADMIN | ⬜ No delete route exists                     |
+| FR-CUST-08 | Erase a customer's personal details on request                                     | ADMIN | ✅`DELETE /api/customers/:id`. Anonymises in place rather than deleting: invoices reference the row and must still reconcile as books of account, so the name, phone, email, address and demographics are cleared and `anonymisedAt` is stamped. `npm run purge:customers -- --apply` does the same in bulk after 36 months of inactivity |
 
 ### 6.8 Billing / POS — `FR-BILL`
 

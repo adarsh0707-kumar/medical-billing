@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — BREAKING
+
+#### The system holds many pharmacies, not one (2026-08-29)
+
+Every row of shop-specific data now carries a `shopId`, and a shop's data is visible only to its own accounts. Until this landed, "multi-store" was listed in the roadmap as a **non-goal for 1.x**, with a note that it "would restructure every stock query." That estimate was accurate: `shopId` reaches ten tables and the `where` clause of every read and write across eleven controllers.
+
+**`POST /api/auth/signup` is open registration now**, and this is the reversal worth reading twice. It shipped a day earlier as a one-shot bootstrap that sealed itself after the first account, and the entry below argues at length that a signup which worked twice "would be a data breach with a form in front of it" — because any authenticated role can read customer records, and pharmacy purchase history reveals health conditions (threat T-9). That argument was correct for a single-tenant system and has not been rebutted. It has been made inapplicable: a second signup no longer produces a second person inside *your* pharmacy, it produces an empty pharmacy of their own. `SECURITY.md` sets out what the boundary now rests on instead, and what open signup still costs.
+
+- **`Shop`** holds the business details — name, address, phone, GST number — and every other shop-specific table foreign-keys to it. There is deliberately **no cross-shop relation anywhere in the schema**.
+- **Categories and manufacturers became per-shop.** They were global lookup tables, which under tenancy is an isolation break rather than a saving: one shop renaming "Analgesic" would rename it for everyone, and the list itself discloses what other pharmacies stock. The cost is that each shop types "Tablet" into its own list once.
+- **Invoice serials are per-shop**, so two pharmacies both start at `-0001`. `InvoiceCounter` is keyed on `(shopId, day)` and `Invoice` on `(shopId, invoiceNumber)`.
+- **`shopId` is a JWT claim.** No endpoint accepts one in a body or query string, so there is nothing for a caller to target — the only shop a request can reach is the one its token names.
+- **Scoped writes are `updateMany`/`deleteMany`, not `update`/`delete`.** Prisma's singular forms take only a unique selector, so `shopId` could not sit in the same `where` as `id`; it would have to be a separate check afterwards, which makes the boundary a property of control flow rather than of the query. A count of zero **is** the 404 — and 404 rather than 403 is deliberate, because a 403 confirms the row exists and turns a guessed id into a probe for another shop's catalogue.
+- **`User.email` stays globally unique.** Login takes an email and a password with no shop selector, so a shared address would be ambiguous at the one lookup that matters. Somebody running two shops holds two accounts.
+- **An admin-editable shop profile** (`GET`/`PUT /api/shop`, and a Shop tab in Settings) replaces the hardcoded placeholder in the printed invoice header. `GET` is open to every signed-in role, because printing a bill is a cashier's job and the contents are already on every invoice the shop hands out; `PUT` is ADMIN only and audited.
+- **`GET /api/auth/setup-status` is gone.** It answered "does this installation still need its first account", which is no longer a question that has an answer.
+- **The refresh cookie relaxed to `SameSite=None`** in production, paired with `Secure`, on the theory that a Vercel-hosted SPA calling a Render-hosted API is cross-site. **This may be unnecessary** — `frontend/vercel.json` rewrites `/api` to the backend, and a Vercel rewrite is a server-side proxy, so the browser should see one origin. It is flagged in `README.md` because `SameSite=None` widens CSRF exposure and should be reverted to `strict` if the rewrite is what the deployment actually uses.
+
+**What it cost, recorded rather than smoothed over.** Auditing broke for master data and stayed broken for a day: moving edits onto `updateMany` took them out of the audit middleware's single-record path, so category renames, supplier retirements and user deactivations wrote no audit row at all. Signup deadlocked the connection pool, because `Shop` and `User` are both audited and the audit write takes a second connection while the caller's transaction still holds the first — eight concurrent signups returned eight `500`s and created nothing, while the log kept five shop creations that had rolled back. Both are fixed. **The same hazard remains on the void path**, where `tx.batch.update` audits inside a transaction and five concurrent voids is the measured ceiling; `backend/tests/billing/invoice-void.test.js` documents the arithmetic and caps its own concurrency at four to stay under it.
+
+### The 2026-08-27 audit
+
 A full-surface audit on 2026-08-27 — code, tests, documentation and deployment — and the fixes for what it found. Three of the defects were the same shape: a date boundary drawn differently from the one drawn beside it.
 
 ### Fixed

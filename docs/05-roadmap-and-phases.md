@@ -96,7 +96,7 @@ The honest read as of **2026-08-20**: the correctness gaps that made v1.0.0 unsa
 - Fast POS search returning the FEFO batch inline.
 - Frontend Billing page: debounced search, cart with per-line discount, live totals, payment selection, print.
 
-**Known debt:** ~~numbering collision and the stock-check race~~ — both fixed 2026-08-18 ([G-01](./08-gap-analysis.md#g-01), [G-09](./08-gap-analysis.md#g-09)); ~~no void path~~ — voiding shipped 2026-08-20 ([G-15](./08-gap-analysis.md#g-15)). There is deliberately still no *edit*: a filed period must reconcile to what was filed, so a correction is a dated credit note rather than a rewrite. Partial returns remain unsupported.
+**Known debt:** ~~numbering collision and the stock-check race~~ — both fixed 2026-08-18 ([G-01](./08-gap-analysis.md#g-01), [G-09](./08-gap-analysis.md#g-09)); ~~no void path~~ — voiding shipped 2026-08-20 ([G-15](./08-gap-analysis.md#g-15)). There is deliberately still no *edit*: a filed period must reconcile to what was filed, so a correction is a dated credit note rather than a rewrite. ~~Partial returns remain unsupported.~~ **Partial returns shipped 2026-08-24** (FR-BILL-17): returning 2 of 5 units no longer means voiding the sale and re-billing it, which would have changed the invoice number the customer is holding. A sale can now carry several credit notes, so the single-shot guarantee moved from a unique index on `reversesId` to a cumulative `InvoiceItem.returnedQty` applied with the same atomic check-and-apply as the stock decrement in [G-09](./08-gap-analysis.md#g-09).
 
 ### Phase 4 — Customers & suppliers ✅
 
@@ -221,6 +221,27 @@ What it would take to build it properly, recorded so a future decision starts fr
 | ~~11.7~~ ✅ | Paginate batches — **done 2026-08-20**: 25,022 rows / 8.4 MB / 1651 ms → 20 rows / 6.8 KB / 8 ms. Suppliers and users measured at 11 ms and 7 ms and were left alone; categories, manufacturers and suppliers also feed form dropdowns, where truncation would silently remove options | > ~500 rows |
 | ~~11.8~~ ✅ | Frontend route-level code splitting — **done 2026-08-20**. Entry chunk 987 kB → 378 kB (287 → 122 kB gzip); Reports, the recharts-heavy page, is 81 kB loaded only when visited | Bundle budget |
 
+### Phase 12 — Multi-tenancy ✅ *(delivered 2026-08-29)*
+
+**This was a non-goal until the day it shipped.** The backlog line below said "multi-store — non-goal for 1.x — would restructure every stock query", and that estimate was right: `shopId` now appears in ten tables and in the `where` clause of every read and write across eleven controllers.
+
+| # | Work |
+| --- | ---- |
+| 12.1 | `Shop` model and migration `20260828120000_add_shops_multi_tenant`: a `shopId` on User, Category, Manufacturer, Medicine, Batch, Customer, Supplier, Invoice, InvoiceCounter and AuditLog, each indexed |
+| 12.2 | Re-keyed the constraints that were global and had to become per-shop — categories and manufacturers by name, customers by phone, invoices by serial, and the invoice counter's primary key |
+| 12.3 | `shopId` as a JWT claim, so a caller's tenant comes from their token and never from the request |
+| 12.4 | Every scoped write rewritten as `updateMany`/`deleteMany`, so `shopId` sits in the same `where` as `id` rather than in a check after the fact |
+| 12.5 | `POST /api/auth/signup` reopened: it creates a shop and its first administrator, and no longer closes |
+| 12.6 | `GET`/`PUT /api/shop` and a Settings tab — the business details the invoice header prints, replacing a hardcoded placeholder |
+
+**What it cost.** Three things, all recorded rather than smoothed over:
+
+- **Auditing broke for master data**, and stayed broken for a day. Moving edits onto `updateMany` took them out of the audit middleware's single-record path, so category renames, supplier retirements and user deactivations wrote no audit row at all. Fixed by auditing bulk writes on those models unconditionally.
+- **Signup deadlocked the connection pool.** Shop and User are both audited, and the audit write goes on the outer client — so every in-flight signup needed a second connection while its own transaction held the first. Eight concurrent signups returned eight `500`s and created nothing. Fixed by replacing the interactive transaction with a nested write.
+- **The same hazard remains on the void path**, where `tx.batch.update` audits inside a transaction. Five concurrent voids is the measured ceiling. `backend/tests/billing/invoice-void.test.js` documents the arithmetic and caps its own concurrency at four to stay under it. The durable fix is migrating the audit middleware from `$use` to a client extension, which can write through the caller's transaction — **the highest-value open work in the codebase**.
+
+**Exit criteria met:** two shops created through the public signup share no row, and a foreign id answers 404 rather than 403 on every resource controller, the user list and the dashboard — asserted in `backend/tests/auth/signup.test.js`.
+
 ### Backlog — candidate features (unsequenced)
 
 | Item                                       | Requirement                                         | Notes                                                                                              |
@@ -236,7 +257,7 @@ What it would take to build it properly, recorded so a future decision starts fr
 | ~~Server-side logout / token revocation~~      | FR-AUTH-09                                          | **Done 2026-08-22 (API) and 2026-08-25 (client).** A `tokenVersion` column on `User` compared against a claim in the token, needing no cache store — 11.1 is not applicable and there is none. The second date is not a typo: the endpoint shipped three days before anything called it |
 | ~~Shared API types between client and server~~ | NFR-22                                          | **Done 2026-08-24.** Not a shared package — a generated types file. Types are erased before runtime, so nothing has to cross the CommonJS/ESM boundary and neither Docker context changes |
 | IGST / inter-state supply                  | [Q2](./01-product-requirements.md#14-open-questions) | Schema change; only if the store ships out of state                                                |
-| Multi-store                                | Non-goal for 1.x                                    | Would restructure every stock query                                                                |
+| ~~Multi-store~~                            | [FR-SHOP](./01-product-requirements.md#60-tenancy--fr-shop) | **Done 2026-08-29** — see Phase 12 below. It did restructure every stock query, which is what the note here anticipated |
 
 ---
 

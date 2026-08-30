@@ -151,6 +151,29 @@ erDiagram
 
 ## 3. Table reference
 
+### 3.0 `Shop` — the tenant
+
+Added 2026-08-29. One row per pharmacy. Every other table holding shop-specific data carries a `shopId` back to this, and every query that reads or writes that data filters on it — **that is the whole of the isolation boundary** between one shopkeeper's business and another's.
+
+| Column        | Type     | Constraints | Notes                                                          |
+| ------------- | -------- | ----------- | -------------------------------------------------------------- |
+| `id`        | String   | PK, cuid    |                                                                |
+| `name`      | String   | required    | Printed on the invoice header                                  |
+| `address`   | String?  |             | Optional: a shop can bill with a name alone                    |
+| `phone`     | String?  |             |                                                                |
+| `gstNumber` | String?  |             | The shop's own GSTIN, printed on tax documents                 |
+| `createdAt` | DateTime | auto        | No`updatedAt` — the row is written rarely and audited when it is |
+
+Relations, all one-to-many: `users`, `categories`, `manufacturers`, `medicines`, `batches`, `customers`, `suppliers`, `invoices`, `invoiceCounters`, `auditLogs`.
+
+**There is deliberately no cross-shop relation anywhere in this schema.** Two shops sharing so much as a `Category` row would be an isolation break rather than a convenience, which is why the two lookup tables that used to be global are now per-shop (§3.2). The cost is that each shop types "Tablet" into its own category list once.
+
+Three consequences worth knowing before writing a query:
+
+- **`shopId` comes from the token, never from the request.** It is a JWT claim, read as `req.user.shopId`. No endpoint accepts one in a body or a query string, so there is nothing for a caller to target.
+- **Scoped writes are `updateMany` / `deleteMany`, not `update` / `delete`.** Prisma's singular forms accept only a unique selector, so `shopId` could not sit in the same `where` as `id` — it would have to be a separate check after the fact, which makes the boundary a coincidence of control flow rather than a property of the query. The bulk forms take an arbitrary filter, so the tenant condition is *in* the statement; a count of zero is the 404.
+- **A foreign id answers 404, not 403.** A 403 would confirm the row exists, turning a guessed id into a probe for another shop's catalogue.
+
 ### 3.1 `User`
 
 | Column                        | Type     | Constraints                | Notes                                                                      |
@@ -171,16 +194,19 @@ Relations: `invoices Invoice[]`, `refreshTokens RefreshToken[]` (§3.14).
 
 ### 3.2 `Category`
 
-| Column   | Type   | Constraints                         |
-| -------- | ------ | ----------------------------------- |
-| `id`   | String | PK, cuid                            |
-| `name` | String | **unique**, min 2 chars (Zod) |
+| Column     | Type   | Constraints                         |
+| ---------- | ------ | ----------------------------------- |
+| `id`     | String | PK, cuid                            |
+| `shopId` | String | FK →`Shop`, indexed              |
+| `name`   | String | **unique per shop**, min 2 chars (Zod) |
 
-Relations: `medicines Medicine[]`. Hard delete — fails with an FK error if any medicine references it.
+Relations: `shop Shop`, `medicines Medicine[]`. Hard delete — fails with an FK error if any medicine references it, mapped to a `409`.
+
+> **`@@unique([shopId, name])`, not `@@unique([name])`.** Until 2026-08-29 categories and manufacturers were global lookup tables shared by everyone. Under multi-tenancy that is an isolation break rather than a saving: one shop renaming "Analgesic" would rename it for every other shop, and the list itself would disclose what other pharmacies stock. Each shop now keeps its own, and two shops may both have a "Tablet".
 
 ### 3.3 `Manufacturer`
 
-Identical shape to `Category`: `id`, unique `name`, `medicines Medicine[]`. Hard delete.
+Identical shape to `Category`: `id`, `shopId`, `name` unique **per shop**, `medicines Medicine[]`. Hard delete.
 
 ### 3.4 `Medicine`
 
@@ -510,8 +536,10 @@ These must hold at all times. Any new write path must preserve them.
 | `20260824105655_add_prescription`           | 2026-08-24 | Adds the`Prescription` table — the Schedule H register (FR-MED-12, PRD Q4). See §3.11                                                                     |
 | `20260824111521_drop_purchases`      | 2026-08-24 | **Drops** `Purchase` and `PurchaseItem` — modelled in the initial migration, never given a write path (PRD Q7). Verified empty first |
 | `20260824112334_add_audit_reason`        | 2026-08-24 | Adds`AuditLog.reason` — the "why" behind an audited write, required by manual stock adjustment (FR-BATCH-11) |
+| `20260824113643_add_partial_returns`     | 2026-08-24 | Adds`InvoiceItem.returnedQty` and **drops** the unique index on `Invoice.reversesId`. A sale may now have several credit notes, so the single-shot guarantee moves from that index to a cumulative per-line counter applied with a conditional update (FR-BILL-17) |
+| `20260828120000_add_shops_multi_tenant`  | 2026-08-28 | Adds the`Shop` table and a `shopId` on User, Category, Manufacturer, Medicine, Batch, Customer, Supplier, Invoice, InvoiceCounter and AuditLog, with an index on each. Re-keys `Category` and `Manufacturer` to `@@unique([shopId, name])`, `Customer` to `@@unique([shopId, phone])`, `Invoice` to `@@unique([shopId, invoiceNumber])`, and `InvoiceCounter` to `@@id([shopId, day])`. See §3.0 |
 
-All eight are applied — confirmed against `_prisma_migrations` on 2026-08-22. Two of them contain SQL that exists **only** in migration history and cannot be reproduced from `schema.prisma`; see the note in §4 before rebuilding a database with `db push`.
+All 17 are applied — confirmed against `_prisma_migrations` on 2026-08-29. Two of them contain SQL that exists **only** in migration history and cannot be reproduced from `schema.prisma`; see the note in §4 before rebuilding a database with `db push`.
 
 Workflow:
 

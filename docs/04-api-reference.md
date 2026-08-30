@@ -18,11 +18,12 @@ All paths below are absolute from the host root, e.g. `POST http://localhost:500
 
 ## 2. Router map
 
-Nine routers are mounted. **Since 2.0.0 the paths are grouped by resource**, so the URL you would guess is the URL that works.
+Ten routers are mounted. **Since 2.0.0 the paths are grouped by resource**, so the URL you would guess is the URL that works.
 
 | Prefix             | Resources                                                                           |
 | ------------------ | ----------------------------------------------------------------------------------- |
-| `/api/auth`      | login · register · me · change-password                                          |
+| `/api/auth`      | signup · login · refresh · logout · register · me · change-password       |
+| `/api/shop`      | the caller's own shop's business details                                            |
 | `/api/users`     | user CRUD · own profile                                                            |
 | `/api/customers` | customer CRUD · erasure                                                            |
 | `/api/medicines` | medicine CRUD ·`search` (the POS lookup)                                          |
@@ -70,7 +71,7 @@ The report names drop the qualifier the path now supplies: `gst-report` under `/
 
 ## 3. Authentication
 
-Every endpoint except `POST /api/auth/login`, `POST /api/auth/signup`, `GET /api/auth/setup-status`, `POST /api/auth/refresh` and `GET /health` requires:
+Every endpoint except `POST /api/auth/login`, `POST /api/auth/signup`, `POST /api/auth/refresh` and `GET /health` requires:
 
 ```http
 Authorization: Bearer <jwt>
@@ -261,41 +262,30 @@ Readiness. Runs `SELECT 1` and reports what it found.
 
 ## 7. Authentication & users
 
-### `GET /api/auth/setup-status` — public
+### `POST /api/auth/signup` — public
 
-Whether this installation still needs its first account.
-
-```json
-{ "success": true, "data": { "needsSetup": true } }
-```
-
-One boolean and nothing else, deliberately: it is unauthenticated, so it must not disclose how many users exist, who they are, or when the system was set up. The login page reads it to decide whether to offer the signup link.
-
----
-
-### `POST /api/auth/signup` — public, **once**
-
-Creates the first administrator on an unclaimed installation, and closes itself permanently the moment it succeeds.
+Creates a **new shop** and the `ADMIN` account that owns it. This is how a shopkeeper who has never used the system gets onto it.
 
 ```json
-{ "name": "Priya Nair", "email": "priya@pharmacy.example", "password": "a-well-chosen-passphrase" }
+{ "shopName": "Nair Medical Store", "name": "Priya Nair", "email": "priya@pharmacy.example", "password": "a-well-chosen-passphrase" }
 ```
 
 Answers `201` with the same `{ token, user }` shape as login, and sets the `refresh_token` cookie — the operator is signed in, because they chose that password one request ago.
 
-**This is not open registration.** Every authenticated role can read customer records, and purchase history in a pharmacy reveals health conditions (threat T-9), so a signup that worked twice would be a data breach with a form in front of it. The account it creates is always `ADMIN`, because a shop with no administrator cannot create one.
+**It stays open, and there is nothing here to close.** Until 2026-08-29 this was a one-shot bootstrap that sealed itself after the first account, because a second administrator on a single-tenant installation could read every customer record in it. That is no longer what a second call produces: each signup creates its own `Shop`, and the two see nothing of each other ([FR-SHOP](./01-product-requirements.md#60-tenancy--fr-shop)). Calling it twice gives one person two separate businesses, which is legitimate.
 
-`role` is **rejected**, not ignored: the schema is `.strict()`, so sending one is a `400`. Accepting and silently dropping it would read like a privilege-escalation hole to anyone inspecting the request.
+**A signup cannot join an existing shop.** There is no `shopId` in the request body at all, so there is nothing for a caller to target — the only shop a signup can reach is the one it creates. That is the property doing the work here, and it is structural rather than checked.
+
+`role` is **rejected**, not ignored: the schema is `.strict()`, so sending one is a `400`. Accepting and silently dropping it would read like a privilege-escalation hole to anyone inspecting the request. The account is always `ADMIN` — a shop with no administrator cannot create one.
 
 `mustChangePassword` is **not** set, unlike the seeded admin and unlike an administrator's reset. Both of those hand someone a credential they did not choose, which is the state that flag exists to force them out of.
 
-| Failure | Status | Code |
+| Failure | Status | Notes |
 |---|---|---|
-| An account already exists | `409` | `SETUP_ALREADY_COMPLETE` |
-| Another signup is committing right now | `409` | `SETUP_IN_PROGRESS` — retryable |
+| The email already belongs to an account | `409` | Emails are unique system-wide, not per shop — see [FR-SHOP-06](./01-product-requirements.md#60-tenancy--fr-shop) |
 | Password fails the policy, or `role` was sent | `400` | validation errors, per field |
 
-Concurrency is guarded by a Postgres advisory lock taken inside the insert's transaction: `count() === 0` followed by `create()` is a read-then-write race of the same shape as [G-01](./08-gap-analysis.md#g-01), and a burst would otherwise leave two administrators nobody chose. `backend/tests/auth/signup.test.js` fires eight concurrent signups and asserts exactly one succeeds.
+There is no lock. The old bootstrap needed one because "the first account" was a single global resource two callers could race for; a signup now contends only with itself. The one serialisation still required is `User.email` being unique, which Postgres enforces. The shop and its administrator are created in **one nested write** rather than an interactive transaction; the comment on `signup` in [`auth.controller.js`](../backend/src/controllers/auth.controller.js) records why that distinction is load-bearing — the transaction it replaced deadlocked the connection pool under a burst. `backend/tests/auth/signup.test.js` fires eight concurrent signups and asserts eight shops.
 
 ---
 
@@ -966,6 +956,48 @@ That distinction is the whole reason the validation was added: an empty tax peri
 The full invoice for printing: items (each with `batch.batchNumber` and `batch.expiryDate`), the complete customer record, and `user.name`. **404** `Invoice not found`.
 
 > Route ordering matters here: `daily-summary`, `gst-report` and `trend` are declared **before** `/:id`, so they are matched correctly. Keep any new literal sub-path above `/:id`.
+
+---
+
+## 9c. The shop — `/api/shop`
+
+The caller's own shop record: the business details an invoice header prints. Two endpoints, both operating on `req.user.shopId` — **there is no id in either request**, so neither can name another shop. That is the isolation guarantee here, and it is structural rather than checked.
+
+### `GET /api/shop` — any authenticated role
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "clx...",
+    "name": "Nair Medical Store",
+    "address": "12 MG Road, Kochi",
+    "phone": "0484 555 0100",
+    "gstNumber": "32ABCDE1234F1Z5"
+  }
+}
+```
+
+Readable by every role rather than by administrators alone, because the invoice header needs it at print time and printing a bill is a cashier's job as much as an admin's. Nothing here is sensitive: it is the information already printed on every invoice the shop hands a customer.
+
+The SPA fetches it once and caches it — see `Billing.tsx`, where the print view reads it.
+
+### `PUT /api/shop` — ADMIN
+
+```json
+{ "name": "Nair Medical Store", "address": "12 MG Road, Kochi", "phone": "0484 555 0100", "gstNumber": "32ABCDE1234F1Z5" }
+```
+
+`name` is required (minimum 2 characters); `address`, `phone` and `gstNumber` are optional and nullable, so a shop can print invoices with a name alone — as it always could before this existed — and fill the rest in later.
+
+The schema is `.strict()`: an unrecognised field is a `400`. That is aimed squarely at `id` and `shopId`, which would look like a way to edit another shop's record. The controller reads neither from the body, and the strictness makes the attempt visible instead of silently ignored.
+
+| Failure | Status |
+|---|---|
+| A field fails validation, or an unknown field was sent | `400` |
+| Caller is not an ADMIN | `403` |
+
+Every write is audited (NFR-17), so a change to the GST number printed on tax documents has an actor and a before/after.
 
 ---
 
