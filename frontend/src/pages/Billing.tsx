@@ -616,7 +616,11 @@ export default function Billing() {
 
   // ─── Render ───────────────────────────────────────────
   return (
-    <div className="flex gap-4 h-[calc(180vh-112px)]">
+    // Stacked below lg — search and cart first, then customer and summary,
+    // which is the order a sale is actually made in. Side by side it put a
+    // fixed 320px summary column beside the cart, leaving the cart ~24px of a
+    // 360px screen; the till was the part you could not see.
+    <div className="flex flex-col lg:flex-row gap-4 lg:h-[calc(180vh-112px)]">
       <PrintInvoice invoice={lastInvoice} shop={shop} />
 
       {/* Batch override (FR-BILL-19). FEFO remains what a plain click does; this
@@ -791,7 +795,7 @@ export default function Billing() {
         </Card>
 
         {/* Cart */}
-        <Card className="bg-slate-800 border-slate-700 flex-1 overflow-hidden flex flex-col">
+        <Card className="bg-slate-800 border-slate-700 flex flex-col lg:flex-1 lg:overflow-hidden">
           <CardHeader className="py-3 px-4 border-b border-slate-700">
             <div className="flex items-center justify-between">
               <CardTitle className="text-white text-sm font-medium flex items-center gap-2">
@@ -816,7 +820,7 @@ export default function Billing() {
             </div>
           </CardHeader>
 
-          <CardContent className="flex-1 overflow-y-auto p-0">
+          <CardContent className="p-0 lg:flex-1 lg:overflow-y-auto">
             {cart.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-slate-600 py-16">
                 <Receipt className="w-12 h-12 mb-3 opacity-20" />
@@ -928,7 +932,7 @@ export default function Billing() {
       </div>
 
       {/* ── Right: Customer + Summary ── */}
-      <div className="w-80 flex flex-col gap-4 shrink-0 h-full min-h-0">
+      <div className="w-full lg:w-80 flex flex-col gap-4 lg:shrink-0 lg:h-full lg:min-h-0">
         {/* Customer */}
         <Card className="bg-slate-800 border-slate-700">
           <CardHeader className="py-3 px-4 border-b border-slate-700">
@@ -1025,7 +1029,7 @@ export default function Billing() {
         </Card>
 
         {/* Bill Summary */}
-        <Card className="bg-slate-800 border-slate-700 flex-1 overflow-hidden flex flex-col min-h-0">
+        <Card className="bg-slate-800 border-slate-700 flex flex-col lg:flex-1 lg:overflow-hidden lg:min-h-0">
           <CardHeader className="py-3 px-4 border-b border-slate-700 shrink-0">
             <CardTitle className="text-white text-sm font-medium">
               Bill Summary
@@ -1037,7 +1041,7 @@ export default function Billing() {
               off the bottom of the screen. Those two stay in a pinned footer
               below, so they're always reachable regardless of how much is
               above them. */}
-          <CardContent className="pt-4 space-y-3 flex-1 overflow-y-auto min-h-0">
+          <CardContent className="pt-4 space-y-3 lg:flex-1 lg:overflow-y-auto lg:min-h-0">
             <div className="space-y-2 text-sm">
               <div className="flex justify-between text-slate-400">
                 <span>Subtotal</span>

@@ -10,6 +10,8 @@ import {
   AlertTriangle,
   Download,
   Calendar,
+  ChevronLeft,
+  ChevronRight,
   Loader2,
   IndianRupee,
   ShoppingCart,
@@ -153,8 +155,14 @@ function StatCard({
 
 // ─── Daily Report Tab ───────────────────────────────────
 
+// Ten rows a page. The list used to be a 240px scroll box inside a card, which
+// on a phone meant a small scrolling region inside a scrolling page — the inner
+// one swallowed the gesture, and the day's takings were awkward to read through.
+const INVOICES_PER_PAGE = 10;
+
 function DailyReport() {
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
+  const [invoicePage, setInvoicePage] = useState(1);
   const [exporting, setExporting] = useState(false);
   const [selected, setSelected] = useState<Invoice | null>(null);
 
@@ -181,6 +189,19 @@ function DailyReport() {
 
   const summary = data?.summary ?? null;
   const invoices = data?.invoices ?? [];
+
+  const invoiceTotalPages = Math.max(
+    1,
+    Math.ceil(invoices.length / INVOICES_PER_PAGE),
+  );
+  // Clamped rather than corrected in an effect. Voiding a sale refetches the
+  // day with one fewer row, which can drop the last page out from under the
+  // reader; deriving the page keeps that from rendering an empty list, and
+  // costs no extra render to do it.
+  const page = Math.min(invoicePage, invoiceTotalPages);
+  const invoiceRangeStart = (page - 1) * INVOICES_PER_PAGE + 1;
+  const invoiceRangeEnd = Math.min(page * INVOICES_PER_PAGE, invoices.length);
+  const pageInvoices = invoices.slice(invoiceRangeStart - 1, invoiceRangeEnd);
 
   const exportDaily = async () => {
     setExporting(true);
@@ -213,7 +234,12 @@ function DailyReport() {
           <input
             type="date"
             value={date}
-            onChange={(e) => setDate(e.target.value)}
+            onChange={(e) => {
+              setDate(e.target.value);
+              // A new day is a new list; staying on page 3 of the old one would
+              // land the reader somewhere arbitrary, or on nothing at all.
+              setInvoicePage(1);
+            }}
             className="bg-transparent text-white text-sm outline-none"
           />
         </div>
@@ -319,18 +345,23 @@ function DailyReport() {
         {/* Invoice List */}
         <Card className="bg-slate-800 border-slate-700">
           <CardHeader className="py-3 px-4 border-b border-slate-700">
-            <CardTitle className="text-white text-sm">
-              Invoices ({invoices.length})
+            <CardTitle className="text-white text-sm flex items-center justify-between gap-2">
+              <span>Invoices ({invoices.length})</span>
+              {invoiceTotalPages > 1 && (
+                <span className="text-slate-500 text-xs font-normal">
+                  {invoiceRangeStart}–{invoiceRangeEnd} of {invoices.length}
+                </span>
+              )}
             </CardTitle>
           </CardHeader>
-          <CardContent className="p-0 max-h-60 overflow-y-auto">
+          <CardContent className="p-0">
             {invoices.length === 0 ? (
               <div className="flex items-center justify-center h-40 text-slate-600">
                 <p className="text-sm">No invoices for selected date</p>
               </div>
             ) : (
               <div className="divide-y divide-slate-700">
-                {invoices.map((inv) => (
+                {pageInvoices.map((inv) => (
                   <button
                     key={inv.id}
                     type="button"
@@ -384,6 +415,34 @@ function DailyReport() {
               </div>
             )}
           </CardContent>
+
+          {invoiceTotalPages > 1 && (
+            <div className="flex items-center justify-center gap-3 border-t border-slate-700 py-2.5">
+              <Button
+                variant="outline"
+                size="sm"
+                aria-label="Previous page of invoices"
+                onClick={() => setInvoicePage(page - 1)}
+                disabled={page === 1}
+                className="border-slate-600 text-slate-300 hover:bg-slate-700 h-8 w-8 p-0"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </Button>
+              <span className="text-slate-400 text-sm">
+                Page {page} of {invoiceTotalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                aria-label="Next page of invoices"
+                onClick={() => setInvoicePage(page + 1)}
+                disabled={page === invoiceTotalPages}
+                className="border-slate-600 text-slate-300 hover:bg-slate-700 h-8 w-8 p-0"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </Button>
+            </div>
+          )}
         </Card>
       </div>
 
