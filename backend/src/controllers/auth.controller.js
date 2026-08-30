@@ -117,26 +117,45 @@ const signup = async (req, res, next) => {
 
     let user;
     try {
-      user = await prisma.$transaction(async (tx) => {
-        const shop = await tx.shop.create({
-          data: { name: shopName },
-          select: { id: true },
-        });
-
-        return tx.user.create({
-          data: {
-            shopId: shop.id,
-            name,
-            email,
-            password: hashedPassword,
-            role: "ADMIN",
-            // Not set, unlike the seeded admin and unlike an administrator's
-            // reset. Both of those hand someone a credential they did not
-            // choose, which is what the flag exists to force them out of. This
-            // password was chosen by the person typing it.
-            mustChangePassword: false,
-          },
-        });
+      // One nested write rather than an interactive transaction. Prisma runs a
+      // nested create together with its parent on a single connection, so this
+      // is still all-or-nothing: a duplicate email rolls the shop back with it,
+      // which is the only thing the transaction was here for.
+      //
+      // WHY NOT `$transaction`. Shop and User are both audited, and the audit
+      // middleware writes its row on the *global* client — so every in-flight
+      // signup needed a second connection while its own transaction still held
+      // the first. On the default pool of 9, eight concurrent signups returned
+      // eight 500s and created nothing: five died on the 5s interactive
+      // transaction timeout, three never got a connection at all. Worse, the
+      // audit rows are written outside the transaction and so did *not* roll
+      // back — the log kept five shop creations that never happened. Measured
+      // through this path instead: 8/8 in 80ms, with auditing untouched.
+      //
+      // Deliberately not fixed by widening the pool or the timeout. Signup is
+      // public, unauthenticated, and spends a cost-12 hash per call, so a
+      // ceiling that merely moves is a ceiling that gets found.
+      //
+      // THE TRADE: a nested create is invisible to the middleware, which sees
+      // only the top-level `user.create`, so the Shop gets no CREATE row of its
+      // own here. Little is lost. That row carried no actor — signup is public,
+      // so `protect` never ran to name one — and `Shop.createdAt` already
+      // records that the shop was created and when. The User row that replaces
+      // it is properly attributed and carries the shopId in its `after`. Shop
+      // edits through `PUT /api/shop` are authenticated and audited as before.
+      user = await prisma.user.create({
+        data: {
+          name,
+          email,
+          password: hashedPassword,
+          role: "ADMIN",
+          // Not set, unlike the seeded admin and unlike an administrator's
+          // reset. Both of those hand someone a credential they did not
+          // choose, which is what the flag exists to force them out of. This
+          // password was chosen by the person typing it.
+          mustChangePassword: false,
+          shop: { create: { name: shopName } },
+        },
       });
     } catch (err) {
       // Unique-constraint violation on User.email — someone already has an
