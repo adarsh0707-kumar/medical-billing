@@ -304,21 +304,29 @@ function DailyReport() {
               Sales by Payment Mode
             </CardTitle>
           </CardHeader>
-          <CardContent className="pt-4">
+          <CardContent className="pt-4 pb-6">
             {paymentData.length === 0 ? (
               <div className="flex items-center justify-center h-40 text-slate-600">
                 <p className="text-sm">No data for selected date</p>
               </div>
             ) : (
-              <ResponsiveContainer width="100%" height={200}>
-                <PieChart>
+              // 300 tall with 24px of margin top and bottom, against 200 and
+              // none. The slice labels sit *outside* the circle, on a leader
+              // line, so they need room the radius does not account for: at 200
+              // a label at 12 o'clock was clipped by the card edge and one at 6
+              // o'clock printed straight through the legend — "CREDIT 62%" over
+              // the CREDIT swatch. Measured at 300: a label at either pole
+              // clears the edge by 22px and the legend by 19px, whatever the
+              // split happens to be.
+              <ResponsiveContainer width="100%" height={300}>
+                <PieChart margin={{ top: 24, right: 16, bottom: 24, left: 16 }}>
                   <Pie
                     data={paymentData}
                     dataKey="amount"
                     nameKey="name"
                     cx="50%"
-                    cy="50%"
-                    outerRadius={70}
+                    cy="45%"
+                    outerRadius={64}
                     label={({ name, percent }) =>
                       `${name} ${((percent ?? 0) * 100).toFixed(0)}%`
                     }
@@ -335,7 +343,9 @@ function DailyReport() {
                       color: "#fff",
                     }}
                   />
-                  <Legend />
+                  {/* Pushed clear of the bottom slice label, which used to
+                      land on top of the swatches. */}
+                  <Legend wrapperStyle={{ paddingTop: 12 }} />
                 </PieChart>
               </ResponsiveContainer>
             )}
