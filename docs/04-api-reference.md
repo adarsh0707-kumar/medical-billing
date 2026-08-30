@@ -989,7 +989,9 @@ Both parameters are **required**, and bounded (`month` 1–12, `year` 2000–210
 
 **The breakdown sums to the headline, exactly.** `Σ days[].sales === summary.totalSales`, and likewise for the invoice and credit-note counts. That is not incidental: the bucketing query deliberately does *not* reuse the trend aggregation, which filters to `paymentStatus = 'PAID'` because it charts takings. Reusing it here would have drawn bars that came up short of the total printed above them by exactly the credit sales — two numbers on one screen, each right by its own definition. `backend/tests/billing/reports.test.js` asserts the reconciliation with an unpaid invoice in the period.
 
-**No invoice list**, unlike the daily summary. A day is a readable number of documents; a year is not, and an endpoint that quietly ships thousands of rows to a phone is a performance incident waiting to happen. Use `/export`, or the daily summary for a specific day.
+**`start` and `end`** are the period's own bounds, at local midnight and `23:59:59.999` respectively. They are here so a client can page the register for the period through `GET /api/billing/invoices?startDate=&endDate=` without recomputing month lengths — and so this endpoint does not need an invoice list of its own.
+
+**No invoice list on the response**, unlike the daily summary, and that is the reason `start`/`end` exist. A day is a readable number of documents; a month measured here was 2,383 and a year 20,204, and an endpoint that ships that in one response is a performance incident waiting to happen. The Reports screen shows the register under the chart, ten rows at a time, each page a separate request to the paginated invoice list — which is already capped, already shop-scoped and already tested. `/export` gives the breakdown.
 
 ### `GET /api/reports/yearly?year=` — any authenticated role
 

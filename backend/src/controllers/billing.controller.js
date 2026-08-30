@@ -833,7 +833,20 @@ const monthlyReportData = async ({ month, year }, shopId) => {
     });
   }
 
-  return { month, year, label: `${MONTH_NAMES[month - 1]} ${year}`, summary, days };
+  return {
+    month,
+    year,
+    label: `${MONTH_NAMES[month - 1]} ${year}`,
+    // The period's own bounds, so a client can page the register for it
+    // through `GET /api/billing/invoices?startDate=&endDate=` rather than
+    // recomputing month lengths — and, more to the point, rather than this
+    // endpoint growing an invoice list of its own. That list already exists,
+    // is already paginated and capped, and is already tested.
+    start,
+    end,
+    summary,
+    days,
+  };
 };
 
 const yearlyReportData = async ({ year }, shopId) => {
@@ -861,7 +874,7 @@ const yearlyReportData = async ({ year }, shopId) => {
     });
   }
 
-  return { year, label: String(year), summary, months };
+  return { year, label: String(year), start, end, summary, months };
 };
 
 const getMonthlyReport = async (req, res, next) => {

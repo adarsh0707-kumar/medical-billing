@@ -620,6 +620,35 @@ describe("GET /api/reports/monthly", () => {
     expect(summed).toBe(675);
   });
 
+  // The register is `GET /api/billing/invoices` filtered by these bounds, so
+  // they have to be exact: an end of 23:59:59.999 on the last of the month, not
+  // midnight, or the final day's sales fall outside the list the same screen
+  // says the month contains.
+  it("publishes bounds the invoice list can be filtered by", async () => {
+    const { token } = await signIn(app);
+    const first = await invoiceAt(new Date(2026, 3, 1, 0, 5), { total: 10 });
+    const last = await invoiceAt(new Date(2026, 3, 30, 23, 30), { total: 20 });
+    await invoiceAt(new Date(2026, 4, 1, 0, 5), { total: 99 });
+
+    const report = await get(token, "/api/reports/monthly?month=4&year=2026");
+    const { start, end } = report.body.data;
+
+    const register = await get(
+      token,
+      `/api/billing/invoices?startDate=${encodeURIComponent(start)}&endDate=${encodeURIComponent(end)}&limit=100`,
+    );
+
+    expect(register.status).toBe(200);
+    const numbers = register.body.data.map((i) => i.invoiceNumber);
+    expect(numbers).toContain(first.invoiceNumber);
+    expect(numbers).toContain(last.invoiceNumber);
+    expect(register.body.pagination.total).toBe(2);
+    // And the register agrees with the headline it sits under.
+    expect(register.body.pagination.total).toBe(
+      report.body.data.summary.totalInvoices,
+    );
+  });
+
   it("rejects a month outside 1–12, and a missing one", async () => {
     const { token } = await signIn(app);
     expect((await get(token, "/api/reports/monthly?month=13&year=2026")).status).toBe(400);
@@ -686,6 +715,26 @@ describe("GET /api/reports/yearly", () => {
     expect(months.reduce((n, m) => n + m.invoices, 0)).toBe(
       summary.totalInvoices,
     );
+  });
+
+  it("publishes bounds spanning the whole year", async () => {
+    const { token } = await signIn(app);
+    const jan = await invoiceAt(new Date(2028, 0, 1, 0, 1), { total: 10 });
+    const dec = await invoiceAt(new Date(2028, 11, 31, 23, 45), { total: 20 });
+    await invoiceAt(new Date(2029, 0, 1, 0, 1), { total: 99 });
+
+    const report = await get(token, "/api/reports/yearly?year=2028");
+    const { start, end } = report.body.data;
+    const register = await get(
+      token,
+      `/api/billing/invoices?startDate=${encodeURIComponent(start)}&endDate=${encodeURIComponent(end)}&limit=100`,
+    );
+
+    const numbers = register.body.data.map((i) => i.invoiceNumber);
+    expect(numbers).toEqual(
+      expect.arrayContaining([jan.invoiceNumber, dec.invoiceNumber]),
+    );
+    expect(register.body.pagination.total).toBe(2);
   });
 
   it("rejects a missing or implausible year", async () => {

@@ -180,21 +180,187 @@ interface PeriodBucket {
   creditNotes: number;
 }
 
+/**
+ * The period's invoice register, paged from the server.
+ *
+ * `GET /api/billing/invoices?startDate=&endDate=` rather than an invoice list
+ * bolted onto the report endpoint: that list already exists, is already
+ * paginated with a capped limit, already scoped to the caller's shop and
+ * already tested. A year holds tens of thousands of documents, so the one thing
+ * this must not do is fetch them all and page in the browser — the page size is
+ * the request.
+ *
+ * The bounds come from the report response, so the register and the headline
+ * above it are describing the same period by construction.
+ */
+function PeriodRegister({
+  start,
+  end,
+  onSelect,
+}: {
+  start?: string;
+  end?: string;
+  onSelect: (inv: Invoice) => void;
+}) {
+  const [page, setPage] = useState(1);
+
+  // A new period is a new register; page 3 of the old one is meaningless here.
+  const periodKey = `${start}|${end}`;
+  const [seenKey, setSeenKey] = useState(periodKey);
+  if (periodKey !== seenKey) {
+    setSeenKey(periodKey);
+    setPage(1);
+  }
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["period-invoices", periodKey, page],
+    enabled: Boolean(start && end),
+    queryFn: async () => {
+      const res = await api.get(
+        `/api/billing/invoices?startDate=${encodeURIComponent(start!)}` +
+          `&endDate=${encodeURIComponent(end!)}&page=${page}&limit=${INVOICES_PER_PAGE}`,
+      );
+      return {
+        invoices: res.data.data as Invoice[],
+        total: res.data.pagination.total as number,
+        pages: res.data.pagination.pages as number,
+      };
+    },
+  });
+
+  const invoices = data?.invoices ?? [];
+  const totalPages = Math.max(1, data?.pages ?? 1);
+  const current = Math.min(page, totalPages);
+  const rangeStart = (current - 1) * INVOICES_PER_PAGE + 1;
+  const rangeEnd = Math.min(current * INVOICES_PER_PAGE, data?.total ?? 0);
+
+  return (
+    <Card className="bg-slate-800 border-slate-700">
+      <CardHeader className="py-3 px-4 border-b border-slate-700">
+        <CardTitle className="text-white text-sm flex items-center justify-between gap-2">
+          <span>Invoices ({data?.total ?? 0})</span>
+          {totalPages > 1 && (
+            <span className="text-slate-500 text-xs font-normal">
+              {rangeStart}–{rangeEnd} of {data?.total}
+            </span>
+          )}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="p-0">
+        {isLoading ? (
+          <div className="flex items-center justify-center h-40">
+            <Loader2 className="w-5 h-5 animate-spin text-teal-400" />
+          </div>
+        ) : invoices.length === 0 ? (
+          <div className="flex items-center justify-center h-40 text-slate-600">
+            <p className="text-sm">No invoices in this period</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-slate-700">
+            {invoices.map((inv) => (
+              <button
+                key={inv.id}
+                type="button"
+                aria-label={`Invoice ${inv.invoiceNumber}`}
+                onClick={() => onSelect(inv)}
+                className="w-full flex items-center justify-between px-4 py-2.5
+                  text-left hover:bg-slate-700/50 transition-colors
+                  focus-visible:outline-none focus-visible:ring-1
+                  focus-visible:ring-teal-500"
+              >
+                <div>
+                  <p className="text-white text-sm font-medium flex items-center gap-1.5">
+                    {inv.invoiceNumber}
+                    {inv.type === "CREDIT_NOTE" && (
+                      <span className="text-amber-400 text-xs font-normal">
+                        credit note
+                      </span>
+                    )}
+                    {inv.status === "CANCELLED" && (
+                      <span className="text-red-400 text-xs font-normal">
+                        voided
+                      </span>
+                    )}
+                  </p>
+                  <p className="text-slate-500 text-xs">
+                    {inv.customer?.name || "Walk-in"} •{" "}
+                    {new Date(inv.date).toLocaleDateString("en-IN", {
+                      day: "2-digit",
+                      month: "short",
+                    })}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-teal-400 font-bold text-sm">
+                    {formatINR(inv.totalAmount)}
+                  </p>
+                  <Badge
+                    className={`text-xs ${
+                      inv.paymentMode === "CASH"
+                        ? "bg-green-900 text-green-400"
+                        : inv.paymentMode === "UPI"
+                          ? "bg-blue-900 text-blue-400"
+                          : "bg-slate-700 text-slate-300"
+                    }`}
+                  >
+                    {inv.paymentMode}
+                  </Badge>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+      </CardContent>
+
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-3 border-t border-slate-700 py-2.5">
+          <Button
+            variant="outline"
+            size="sm"
+            aria-label="Previous page of invoices"
+            onClick={() => setPage(current - 1)}
+            disabled={current === 1}
+            className="border-slate-600 text-slate-300 hover:bg-slate-700 h-8 w-8 p-0"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </Button>
+          <span className="text-slate-400 text-sm">
+            Page {current} of {totalPages}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            aria-label="Next page of invoices"
+            onClick={() => setPage(current + 1)}
+            disabled={current === totalPages}
+            className="border-slate-600 text-slate-300 hover:bg-slate-700 h-8 w-8 p-0"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </Button>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 function PeriodReport({ granularity }: { granularity: "monthly" | "yearly" }) {
   const now = new Date();
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [year, setYear] = useState(now.getFullYear());
   const [exporting, setExporting] = useState(false);
+  const [selected, setSelected] = useState<Invoice | null>(null);
 
   const isMonthly = granularity === "monthly";
   const query = isMonthly ? `month=${month}&year=${year}` : `year=${year}`;
 
-  const { data, isLoading: loading } = useQuery({
+  const { data, isLoading: loading, refetch } = useQuery({
     queryKey: [granularity, query],
     queryFn: async () => {
       const res = await api.get(`/api/reports/${granularity}?${query}`);
       return res.data.data as {
         label: string;
+        start: string;
+        end: string;
         summary: PeriodSummary;
         days?: PeriodBucket[];
         months?: PeriodBucket[];
@@ -367,8 +533,23 @@ function PeriodReport({ granularity }: { granularity: "monthly" | "yearly" }) {
               )}
             </CardContent>
           </Card>
+
+          <PeriodRegister
+            start={data?.start}
+            end={data?.end}
+            onSelect={setSelected}
+          />
         </>
       )}
+
+      {/* Refetching on a void for the same reason the daily report does: a
+          return writes a credit note into the period, so the totals and the
+          breakdown move, not just the row that was returned. */}
+      <InvoiceDetailDialog
+        invoice={selected}
+        onClose={() => setSelected(null)}
+        onReturned={() => void refetch()}
+      />
     </div>
   );
 }
