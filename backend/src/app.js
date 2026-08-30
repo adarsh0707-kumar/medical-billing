@@ -75,8 +75,13 @@ const createApp = ({
           "http://localhost:3000",
           "http://localhost:5173",
           "http://127.0.0.1:5173",
-          "http://0.0.0.0/0:0",
-          "http://172.18.0.4:5173", // Docker network IP
+          // Docker's default bridge gateway. Kept generic on purpose: a
+          // container's actual address depends on which networks the daemon has
+          // already created, so hard-coding the one this machine happened to get
+          // fixes it for one developer and breaks it for the next. If your
+          // bridge is not the default, set FRONTEND_URL rather than editing
+          // this list — that is what the variable is for.
+          "http://172.17.0.1:5173",
           process.env.FRONTEND_URL,
         ].filter(Boolean);
 
