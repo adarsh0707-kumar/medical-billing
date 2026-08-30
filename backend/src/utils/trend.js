@@ -61,6 +61,56 @@ const dailyTrend = (client, start, end, shopId, timeZone = APP_TIME_ZONE) =>
     GROUP BY 1
     ORDER BY 1`;
 
+/**
+ * Sales bucketed by day or by month over an arbitrary window.
+ *
+ * Backs the monthly and yearly reports (FR-RPT-10, FR-RPT-11), where the
+ * breakdown has to add up to the headline the same screen prints.
+ *
+ * ─── Why this is not `dailyTrend` with a wider window ────────────────────────
+ *
+ * `dailyTrend` filters `paymentStatus = 'PAID'`, because a chart of *takings*
+ * should not draw money nobody has handed over yet. The period summaries count
+ * every document raised, paid or not — the same basis the daily summary has
+ * always used, and the one a shopkeeper means by "what did we bill in August".
+ *
+ * Reusing `dailyTrend` here would therefore have drawn bars that did not sum to
+ * the total printed above them, off by exactly the credit sales. Two numbers on
+ * one screen disagreeing, each correct by its own definition, is the shape of
+ * defect this file already exists to prevent — so the period reports get a
+ * query on their own basis, and a test asserts the bars sum to the headline.
+ *
+ * `trunc` and `format` are bound parameters like any other — Postgres takes the
+ * field name of `date_trunc` and the pattern of `to_char` as text arguments —
+ * so this is a `$queryRaw` tagged template with nothing interpolated into the
+ * statement. They still come from a fixed map rather than the caller's string,
+ * because a typo should be a bug here and not an error from the database.
+ */
+const BUCKETS = {
+  day: { trunc: "day", format: "YYYY-MM-DD" },
+  month: { trunc: "month", format: "YYYY-MM" },
+};
+
+const bucketedSales = (
+  { start, end, bucket, shopId, timeZone = APP_TIME_ZONE },
+  client = prisma,
+) => {
+  const { trunc, format } = BUCKETS[bucket] ?? BUCKETS.day;
+  return client.$queryRaw`
+    SELECT to_char(
+             date_trunc(${trunc}, "date" AT TIME ZONE 'UTC' AT TIME ZONE ${timeZone}),
+             ${format}
+           )                                              AS bucket,
+           COUNT(*) FILTER (WHERE "type" = 'SALE')::int   AS invoices,
+           COUNT(*) FILTER (WHERE "type" = 'CREDIT_NOTE')::int AS "creditNotes",
+           COALESCE(SUM("totalAmount"), 0)                AS sales
+    FROM "Invoice"
+    WHERE "shopId" = ${shopId}
+      AND "date" >= ${start} AND "date" <= ${end}
+    GROUP BY 1
+    ORDER BY 1`;
+};
+
 /** `YYYY-MM-DD` for a date's **local** day — the key `dailyTrend` returns. */
 const localDayKey = (d) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -106,6 +156,7 @@ const trendForDays = async (
 
 module.exports = {
   dailyTrend,
+  bucketedSales,
   fillWindow,
   localDayKey,
   trendForDays,

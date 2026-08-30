@@ -201,7 +201,7 @@ Briefly, so you know what to expect when reviewing:
 | Authorisation | Server-side `authorize(...roles)` on every mutating route; client-side checks are cosmetic only |
 | Tenant isolation | Every shop-specific row carries a `shopId`; the caller's comes from a JWT claim, never from the request. Reads and writes scope by `{ id, shopId }` in the same `where`, so a foreign id is a 404 rather than a 403 |
 | Input validation | Zod on every mutating route; unknown keys stripped, and rejected outright on the most sensitive routes |
-| SQL injection | Prisma parameterises everything. Five raw statements exist — two document-serial upserts, two trend aggregations and the readiness probe — and every one is a bound `$queryRaw` tagged template. `$queryRawUnsafe` appears nowhere ([full list](./docs/07-security.md#5-injection--data-access-safety)) |
+| SQL injection | Prisma parameterises everything. Six raw statements exist — two document-serial upserts, two trend aggregations, the period-report bucketing and the readiness probe — and every one is a bound `$queryRaw` tagged template. `$queryRawUnsafe` appears nowhere ([full list](./docs/07-security.md#5-injection--data-access-safety)) |
 | Rate limiting | 500 requests / 15 min per client, plus 10 failed logins / 15 min |
 | Transport headers | `helmet()` defaults on API responses; in production nginx adds HSTS, a CSP with `script-src 'self'`, `X-Frame-Options: DENY`, `Referrer-Policy` and `Permissions-Policy` to the SPA |
 | Financial integrity | Exact decimal arithmetic; invoice creation and stock deduction commit in a single transaction |

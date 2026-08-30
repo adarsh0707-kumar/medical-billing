@@ -10,6 +10,8 @@ import {
   AlertTriangle,
   Download,
   Calendar,
+  CalendarDays,
+  CalendarRange,
   ChevronLeft,
   ChevronRight,
   Loader2,
@@ -150,6 +152,224 @@ function StatCard({
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+// ─── Period reports: month and year (FR-RPT-10, FR-RPT-11) ───
+//
+// One component for both. A month and a year differ only in the label on each
+// bar and the controls above the chart; giving them separate components meant
+// the same four stat cards, the same export handler and the same empty state
+// written twice, and drifting apart the first time one of them was touched.
+
+interface PeriodSummary {
+  totalSales: number;
+  totalInvoices: number;
+  creditNotes: number;
+  totalCgst: number;
+  totalSgst: number;
+  totalGst: number;
+}
+
+interface PeriodBucket {
+  label?: string;
+  date?: string;
+  day?: number;
+  sales: number;
+  invoices: number;
+  creditNotes: number;
+}
+
+function PeriodReport({ granularity }: { granularity: "monthly" | "yearly" }) {
+  const now = new Date();
+  const [month, setMonth] = useState(now.getMonth() + 1);
+  const [year, setYear] = useState(now.getFullYear());
+  const [exporting, setExporting] = useState(false);
+
+  const isMonthly = granularity === "monthly";
+  const query = isMonthly ? `month=${month}&year=${year}` : `year=${year}`;
+
+  const { data, isLoading: loading } = useQuery({
+    queryKey: [granularity, query],
+    queryFn: async () => {
+      const res = await api.get(`/api/reports/${granularity}?${query}`);
+      return res.data.data as {
+        label: string;
+        summary: PeriodSummary;
+        days?: PeriodBucket[];
+        months?: PeriodBucket[];
+      };
+    },
+  });
+
+  const summary = data?.summary;
+  const buckets = (isMonthly ? data?.days : data?.months) ?? [];
+  // A month is labelled by its day number, a year by the short month name.
+  const chartData = buckets.map((b) => ({
+    ...b,
+    name: isMonthly ? String(b.day) : (b.label ?? ""),
+  }));
+  const hasSales = buckets.some((b) => b.sales !== 0);
+
+  const exportPeriod = async () => {
+    setExporting(true);
+    try {
+      const name = isMonthly
+        ? `monthly-report-${year}-${String(month).padStart(2, "0")}.csv`
+        : `yearly-report-${year}.csv`;
+      await downloadCsv(`/api/reports/${granularity}/export?${query}`, name);
+      toast.success(`${isMonthly ? "Monthly" : "Yearly"} report exported`);
+    } catch {
+      toast.error("Failed to export the report");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Same three-row stack on a phone as the other report controls. */}
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+        <div className="flex items-center gap-3">
+          {isMonthly && (
+            <div className="flex flex-1 items-center gap-2 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2">
+              <Calendar className="w-4 h-4 text-slate-400" />
+              <select
+                value={month}
+                onChange={(e) => setMonth(Number(e.target.value))}
+                aria-label="Month"
+                className="bg-transparent text-white text-sm outline-none"
+              >
+                {MONTHS.map((m, i) => (
+                  <option key={i} value={i + 1} className="bg-slate-800">
+                    {m}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          <div className="flex flex-1 items-center gap-2 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2">
+            {!isMonthly && <Calendar className="w-4 h-4 text-slate-400" />}
+            <select
+              value={year}
+              onChange={(e) => setYear(Number(e.target.value))}
+              aria-label="Year"
+              className="bg-transparent text-white text-sm outline-none"
+            >
+              {[2024, 2025, 2026].map((y) => (
+                <option key={y} value={y} className="bg-slate-800">
+                  {y}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+        <Button
+          onClick={exportPeriod}
+          size="sm"
+          disabled={!hasSales || exporting}
+          className="w-full sm:w-auto sm:ml-auto bg-slate-700 text-slate-100 hover:bg-slate-600 disabled:opacity-40"
+        >
+          {exporting ? (
+            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+          ) : (
+            <Download className="w-4 h-4 mr-2" />
+          )}
+          Export CSV
+        </Button>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center py-16">
+          <Loader2 className="w-6 h-6 animate-spin text-teal-400" />
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <StatCard
+              label="Total Sales"
+              value={formatINR(summary?.totalSales || 0)}
+              icon={IndianRupee}
+              color="bg-teal-600"
+              sub={data?.label}
+            />
+            <StatCard
+              label="Invoices"
+              value={String(summary?.totalInvoices ?? 0)}
+              icon={Receipt}
+              color="bg-blue-600"
+              // Named only when there are any: "0 credit notes" on a quiet
+              // month reads as a warning rather than as nothing having happened.
+              sub={
+                summary?.creditNotes
+                  ? `${summary.creditNotes} credit note${summary.creditNotes > 1 ? "s" : ""}`
+                  : undefined
+              }
+            />
+            <StatCard
+              label="CGST Collected"
+              value={formatINR(summary?.totalCgst || 0)}
+              icon={FileText}
+              color="bg-purple-600"
+            />
+            <StatCard
+              label="SGST Collected"
+              value={formatINR(summary?.totalSgst || 0)}
+              icon={FileText}
+              color="bg-indigo-600"
+            />
+          </div>
+
+          <Card className="bg-slate-800 border-slate-700">
+            <CardHeader className="py-3 px-4 border-b border-slate-700">
+              <CardTitle className="text-white text-sm">
+                {isMonthly ? "Sales by Day" : "Sales by Month"} — {data?.label}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pt-4">
+              {!hasSales ? (
+                <div className="flex items-center justify-center h-40 text-slate-600">
+                  <p className="text-sm">
+                    No sales in {data?.label ?? "this period"}
+                  </p>
+                </div>
+              ) : (
+                // Wider floor for a month: 31 bars need more room than 12 to
+                // keep their labels apart.
+                <ScrollableChart className={isMonthly ? "min-w-[46rem]" : undefined}>
+                  <ResponsiveContainer width="100%" height={260}>
+                    <BarChart
+                      data={chartData}
+                      margin={{ top: 8, right: 12, left: 4, bottom: 4 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                      <XAxis
+                        dataKey="name"
+                        tick={{ fill: "#94a3b8", fontSize: 12 }}
+                      />
+                      <YAxis tick={{ fill: "#94a3b8", fontSize: 12 }} />
+                      <Tooltip
+                        cursor={{ fill: "#33415555" }}
+                        formatter={(val) => formatINR(Number(val ?? 0))}
+                        labelFormatter={(l) =>
+                          isMonthly ? `Day ${l}` : String(l)
+                        }
+                        contentStyle={{
+                          background: "#1e293b",
+                          border: "1px solid #334155",
+                          color: "#fff",
+                        }}
+                      />
+                      <Bar dataKey="sales" fill="#14b8a6" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </ScrollableChart>
+              )}
+            </CardContent>
+          </Card>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -1162,6 +1382,10 @@ export default function Reports() {
   // and explains nothing.
   const tabs: TabItem[] = [
     { value: "daily", label: "Daily Report", icon: Receipt },
+    // Ordered by widening period — day, month, year — so the group reads as one
+    // axis rather than an unsorted pile of reports.
+    { value: "monthly", label: "Monthly Report", icon: CalendarDays },
+    { value: "yearly", label: "Yearly Report", icon: CalendarRange },
     ...(canViewGst
       ? [{ value: "gst", label: "GST Report", icon: FileText }]
       : []),
@@ -1185,6 +1409,14 @@ export default function Reports() {
 
         <TabsContent value="daily">
           <DailyReport />
+        </TabsContent>
+
+        <TabsContent value="monthly">
+          <PeriodReport granularity="monthly" />
+        </TabsContent>
+
+        <TabsContent value="yearly">
+          <PeriodReport granularity="yearly" />
         </TabsContent>
         {canViewGst && (
           <TabsContent value="gst">

@@ -171,6 +171,12 @@ export type MedicineListQuery = {
 /** `medicineSearchQuerySchema` — `backend/src/validators/inventory.validator.js` */
 export type MedicineSearchQuery = { q?: string | undefined };
 
+/** `monthlyReportQuerySchema` — `backend/src/validators/billing.validator.js` */
+export type MonthlyReportQuery = {
+  month: number | string;
+  year: number | string;
+};
+
 /** `prescriptionSchema` — `backend/src/validators/billing.validator.js` */
 export type PrescriptionInput = {
   prescriberName: string;
@@ -231,3 +237,6 @@ export type VoidInvoiceInput = {
   reason: string;
   items?: { invoiceItemId: string; quantity: number }[] | undefined;
 };
+
+/** `yearlyReportQuerySchema` — `backend/src/validators/billing.validator.js` */
+export type YearlyReportQuery = { year: number | string };

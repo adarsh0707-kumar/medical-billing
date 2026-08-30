@@ -6,7 +6,7 @@ const {
   generateCreditNoteNumber,
   isDuplicateNumber,
 } = require("../utils/invoice.utils");
-const { trendForDays } = require("../utils/trend");
+const { trendForDays, bucketedSales } = require("../utils/trend");
 
 // Thrown from inside the invoice transaction when a batch can no longer cover
 // the requested quantity at the moment of deduction. Rolls the transaction back
@@ -680,38 +680,21 @@ const getOne = async (req, res, next) => {
  * and a second query written to serve the export would be free to disagree with
  * the screen the moment either changed.
  */
-const dailySummaryData = async (query, shopId) => {
-  // Absent means today; a garbage date is a 400 from validateQuery rather than
-  // an Invalid Date that silently matched nothing.
-  const date = query.date ?? new Date();
-
-  // Each boundary is set on its own copy. `date` is the object validateQuery
-  // parsed onto the request, and calling setHours on it directly rewrote it in
-  // place — leaving req.validatedQuery.date at 23:59:59.999 for anything that
-  // read it afterwards. Nothing does today, which is the only reason that was
-  // survivable: G-01 was this same shape, and became a real bug precisely when
-  // a second consumer read the mutated value. A controller should not be
-  // rewriting what the validation layer put on the request.
-  const startOfDay = new Date(date);
-  startOfDay.setHours(0, 0, 0, 0);
-  const endOfDay = new Date(date);
-  endOfDay.setHours(23, 59, 59, 999);
-
-  const period = { shopId, date: { gte: startOfDay, lte: endOfDay } };
-
-  const [invoices, totalStats] = await Promise.all([
-    prisma.invoice.findMany({
-      where: period,
-      include: { customer: { select: { name: true } } },
-      orderBy: { date: "desc" },
-    }),
-    // Money only. Summed across every document in the period, sales and credit
-    // notes alike, so a day's takings are net of anything reversed that day.
-    prisma.invoice.aggregate({
-      where: period,
-      _sum: { totalAmount: true, cgst: true, sgst: true },
-    }),
-  ]);
+/**
+ * The figures every period report prints: what was billed, what was reversed,
+ * the money net of reversals, the tax, and the split by payment mode.
+ *
+ * A period is a date range and nothing else, so the day, the month and the year
+ * compute their headline the same way by construction. Extracted when the
+ * monthly and yearly reports landed (FR-RPT-10, FR-RPT-11) — copying it per
+ * period is exactly how the daily summary and the trend chart came to disagree
+ * about the same sale, which is the defect `utils/trend.js` exists to close.
+ */
+const summaryForPeriod = async (period) => {
+  const totalStats = await prisma.invoice.aggregate({
+    where: period,
+    _sum: { totalAmount: true, cgst: true, sgst: true },
+  });
 
   // Grouped by type as well as mode, so one query answers three questions: the
   // net money per mode, how many sales were raised, and how many were reversed.
@@ -747,32 +730,156 @@ const dailySummaryData = async (query, shopId) => {
     };
   });
 
-  // Prisma returns Decimal (or null on an empty day) — add with Decimal
+  // Prisma returns Decimal (or null on an empty period) — add with Decimal
   // arithmetic, not `+`, which would concatenate the objects as strings.
   const totalCgst = totalStats._sum.cgst ?? new D(0);
   const totalSgst = totalStats._sum.sgst ?? new D(0);
 
   return {
-    date: startOfDay,
-    invoices,
-    summary: {
-      // Sales raised in the period, whatever became of them since. A sale
-      // voided next week was still raised today, and dropping it from
-      // today's count later would rewrite a period after the fact — the one
-      // thing the void design exists to prevent (docs/03 section 8).
-      totalInvoices: countOf("SALE"),
-      // Reversals issued in the period. The money above is already net of
-      // them; this is what makes that netting legible rather than a day
-      // that mysteriously took less than its invoices add up to.
-      creditNotes: countOf("CREDIT_NOTE"),
+    // Sales raised in the period, whatever became of them since. A sale
+    // voided next week was still raised today, and dropping it from today's
+    // count later would rewrite a period after the fact — the one thing the
+    // void design exists to prevent (docs/03 section 8).
+    totalInvoices: countOf("SALE"),
+    // Reversals issued in the period. The money above is already net of them;
+    // this is what makes that netting legible rather than a period that
+    // mysteriously took less than its invoices add up to.
+    creditNotes: countOf("CREDIT_NOTE"),
 
-      totalSales: totalStats._sum.totalAmount ?? new D(0),
-      totalCgst,
-      totalSgst,
-      totalGst: totalCgst.plus(totalSgst),
-      byPaymentMode,
-    },
+    totalSales: totalStats._sum.totalAmount ?? new D(0),
+    totalCgst,
+    totalSgst,
+    totalGst: totalCgst.plus(totalSgst),
+    byPaymentMode,
   };
+};
+
+const dailySummaryData = async (query, shopId) => {
+  // Absent means today; a garbage date is a 400 from validateQuery rather than
+  // an Invalid Date that silently matched nothing.
+  const date = query.date ?? new Date();
+
+  // Each boundary is set on its own copy. `date` is the object validateQuery
+  // parsed onto the request, and calling setHours on it directly rewrote it in
+  // place — leaving req.validatedQuery.date at 23:59:59.999 for anything that
+  // read it afterwards. Nothing does today, which is the only reason that was
+  // survivable: G-01 was this same shape, and became a real bug precisely when
+  // a second consumer read the mutated value. A controller should not be
+  // rewriting what the validation layer put on the request.
+  const startOfDay = new Date(date);
+  startOfDay.setHours(0, 0, 0, 0);
+  const endOfDay = new Date(date);
+  endOfDay.setHours(23, 59, 59, 999);
+
+  const period = { shopId, date: { gte: startOfDay, lte: endOfDay } };
+
+  const [invoices, summary] = await Promise.all([
+    prisma.invoice.findMany({
+      where: period,
+      include: { customer: { select: { name: true } } },
+      orderBy: { date: "desc" },
+    }),
+    summaryForPeriod(period),
+  ]);
+
+  return { date: startOfDay, invoices, summary };
+};
+
+// ─── Monthly and yearly reports (FR-RPT-10, FR-RPT-11) ───
+//
+// The same summary as the day, over a wider window, plus a breakdown: a month
+// broken into its days, a year into its months.
+//
+// **No invoice list, deliberately.** The daily report returns every document
+// because a day is a readable number of them; a year is not, and a report that
+// quietly ships thousands of rows to a phone is how a list endpoint becomes a
+// performance incident. The breakdown is the aggregate, and `/export` is there
+// for anyone who wants the underlying documents.
+
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
+/** Local-midnight bounds for a month, and the month after it. */
+const monthBounds = (month, year) => ({
+  start: new Date(year, month - 1, 1, 0, 0, 0, 0),
+  end: new Date(year, month, 0, 23, 59, 59, 999),
+});
+
+const monthlyReportData = async ({ month, year }, shopId) => {
+  const { start, end } = monthBounds(month, year);
+  const period = { shopId, date: { gte: start, lte: end } };
+
+  const [summary, rows] = await Promise.all([
+    summaryForPeriod(period),
+    bucketedSales({ start, end, bucket: "day", shopId }),
+  ]);
+
+  // Zero-filled across the whole month. A day with no sales that simply went
+  // missing would shift every later point left and read as a trend rather than
+  // a closed shop — the same reason `fillWindow` exists for the 7-day chart.
+  const byDay = new Map(rows.map((r) => [r.bucket, r]));
+  const days = [];
+  for (let d = 1; d <= end.getDate(); d++) {
+    const key = `${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    const row = byDay.get(key);
+    days.push({
+      date: key,
+      day: d,
+      sales: row ? Number(row.sales) : 0,
+      invoices: row ? row.invoices : 0,
+      creditNotes: row ? row.creditNotes : 0,
+    });
+  }
+
+  return { month, year, label: `${MONTH_NAMES[month - 1]} ${year}`, summary, days };
+};
+
+const yearlyReportData = async ({ year }, shopId) => {
+  const start = new Date(year, 0, 1, 0, 0, 0, 0);
+  const end = new Date(year, 11, 31, 23, 59, 59, 999);
+  const period = { shopId, date: { gte: start, lte: end } };
+
+  const [summary, rows] = await Promise.all([
+    summaryForPeriod(period),
+    bucketedSales({ start, end, bucket: "month", shopId }),
+  ]);
+
+  const byMonth = new Map(rows.map((r) => [r.bucket, r]));
+  const months = [];
+  for (let m = 1; m <= 12; m++) {
+    const key = `${year}-${String(m).padStart(2, "0")}`;
+    const row = byMonth.get(key);
+    months.push({
+      month: m,
+      // Short label, because twelve full month names do not fit an axis.
+      label: MONTH_NAMES[m - 1].slice(0, 3),
+      sales: row ? Number(row.sales) : 0,
+      invoices: row ? row.invoices : 0,
+      creditNotes: row ? row.creditNotes : 0,
+    });
+  }
+
+  return { year, label: String(year), summary, months };
+};
+
+const getMonthlyReport = async (req, res, next) => {
+  try {
+    const data = await monthlyReportData(req.validatedQuery, req.user.shopId);
+    res.json({ success: true, data });
+  } catch (err) {
+    next(err);
+  }
+};
+
+const getYearlyReport = async (req, res, next) => {
+  try {
+    const data = await yearlyReportData(req.validatedQuery, req.user.shopId);
+    res.json({ success: true, data });
+  } catch (err) {
+    next(err);
+  }
 };
 
 const getDailySummary = async (req, res, next) => {
@@ -911,6 +1018,50 @@ const exportGstReport = async (req, res, next) => {
   }
 };
 
+/**
+ * The period breakdowns export the *aggregate*, not the documents.
+ *
+ * The daily and GST exports ship one row per invoice because that is what those
+ * reports are — a register. A month or a year is read as a shape over time, and
+ * a year's worth of documents is both an enormous file and not the thing on the
+ * screen. The row a reader wants here is the bucket.
+ */
+const BREAKDOWN_COLUMNS = [
+  { header: "Period", get: (r) => r.date ?? r.label },
+  { header: "Invoices", get: (r) => r.invoices },
+  { header: "Credit Notes", get: (r) => r.creditNotes },
+  { header: "Sales", kind: "money", get: (r) => r.sales },
+];
+
+const exportMonthlyReport = async (req, res, next) => {
+  try {
+    const { month, year, days } = await monthlyReportData(
+      req.validatedQuery,
+      req.user.shopId,
+    );
+    const period = `${year}-${String(month).padStart(2, "0")}`;
+    sendCsv(
+      res,
+      `monthly-report-${period}.csv`,
+      toCsv(BREAKDOWN_COLUMNS, days),
+    );
+  } catch (err) {
+    next(err);
+  }
+};
+
+const exportYearlyReport = async (req, res, next) => {
+  try {
+    const { year, months } = await yearlyReportData(
+      req.validatedQuery,
+      req.user.shopId,
+    );
+    sendCsv(res, `yearly-report-${year}.csv`, toCsv(BREAKDOWN_COLUMNS, months));
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = {
   createInvoice,
   getAll,
@@ -920,5 +1071,9 @@ module.exports = {
   exportGstReport,
   getTrend,
   getGstReport,
+  getMonthlyReport,
+  exportMonthlyReport,
+  getYearlyReport,
+  exportYearlyReport,
   voidInvoice,
 };

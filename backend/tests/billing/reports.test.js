@@ -554,3 +554,166 @@ describe("GET /api/billing/invoices/trend", () => {
     expect(total).toBe(0);
   });
 });
+
+// ─── Period reports (FR-RPT-10, FR-RPT-11) ─────────────
+//
+// `invoiceAt` writes each fixture with its own user, and `makeUser` defaults to
+// the shared test shop — so every invoice below lands in the shop `signIn`
+// authenticates into, and the reports see them.
+
+describe("GET /api/reports/monthly", () => {
+  it("summarises the month and breaks it down by day", async () => {
+    const { token } = await signIn(app);
+    await invoiceAt(new Date(2026, 2, 3, 10, 0), { total: 100 });
+    await invoiceAt(new Date(2026, 2, 3, 15, 0), { total: 250 });
+    await invoiceAt(new Date(2026, 2, 20, 11, 0), { total: 400 });
+    // Neighbouring months must not leak in.
+    await invoiceAt(new Date(2026, 1, 28, 12, 0), { total: 999 });
+    await invoiceAt(new Date(2026, 3, 1, 12, 0), { total: 888 });
+
+    const res = await get(token, "/api/reports/monthly?month=3&year=2026");
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.label).toBe("March 2026");
+    expect(Number(res.body.data.summary.totalSales)).toBe(750);
+    expect(res.body.data.summary.totalInvoices).toBe(3);
+
+    // Zero-filled: March has 31 days and every one of them appears, or a quiet
+    // day would shift the rest of the chart left and read as a trend.
+    const { days } = res.body.data;
+    expect(days).toHaveLength(31);
+    expect(days.map((d) => d.day)).toEqual(
+      Array.from({ length: 31 }, (_, i) => i + 1),
+    );
+    expect(days.find((d) => d.day === 3)).toMatchObject({
+      sales: 350,
+      invoices: 2,
+    });
+    expect(days.find((d) => d.day === 20)).toMatchObject({
+      sales: 400,
+      invoices: 1,
+    });
+    expect(days.find((d) => d.day === 4).sales).toBe(0);
+  });
+
+  // The guard on the decision in `bucketedSales`: the breakdown is computed on
+  // the same basis as the headline, so the bars sum to the number printed above
+  // them. Reusing `dailyTrend` here would have made this fail by exactly the
+  // unpaid sales, each figure correct by its own definition.
+  it("breaks down to exactly the headline, credit sales included", async () => {
+    const { token } = await signIn(app);
+    await invoiceAt(new Date(2026, 4, 2, 10, 0), { total: 100 });
+    await invoiceAt(new Date(2026, 4, 9, 10, 0), {
+      total: 500,
+      status: "PENDING",
+      mode: "CREDIT",
+    });
+    await invoiceAt(new Date(2026, 4, 9, 12, 0), { total: 75, status: "PARTIAL" });
+
+    const res = await get(token, "/api/reports/monthly?month=5&year=2026");
+    const { days, summary } = res.body.data;
+
+    const summed = days.reduce((n, d) => n + d.sales, 0);
+    expect(summed).toBeCloseTo(Number(summary.totalSales), 2);
+    expect(days.reduce((n, d) => n + d.invoices, 0)).toBe(summary.totalInvoices);
+    // And the unpaid ones are genuinely in there, not netted to a coincidence.
+    expect(summed).toBe(675);
+  });
+
+  it("rejects a month outside 1–12, and a missing one", async () => {
+    const { token } = await signIn(app);
+    expect((await get(token, "/api/reports/monthly?month=13&year=2026")).status).toBe(400);
+    expect((await get(token, "/api/reports/monthly?year=2026")).status).toBe(400);
+    expect((await get(token, "/api/reports/monthly?month=3&year=99")).status).toBe(400);
+  });
+
+  it("exports the breakdown, one row per day", async () => {
+    const { token } = await signIn(app);
+    await invoiceAt(new Date(2026, 5, 4, 10, 0), { total: 120 });
+
+    const res = await get(token, "/api/reports/monthly/export?month=6&year=2026");
+
+    expect(res.status).toBe(200);
+    expect(res.headers["content-disposition"]).toContain(
+      "monthly-report-2026-06.csv",
+    );
+    const rows = res.text.trim().split("\r\n");
+    // Header plus June's 30 days.
+    expect(rows).toHaveLength(31);
+    expect(rows[0]).toContain("Period");
+    expect(rows.find((r) => r.startsWith("2026-06-04"))).toContain("120.00");
+  });
+});
+
+describe("GET /api/reports/yearly", () => {
+  it("summarises the year and breaks it down by month", async () => {
+    const { token } = await signIn(app);
+    await invoiceAt(new Date(2026, 0, 15, 10, 0), { total: 100 });
+    await invoiceAt(new Date(2026, 6, 4, 10, 0), { total: 300 });
+    await invoiceAt(new Date(2026, 6, 5, 10, 0), { total: 200 });
+    await invoiceAt(new Date(2025, 11, 31, 23, 0), { total: 777 });
+
+    const res = await get(token, "/api/reports/yearly?year=2026");
+
+    expect(res.status).toBe(200);
+    expect(Number(res.body.data.summary.totalSales)).toBe(600);
+
+    const { months } = res.body.data;
+    expect(months).toHaveLength(12);
+    expect(months.map((m) => m.label)).toEqual([
+      "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ]);
+    expect(months[0]).toMatchObject({ sales: 100, invoices: 1 });
+    expect(months[6]).toMatchObject({ sales: 500, invoices: 2 });
+    expect(months[1].sales).toBe(0);
+    // December 2025 stayed in 2025.
+    expect(months[11].sales).toBe(0);
+  });
+
+  it("breaks down to exactly the headline", async () => {
+    const { token } = await signIn(app);
+    await invoiceAt(new Date(2027, 2, 1, 10, 0), { total: 100 });
+    await invoiceAt(new Date(2027, 8, 1, 10, 0), { total: 250, status: "PENDING" });
+
+    const res = await get(token, "/api/reports/yearly?year=2027");
+    const { months, summary } = res.body.data;
+
+    expect(months.reduce((n, m) => n + m.sales, 0)).toBeCloseTo(
+      Number(summary.totalSales),
+      2,
+    );
+    expect(months.reduce((n, m) => n + m.invoices, 0)).toBe(
+      summary.totalInvoices,
+    );
+  });
+
+  it("rejects a missing or implausible year", async () => {
+    const { token } = await signIn(app);
+    expect((await get(token, "/api/reports/yearly")).status).toBe(400);
+    expect((await get(token, "/api/reports/yearly?year=20026")).status).toBe(400);
+  });
+
+  it("exports twelve rows and a header", async () => {
+    const { token } = await signIn(app);
+    await invoiceAt(new Date(2026, 9, 8, 10, 0), { total: 60 });
+
+    const res = await get(token, "/api/reports/yearly/export?year=2026");
+
+    expect(res.status).toBe(200);
+    expect(res.headers["content-disposition"]).toContain(
+      "yearly-report-2026.csv",
+    );
+    const rows = res.text.trim().split("\r\n");
+    expect(rows).toHaveLength(13);
+    expect(rows.find((r) => r.startsWith("Oct"))).toContain("60.00");
+  });
+
+  it("shows a cashier the trading record, unlike the GST return", async () => {
+    const { token } = await signIn(app, "CASHIER");
+    expect((await get(token, "/api/reports/yearly?year=2026")).status).toBe(200);
+    expect((await get(token, "/api/reports/monthly?month=1&year=2026")).status).toBe(200);
+    // Contrast: the filing position stays ADMIN/PHARMACIST only.
+    expect((await get(token, "/api/reports/gst?month=1&year=2026")).status).toBe(403);
+  });
+});

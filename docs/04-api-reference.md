@@ -28,7 +28,7 @@ Ten routers are mounted. **Since 2.0.0 the paths are grouped by resource**, so t
 | `/api/customers` | customer CRUD · erasure                                                            |
 | `/api/medicines` | medicine CRUD ·`search` (the POS lookup)                                          |
 | `/api/suppliers` | supplier CRUD                                                                       |
-| `/api/reports`   | daily-summary · gst · trend · expiring · low-stock, each with`/export`      |
+| `/api/reports`   | daily-summary · monthly · yearly · gst · trend · expiring · low-stock, each with`/export` |
 | `/api/inventory` | categories · manufacturers · batches                                              |
 | `/api/billing`   | invoices · void · credit notes                                                     |
 | `/api/dashboard` | `stats` — every dashboard panel in one request                                    |
@@ -956,6 +956,56 @@ That distinction is the whole reason the validation was added: an empty tax peri
 The full invoice for printing: items (each with `batch.batchNumber` and `batch.expiryDate`), the complete customer record, and `user.name`. **404** `Invoice not found`.
 
 > Route ordering matters here: `daily-summary`, `gst-report` and `trend` are declared **before** `/:id`, so they are matched correctly. Keep any new literal sub-path above `/:id`.
+
+---
+
+## 9d. Period reports — `/api/reports/monthly`, `/api/reports/yearly`
+
+The same figures the daily summary prints, over a month or a year, plus the breakdown that period is read as: a month by its days, a year by its months. Open to **every role** — this is the shop's own trading record, not its filing position, which is why the GST return is restricted and these are not.
+
+### `GET /api/reports/monthly?month=&year=` — any authenticated role
+
+Both parameters are **required**, and bounded (`month` 1–12, `year` 2000–2100). A missing month is a `400`, not an empty report: an empty tax period is indistinguishable from a month with no sales, which is the same reasoning the GST report uses.
+
+```json
+{
+  "success": true,
+  "data": {
+    "month": 8, "year": 2026, "label": "August 2026",
+    "summary": {
+      "totalInvoices": 2358, "creditNotes": 21,
+      "totalSales": 1149458.06,
+      "totalCgst": 61494.24, "totalSgst": 61494.24, "totalGst": 122988.48,
+      "byPaymentMode": [{ "paymentMode": "CASH", "_sum": { "totalAmount": 1100000 }, "_count": { "id": 2300 } }]
+    },
+    "days": [
+      { "date": "2026-08-01", "day": 1, "sales": 58480.8, "invoices": 120, "creditNotes": 1 }
+    ]
+  }
+}
+```
+
+**`days` is zero-filled across the whole month**, so a day with no trade is a flat bar rather than a missing one. A gap would shift every later day left and read as a trend rather than a closed shop — the same reason the 7-day chart fills its window.
+
+**The breakdown sums to the headline, exactly.** `Σ days[].sales === summary.totalSales`, and likewise for the invoice and credit-note counts. That is not incidental: the bucketing query deliberately does *not* reuse the trend aggregation, which filters to `paymentStatus = 'PAID'` because it charts takings. Reusing it here would have drawn bars that came up short of the total printed above them by exactly the credit sales — two numbers on one screen, each right by its own definition. `backend/tests/billing/reports.test.js` asserts the reconciliation with an unpaid invoice in the period.
+
+**No invoice list**, unlike the daily summary. A day is a readable number of documents; a year is not, and an endpoint that quietly ships thousands of rows to a phone is a performance incident waiting to happen. Use `/export`, or the daily summary for a specific day.
+
+### `GET /api/reports/yearly?year=` — any authenticated role
+
+`year` required, same bounds. Identical shape, with `months` in place of `days`:
+
+```json
+{ "month": 7, "label": "Jul", "sales": 500, "invoices": 2, "creditNotes": 0 }
+```
+
+Always twelve entries, zero-filled, `Jan` through `Dec`.
+
+### `GET /api/reports/monthly/export`, `GET /api/reports/yearly/export`
+
+CSV of the **breakdown**, not the documents — `Period, Invoices, Credit Notes, Sales`, one row per bucket. The daily and GST exports ship one row per invoice because those reports *are* registers; a period report is read as a shape over time, and its row is the bucket.
+
+Filenames are `monthly-report-2026-08.csv` and `yearly-report-2026.csv`.
 
 ---
 

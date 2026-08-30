@@ -189,7 +189,7 @@ Every user query uses an explicit `select` that omits `password`. The only excep
 - Database access only through the `config/db.js` singleton.
 - Zod schemas live in `validators/`, never inline in a route.
 - Prisma error codes are mapped centrally in `error.middleware.js` (`P2002` → 409, `P2003` → 409, `P2025` → 404). Add new mappings there rather than in controllers.
-- Raw SQL is a last resort. There are five statements — the two document-serial upserts, which need the atomicity; the two trend aggregations, which would otherwise be a query per day; and the readiness probe. Each is a `$queryRaw` tagged template, so its inputs are bound. The current list is in [SECURITY.md](./SECURITY.md#security-relevant-design); add to it there rather than starting a second count here. **`$queryRawUnsafe` must not appear in this codebase.**
+- Raw SQL is a last resort. There are six statements — the two document-serial upserts, which need the atomicity; the two trend aggregations and the monthly/yearly bucketing, which would otherwise be a query per bucket; and the readiness probe. Each is a `$queryRaw` tagged template, so its inputs are bound. The current list is in [SECURITY.md](./SECURITY.md#security-relevant-design); add to it there rather than starting a second count here. **`$queryRawUnsafe` must not appear in this codebase.**
 
 ### Frontend
 

@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+#### Monthly and yearly reports (FR-RPT-10, FR-RPT-11)
+
+`GET /api/reports/monthly?month=&year=` and `GET /api/reports/yearly?year=`, each with an `/export`, and two new tabs beside the daily report. A month broken into its days, a year into its months, with the same headline figures the daily summary has always printed.
+
+- **The summary is now computed in one place for all three periods.** `summaryForPeriod` takes a date range and nothing else, so the day, the month and the year cannot disagree about what a period took. Copying it per period is exactly how the daily summary and the trend chart came to disagree about the same sale.
+- **The breakdown sums to the headline, and there is a test that says so.** It deliberately does *not* reuse the trend aggregation, which filters to `paymentStatus = 'PAID'` because it charts takings rather than billings. Reusing it would have drawn bars falling short of the total printed above them by exactly the credit sales — two figures on one screen, each correct by its own definition, which is the defect `utils/trend.js` was written to close.
+- **Zero-filled across the period**, so a day with no trade is a flat bar rather than a missing one. A gap shifts every later point left and reads as a trend rather than a closed shop.
+- **No invoice list, unlike the daily report.** A day is a readable number of documents; a year is not. The CSV exports the breakdown — one row per bucket — rather than a year of invoices, because the bucket is what the report is.
+- **Open to every role.** This is the shop's own trading record, not its filing position; the GST return stays ADMIN and PHARMACIST only, and a test asserts the contrast.
+
+Eleven tests, covering the day/month boundaries, the reconciliation with an unpaid invoice in the period, the zero-fill, both CSV shapes and the role split.
+
 ### Changed — BREAKING
 
 #### The system holds many pharmacies, not one (2026-08-29)

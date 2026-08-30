@@ -97,6 +97,33 @@ const gstReportQuerySchema = z.object({
     .max(2100, "year must be between 2000 and 2100"),
 });
 
+// ─── Period reports (FR-RPT-10, FR-RPT-11) ────────────
+//
+// Same bounds as the GST period, and required for the same reason: a missing
+// month once produced an empty report, which is indistinguishable from a month
+// with no sales. The year floor and ceiling keep a typo — 202 or 20026 — from
+// becoming a scan of the whole invoice table.
+const monthlyReportQuerySchema = z.object({
+  month: z.coerce
+    .number({ error: "month is required and must be a number" })
+    .int("month must be a whole number")
+    .min(1, "month must be between 1 and 12")
+    .max(12, "month must be between 1 and 12"),
+  year: z.coerce
+    .number({ error: "year is required and must be a number" })
+    .int("year must be a whole number")
+    .min(2000, "year must be between 2000 and 2100")
+    .max(2100, "year must be between 2000 and 2100"),
+});
+
+const yearlyReportQuerySchema = z.object({
+  year: z.coerce
+    .number({ error: "year is required and must be a number" })
+    .int("year must be a whole number")
+    .min(2000, "year must be between 2000 and 2100")
+    .max(2100, "year must be between 2000 and 2100"),
+});
+
 const trendQuerySchema = z.object({
   // The dashboard and the reports chart both draw fixed windows; 90 days is well
   // past anything either asks for and keeps one query bounded.
@@ -146,6 +173,8 @@ module.exports = {
   invoiceListQuerySchema,
   dailySummaryQuerySchema,
   gstReportQuerySchema,
+  monthlyReportQuerySchema,
+  yearlyReportQuerySchema,
   trendQuerySchema,
   voidInvoiceSchema,
   customerListQuerySchema,

@@ -6,6 +6,8 @@ const validateQuery = require("../middlewares/validate-query.middleware");
 const {
   dailySummaryQuerySchema,
   gstReportQuerySchema,
+  monthlyReportQuerySchema,
+  yearlyReportQuerySchema,
   trendQuerySchema,
 } = require("../validators/billing.validator");
 const {
@@ -51,6 +53,32 @@ router.get(
   billingCtrl.exportDailySummary,
 );
 router.get("/trend", validateQuery(trendQuerySchema), billingCtrl.getTrend);
+
+// A month and a year of the same figures the daily summary prints, plus the
+// breakdown that period is read as: a month by its days, a year by its months.
+// Open to every role, like the daily summary — this is the shop's own trading
+// record, not its filing position, which is what makes the GST report ADMIN and
+// PHARMACIST only.
+router.get(
+  "/monthly",
+  validateQuery(monthlyReportQuerySchema),
+  billingCtrl.getMonthlyReport,
+);
+router.get(
+  "/monthly/export",
+  validateQuery(monthlyReportQuerySchema),
+  billingCtrl.exportMonthlyReport,
+);
+router.get(
+  "/yearly",
+  validateQuery(yearlyReportQuerySchema),
+  billingCtrl.getYearlyReport,
+);
+router.get(
+  "/yearly/export",
+  validateQuery(yearlyReportQuerySchema),
+  billingCtrl.exportYearlyReport,
+);
 
 // ─── Tax ──────────────────────────────────────────────
 // A GST return is the shop's filing position, not a cashier's screen.
