@@ -223,8 +223,17 @@ test("selling 2 units creates an invoice and drops the batch by exactly 2", asyn
 
   await page.getByRole("button", { name: /Generate Invoice/i }).click();
 
-  // The print view is the confirmation the cashier sees.
-  await expect(page.getByText(/MedBill Pro/i).first()).toBeVisible();
+  // The print view is the confirmation the cashier sees, and waiting for it is
+  // what synchronises this test with the sale actually committing.
+  //
+  // `toBeAttached`, not `toBeVisible`: #print-invoice is `hidden print:block`,
+  // so it is `display: none` on screen and only ever paints on paper. It is
+  // rendered at all only once the invoice comes back, which is the signal
+  // wanted here. The previous assertion looked for the text "MedBill Pro" and
+  // could not have worked: the print view is invisible, so `.first()` matched
+  // the sidebar brand instead — present from page load, waiting for nothing.
+  // The read below then raced the POST and saw the pre-sale quantity.
+  await expect(page.locator("#print-invoice")).toBeAttached();
 
   expect(await batchStock(request, token, batch.id, medicine.id)).toBe(8);
 });
@@ -269,7 +278,10 @@ test("the daily report reflects a sale made moments earlier", async ({
   await page.goto("/billing");
   await addToCart(page, name);
   await page.getByRole("button", { name: /Generate Invoice/i }).click();
-  await expect(page.getByText(/MedBill Pro/i).first()).toBeVisible();
+  // See the note in flow 3 on why this is `toBeAttached` on the print view
+  // rather than a text match. This flow survived the same broken wait only by
+  // luck: the API round trip below gave the sale time to land first.
+  await expect(page.locator("#print-invoice")).toBeAttached();
 
   // The daily report lists invoice numbers, so ask the API which one was just
   // written rather than guessing at the serial.
