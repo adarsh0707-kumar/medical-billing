@@ -185,10 +185,14 @@ export default function Suppliers() {
                       )}
                     </div>
                   </div>
-                  <button onClick={() => openEdit(s)}
-                    className="opacity-0 group-hover:opacity-100 p-1.5 rounded-md
-                      text-slate-400 hover:text-teal-400 hover:bg-slate-700 transition-all">
-                    <Edit2 className="w-3.5 h-3.5" />
+                  {/* See Customers.tsx: the hover reveal only applies where a
+                      pointer exists, or a touch device can never reach Edit. */}
+                  <button
+                    onClick={() => openEdit(s)}
+                    aria-label={`Edit ${s.name}`}
+                    className="shrink-0 p-2 sm:p-1.5 rounded-md text-slate-400 hover:text-teal-400 hover:bg-slate-700 transition-all [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100"
+                  >
+                    <Edit2 className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
                   </button>
                 </div>
 

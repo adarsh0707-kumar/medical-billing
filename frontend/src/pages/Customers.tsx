@@ -490,20 +490,23 @@ export default function Customers() {
                     <Receipt className="w-3.5 h-3.5" />
                     {c._count?.invoices || 0} bills
                   </div>
-                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  {/* Always visible on a touch screen. The hover reveal is kept only where
+                      a pointer exists to trigger it — on a phone it hid Edit and View
+                      behind an interaction the device cannot perform. */}
+                  <div className="flex items-center gap-1 transition-opacity [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100">
                     <button
                       aria-label="Edit customer"
                       onClick={() => openEdit(c)}
-                      className="p-1.5 rounded-md text-slate-400 hover:text-teal-400 hover:bg-slate-700 transition-colors"
+                      className="p-2 sm:p-1.5 rounded-md text-slate-400 hover:text-teal-400 hover:bg-slate-700 transition-colors"
                     >
-                      <Edit2 className="w-3.5 h-3.5" />
+                      <Edit2 className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
                     </button>
                     <button
                       aria-label="View customer details"
                       onClick={() => setDetailId(c.id)}
-                      className="p-1.5 rounded-md text-slate-400 hover:text-blue-400 hover:bg-slate-700 transition-colors"
+                      className="p-2 sm:p-1.5 rounded-md text-slate-400 hover:text-blue-400 hover:bg-slate-700 transition-colors"
                     >
-                      <Eye className="w-3.5 h-3.5" />
+                      <Eye className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
                     </button>
                   </div>
                 </div>

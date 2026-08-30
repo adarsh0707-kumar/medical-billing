@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { ScrollableChart } from "@/components/layout/ScrollableChart";
 import { useQuery } from "@tanstack/react-query";
 import { useAuthStore } from "@/store/auth.store";
 import {
@@ -205,9 +206,9 @@ function DailyReport() {
 
   return (
     <div className="space-y-4">
-      {/* Date Picker */}
-      <div className="flex items-center gap-3">
-        <div className="flex items-center gap-2 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2">
+      {/* Date Picker. Same three-row stack as the GST controls below. */}
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+        <div className="flex flex-1 items-center gap-2 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2">
           <Calendar className="w-4 h-4 text-slate-400" />
           <input
             type="date"
@@ -219,16 +220,16 @@ function DailyReport() {
         <Button
           onClick={() => refetch()}
           size="sm"
-          className="bg-teal-600 hover:bg-teal-500 text-white"
+          className="w-full sm:w-auto bg-teal-600 hover:bg-teal-500 text-white"
         >
           {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Refresh"}
         </Button>
         <Button
           onClick={exportDaily}
           size="sm"
-          variant="outline"
           disabled={invoices.length === 0 || exporting}
-          className="border-slate-600 text-slate-300 hover:bg-slate-700 ml-auto"
+          // Matches the GST export: slate, so it reads as secondary to Refresh.
+          className="w-full sm:w-auto sm:ml-auto bg-slate-700 text-slate-100 hover:bg-slate-600 disabled:opacity-40"
         >
           {exporting ? (
             <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -240,7 +241,9 @@ function DailyReport() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* One per row on a phone. At 360px a 2-up grid gave each card ~160px,
+          which clipped "₹2,130.80" and "SGST Collected" mid-word. */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           label="Total Sales"
           value={formatINR(summary?.totalSales || 0)}
@@ -487,9 +490,15 @@ function GstReport() {
 
   return (
     <div className="space-y-4">
-      {/* Month/Year Selector */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <div className="flex items-center gap-2 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2">
+      {/* Month/Year Selector.
+
+          Three stacked rows on a phone — period, Generate, Export — because
+          `flex-wrap` broke them at whatever width happened to run out, which
+          left Export CSV alone on a line, flush right, looking unrelated to the
+          controls above it. From `sm` up it is the single row it always was. */}
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:flex-wrap">
+        <div className="flex items-center gap-3">
+        <div className="flex flex-1 items-center gap-2 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2">
           <Calendar className="w-4 h-4 text-slate-400" />
           <select
             value={month}
@@ -503,7 +512,7 @@ function GstReport() {
             ))}
           </select>
         </div>
-        <div className="flex items-center gap-2 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2">
+        <div className="flex flex-1 items-center gap-2 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2">
           <select
             value={year}
             onChange={(e) => setYear(Number(e.target.value))}
@@ -516,19 +525,22 @@ function GstReport() {
             ))}
           </select>
         </div>
+        </div>
         <Button
           onClick={() => refetch()}
           size="sm"
-          className="bg-teal-600 hover:bg-teal-500"
+          className="w-full sm:w-auto bg-teal-600 hover:bg-teal-500"
         >
           {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Generate"}
         </Button>
         <Button
           onClick={exportCSV}
           size="sm"
-          variant="outline"
           disabled={invoices.length === 0 || exporting}
-          className="border-slate-600 text-slate-300 hover:bg-slate-700 ml-auto"
+          // Slate rather than the outline variant: white-on-dark read as the
+          // primary action, competing with Generate, and its disabled state was
+          // hard to tell from its enabled one.
+          className="w-full sm:w-auto sm:ml-auto bg-slate-700 text-slate-100 hover:bg-slate-600 disabled:opacity-40"
         >
           {exporting ? (
             <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -540,7 +552,9 @@ function GstReport() {
       </div>
 
       {/* GST Summary Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* One per row on a phone. At 360px a 2-up grid gave each card ~160px,
+          which clipped "₹2,130.80" and "SGST Collected" mid-word. */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           label="Taxable Amount"
           value={formatINR(totals?.taxable || 0)}
@@ -991,36 +1005,38 @@ function SalesTrend() {
           </CardTitle>
         </CardHeader>
         <CardContent className="pt-4">
-          <ResponsiveContainer width="100%" height={250}>
-            <BarChart
-              data={trendData}
-              margin={{ top: 5, right: 10, left: 10, bottom: 5 }}
-            >
-              <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-              <XAxis dataKey="date" tick={{ fill: "#94a3b8", fontSize: 12 }} />
-              <YAxis
-                tick={{ fill: "#94a3b8", fontSize: 12 }}
-                tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`}
-              />
-              <Tooltip
-                formatter={(val) => [formatINR(Number(val ?? 0)), "Revenue"]}
-                // Recharts' default bar-hover cursor is a solid, near-opaque
-                // rectangle spanning the full chart height — on this dark
-                // theme it renders tall and bright enough to be mistaken for
-                // an actual ~₹2k revenue bar on a day that had none. A
-                // faint, theme-matched fill reads as a hover highlight
-                // instead of a second, contradictory bar.
-                cursor={{ fill: "#334155", opacity: 0.35 }}
-                contentStyle={{
-                  background: "#1e293b",
-                  border: "1px solid #334155",
-                  color: "#fff",
-                  borderRadius: "8px",
-                }}
-              />
-              <Bar dataKey="sales" fill="#14b8a6" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+          <ScrollableChart>
+            <ResponsiveContainer width="100%" height={250}>
+              <BarChart
+                data={trendData}
+                margin={{ top: 5, right: 10, left: 10, bottom: 5 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                <XAxis dataKey="date" tick={{ fill: "#94a3b8", fontSize: 12 }} />
+                <YAxis
+                  tick={{ fill: "#94a3b8", fontSize: 12 }}
+                  tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`}
+                />
+                <Tooltip
+                  formatter={(val) => [formatINR(Number(val ?? 0)), "Revenue"]}
+                  // Recharts' default bar-hover cursor is a solid, near-opaque
+                  // rectangle spanning the full chart height — on this dark
+                  // theme it renders tall and bright enough to be mistaken for
+                  // an actual ~₹2k revenue bar on a day that had none. A
+                  // faint, theme-matched fill reads as a hover highlight
+                  // instead of a second, contradictory bar.
+                  cursor={{ fill: "#334155", opacity: 0.35 }}
+                  contentStyle={{
+                    background: "#1e293b",
+                    border: "1px solid #334155",
+                    color: "#fff",
+                    borderRadius: "8px",
+                  }}
+                />
+                <Bar dataKey="sales" fill="#14b8a6" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </ScrollableChart>
         </CardContent>
       </Card>
 
@@ -1032,31 +1048,33 @@ function SalesTrend() {
           </CardTitle>
         </CardHeader>
         <CardContent className="pt-4">
-          <ResponsiveContainer width="100%" height={200}>
-            <LineChart
-              data={trendData}
-              margin={{ top: 5, right: 10, left: 10, bottom: 5 }}
-            >
-              <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-              <XAxis dataKey="date" tick={{ fill: "#94a3b8", fontSize: 12 }} />
-              <YAxis tick={{ fill: "#94a3b8", fontSize: 12 }} />
-              <Tooltip
-                contentStyle={{
-                  background: "#1e293b",
-                  border: "1px solid #334155",
-                  color: "#fff",
-                  borderRadius: "8px",
-                }}
-              />
-              <Line
-                type="monotone"
-                dataKey="invoices"
-                stroke="#6366f1"
-                strokeWidth={2}
-                dot={{ fill: "#6366f1", r: 4 }}
-              />
-            </LineChart>
-          </ResponsiveContainer>
+          <ScrollableChart>
+            <ResponsiveContainer width="100%" height={200}>
+              <LineChart
+                data={trendData}
+                margin={{ top: 5, right: 10, left: 10, bottom: 5 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                <XAxis dataKey="date" tick={{ fill: "#94a3b8", fontSize: 12 }} />
+                <YAxis tick={{ fill: "#94a3b8", fontSize: 12 }} />
+                <Tooltip
+                  contentStyle={{
+                    background: "#1e293b",
+                    border: "1px solid #334155",
+                    color: "#fff",
+                    borderRadius: "8px",
+                  }}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="invoices"
+                  stroke="#6366f1"
+                  strokeWidth={2}
+                  dot={{ fill: "#6366f1", r: 4 }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </ScrollableChart>
         </CardContent>
       </Card>
     </div>

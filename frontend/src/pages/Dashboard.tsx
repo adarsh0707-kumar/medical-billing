@@ -20,6 +20,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { ScrollableChart } from "@/components/layout/ScrollableChart";
 import api from "@/lib/api";
 import { toast } from "sonner";
 import { useAuthStore } from "@/store/auth.store";
@@ -264,7 +265,9 @@ export default function Dashboard() {
       </div>
 
       {/* ── Today's Stats ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* One per row on a phone. At 360px a 2-up grid gave each card ~160px,
+          which clipped "₹2,130.80" and "SGST Collected" mid-word. */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           label="Today's Sales"
           value={formatINR(summary?.totalSales || 0)}
@@ -369,51 +372,53 @@ export default function Dashboard() {
             </div>
           </CardHeader>
           <CardContent className="pt-4 pb-2">
-            <ResponsiveContainer width="100%" height={200}>
-              <AreaChart
-                data={trendData}
-                margin={{ top: 5, right: 10, left: 0, bottom: 5 }}
-              >
-                <defs>
-                  <linearGradient
-                    id="salesGradient"
-                    x1="0"
-                    y1="0"
-                    x2="0"
-                    y2="1"
-                  >
-                    <stop offset="5%" stopColor="#14b8a6" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#14b8a6" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                <XAxis
-                  dataKey="date"
-                  tick={{ fill: "#64748b", fontSize: 11 }}
-                />
-                <YAxis
-                  tick={{ fill: "#64748b", fontSize: 11 }}
-                  tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`}
-                />
-                <Tooltip
-                  formatter={(val) => [formatINR(Number(val)), "Sales"]}
-                  contentStyle={{
-                    background: "#0f172a",
-                    border: "1px solid #1e293b",
-                    color: "#fff",
-                    borderRadius: "8px",
-                    fontSize: "12px",
-                  }}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="sales"
-                  stroke="#14b8a6"
-                  strokeWidth={2}
-                  fill="url(#salesGradient)"
-                />
-              </AreaChart>
-            </ResponsiveContainer>
+            <ScrollableChart>
+              <ResponsiveContainer width="100%" height={200}>
+                <AreaChart
+                  data={trendData}
+                  margin={{ top: 5, right: 10, left: 0, bottom: 5 }}
+                >
+                  <defs>
+                    <linearGradient
+                      id="salesGradient"
+                      x1="0"
+                      y1="0"
+                      x2="0"
+                      y2="1"
+                    >
+                      <stop offset="5%" stopColor="#14b8a6" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="#14b8a6" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                  <XAxis
+                    dataKey="date"
+                    tick={{ fill: "#64748b", fontSize: 11 }}
+                  />
+                  <YAxis
+                    tick={{ fill: "#64748b", fontSize: 11 }}
+                    tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`}
+                  />
+                  <Tooltip
+                    formatter={(val) => [formatINR(Number(val)), "Sales"]}
+                    contentStyle={{
+                      background: "#0f172a",
+                      border: "1px solid #1e293b",
+                      color: "#fff",
+                      borderRadius: "8px",
+                      fontSize: "12px",
+                    }}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="sales"
+                    stroke="#14b8a6"
+                    strokeWidth={2}
+                    fill="url(#salesGradient)"
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </ScrollableChart>
           </CardContent>
         </Card>
 
