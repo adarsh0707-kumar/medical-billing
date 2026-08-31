@@ -88,7 +88,14 @@ backend/src/
 │                                A factory so tests mount the real stack without listening,
 │                                and can dial rate limits down to exercise them.
 ├── config/
-│   ├── db.js                    PrismaClient singleton; exits the process if connect fails
+│   ├── db.js                    PrismaClient singleton; exits the process if connect fails.
+│   │                            Applies the audit extension, and wraps $transaction so the
+│   │                            audit row can join the caller's transaction rather than
+│   │                            taking a second pooled connection.
+│   ├── audit.js                 The audit trail, as a Prisma client extension. Was a $use
+│   │                            middleware until 2026-08-31 — see docs/03 §3.12.
+│   ├── audit-context.js         Two AsyncLocalStorage stores: the acting user (per request)
+│   │                            and the current transaction client (per transaction).
 │   ├── origins.js               The one web-origin allowlist. Read by the CORS middleware and
 │   │                            by the CSRF guard, which answer different questions and must
 │   │                            not drift apart.

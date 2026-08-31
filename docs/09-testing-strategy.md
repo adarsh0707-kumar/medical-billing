@@ -1,6 +1,6 @@
 # Testing Strategy
 
-**Backend, measured 2026-08-31: 631 tests across 24 files, all passing.** Frontend and browser: 125 unit tests across 16 files and a 7-flow smoke, last measured 2026-08-27. All three layers on CI.
+**Backend, measured 2026-08-31: 634 tests across 24 files, all passing.** Frontend and browser: 125 unit tests across 16 files and a 7-flow smoke, last measured 2026-08-27. All three layers on CI.
 
 ⚠️ **The frontend total is stale and understated.** The file table below has been brought back in step with the tree — 18 files, not 16 — but its *count* has not, because this document's rule is that counts come from a run, and the run needs Node 22 (below it the suite dies in jsdom with `webidl.util.markAsUncloneable is not a function`, which says nothing about the cause). Three files are missing from the last measurement: `Signup`, `amount-in-words` and `print-document`. **Run `npm test` in `frontend/` on Node 22 and replace the number**; do not add up the table to get it.
 
@@ -50,7 +50,7 @@ Two decisions worth knowing:
 
 ### What exists
 
-**Backend — 631 across 24 files, all passing.** The count is what a run reports, not what passes — recording it the other way would be the drift this section exists to prevent, and for a while the two genuinely differed.
+**Backend — 634 across 24 files, all passing.** The count is what a run reports, not what passes — recording it the other way would be the drift this section exists to prevent, and for a while the two genuinely differed.
 
 Two failures worth remembering, both fixed 2026-08-27:
 
@@ -70,7 +70,7 @@ Two failures worth remembering, both fixed 2026-08-27:
 | `tests/inventory/batches.test.js`             |    29 | Opening stock, manufacture dates, strict updates, alert windows, manual adjustment |
 | `tests/users/users.test.js`                   |    28 | User CRUD, validation, profile safety                                      |
 | `tests/billing/reports.test.js`               |    36 | Daily, trend and GST reports, date boundaries, paid-only filtering — **plus the monthly and yearly reports** added 2026-08-30: day/month boundaries, reconciliation with an unpaid invoice in the period, the zero-fill, both CSV shapes and the role split |
-| `tests/billing/invoice-void.test.js`          |    22 | Stock restoration, credit notes, partial returns, concurrent voids, period rule |
+| `tests/billing/invoice-void.test.js`          |    22 | Stock restoration, credit notes, partial returns, **twelve** concurrent returns, period rule |
 | `tests/inventory/medicines.test.js`           |    19 | Stock totals, POS search, soft delete, validation                          |
 | `tests/reports/csv.test.js`                   |    16 | Escaping, the formula-injection guard, the BOM and CRLF                    |
 | `tests/inventory/masters.test.js`             |    15 | Masters CRUD, delete conflicts, suppliers                                  |
@@ -79,7 +79,7 @@ Two failures worth remembering, both fixed 2026-08-27:
 | `tests/users/password-reset.test.js`          |    13 | The generated temporary password, its single use, and the sessions it ends |
 | `tests/billing/customer-erasure.test.js`      |    11 | Anonymisation in place, the audit-trail sweep, invoices left reconciling   |
 | `tests/reports/csv-export.test.js`            |    11 | The four export endpoints: filenames, headers, money as stored             |
-| `tests/audit/audit-log.test.js`               |     6 | Actor and before/after on every audited write, and what is deliberately not audited |
+| `tests/audit/audit-log.test.js`               |     9 | Actor and before/after on every audited write, what is deliberately not audited, and — since the 2026-08-31 migration off `$use` — that an audit row rolls back with the transaction it describes |
 | `tests/auth/rate-limit.test.js`               |     5 | Failed-login budget, per-client isolation, successful sign-ins not counted |
 | `tests/billing/invoice-concurrency.test.js`   |     5 | Last-unit races, oversell bursts, gapless serials                          |
 | `tests/api/shop.test.js`                      |     8 | `GET`/`PUT /api/shop`: the caller's own shop only, the ADMIN gate on `PUT`, and read access for every role because printing a bill is a cashier's job (FR-SHOP-07). **Added with multi-tenancy and missing from this table until 2026-08-31** |

@@ -24,6 +24,32 @@ const runWithActor = (actor, fn) => auditContext.run(actor, fn);
 const currentActor = () => auditContext.getStore() ?? null;
 
 /**
+ * Carries the *transaction client* the caller is currently inside.
+ *
+ * Same mechanism as the actor above and for the same reason: the audit
+ * extension has to reach something the controller owns, and threading it
+ * through every call would put the remembering back where it was designed out
+ * of. `config/db.js` wraps `$transaction` so that the callback runs inside this
+ * store, and the extension writes its audit row through whatever it finds here.
+ *
+ * This is what lets an audit row join the transaction it describes. Before it,
+ * the extension's write went out on the pool's *next* connection while the
+ * caller still held one, which cost two connections per audited write inside a
+ * transaction and left the audit row committed when the write it recorded rolled
+ * back.
+ *
+ * A separate store from the actor's on purpose. The actor is per request and is
+ * set once; this is per transaction, nests inside it, and must fall back to null
+ * the moment the transaction ends — a stale client here would write into a
+ * transaction that has already committed.
+ */
+const transactionContext = new AsyncLocalStorage();
+
+const runInTransaction = (tx, fn) => transactionContext.run(tx, fn);
+
+const currentTransactionClient = () => transactionContext.getStore() ?? null;
+
+/**
  * Fills in who the caller turned out to be.
  *
  * The context has to be opened before the routers, but the actor is only known
@@ -62,4 +88,6 @@ module.exports = {
   currentActor,
   setActor,
   setReason,
+  runInTransaction,
+  currentTransactionClient,
 };

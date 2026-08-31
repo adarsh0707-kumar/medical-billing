@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+#### The audit trail joins the transaction it describes
+
+`config/audit.js` ran as a Prisma middleware (`prisma.$use`). A middleware cannot see the transaction its caller is in, so its before/after reads and its `AuditLog` insert went out on the *global* client while the caller's transaction still held a pooled connection. Moved to a Prisma **client extension**, with `config/db.js` wrapping `$transaction` so the callback runs inside an `AsyncLocalStorage` holding the transaction client — an extension alone gets no handle on one either, so that wrapper is the half that actually closes this.
+
+**Two defects, and the one that was never written down is the worse of them.**
+
+- **A rolled-back write left an audit row behind**, because the insert committed on its own connection. A record of something that never happened is worse than no record. Confirmed against this database before the change: one surviving row per rolled-back transaction.
+- **A concurrency ceiling.** Every audited write inside a transaction needed two connections at once, so N concurrent voids deadlocked once N passed half the pool. `tests/billing/invoice-void.test.js` had capped its own concurrency at four to stay underneath — a test written around a defect rather than against it — and its cap is now **12**.
+- A third fell out with them: the `before` read could not see the transaction's own uncommitted writes, so a second edit to the same row in one transaction recorded the state from before the *first*.
+
+**Measured by disabling only the `$transaction` wrapper and re-running:** twelve concurrent partial returns produced **zero** successes, every one dying on pool exhaustion and the 5s transaction timeout. With it, twelve of twelve pass in about 300 ms. Both new audit guards fail the same way, which is what makes them guards.
+
+**One behaviour deliberately changed.** An audit insert that fails *inside* a transaction now propagates instead of being swallowed. The old swallow was right when the write had its own connection; inside a transaction the failed statement has already aborted it at the database, so swallowing would hide the cause and resurface it as an unrelated "current transaction is aborted" on the caller's next statement. Outside a transaction it is still swallowed and logged — a lost audit row is a gap in a record, a rejected write is a pharmacist who cannot work.
+
+**Unchanged:** the array form `$transaction([...])` still writes its audit rows outside the transaction, because Prisma exposes no client for that form. It is used only for a few uncontended account writes. Also unchanged, and asserted: the audited model set, the exclusions, the `password`/`tokenVersion` stripping, and the unconditional auditing of bulk writes on master data that `3911ba6` restored after multi-tenancy silently broke it.
+
+Backend suite: **634 tests across 24 files**, 91.8% statements.
+
 ### Security
 
 #### The refresh route has an explicit CSRF guard, and the cross-site question is settled

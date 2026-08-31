@@ -1,12 +1,43 @@
-const { currentActor } = require("./audit-context");
+const { currentActor, currentTransactionClient } = require("./audit-context");
 
 /**
  * Records who changed what (NFR-17, threat T-12).
  *
- * Installed as a Prisma middleware so it sits under every controller. The
+ * Installed on the Prisma client so it sits under every controller. The
  * alternative — an audit call in each handler — records the writes somebody
  * remembered to instrument, and the ones that matter most are usually the ones
  * added in a hurry.
+ *
+ * ## A client extension, not `$use`, since 2026-08-31
+ *
+ * A Prisma middleware cannot see the transaction its caller is in, so every
+ * audited write inside one issued its reads and its `AuditLog` insert on the
+ * *global* client — a second pooled connection, taken while the caller still
+ * held the first. Two consequences, and the second is the one that made this
+ * worth doing:
+ *
+ * 1. **A concurrency ceiling.** With a pool of 9, N concurrent voids need 2N
+ *    connections and deadlock as soon as N > 9 − N. Measured at five;
+ *    `tests/billing/invoice-void.test.js` capped its own concurrency at four to
+ *    stay underneath, which is a test written around a defect rather than
+ *    against it.
+ * 2. **A correctness bug nobody had written down.** The audit insert committed
+ *    on its own connection, so a sale that rolled back left an audit row
+ *    claiming a change that never happened. Verified against this database
+ *    before the migration: one surviving row per rolled-back transaction.
+ *
+ * An extension does not solve this by itself — Prisma gives a `query` extension
+ * no handle on the caller's transaction either. What closes it is
+ * `config/db.js` wrapping `$transaction` so the callback runs inside an
+ * `AsyncLocalStorage`, which this reads back through `currentTransactionClient`.
+ * The extension is what makes that reachable at all: `$use` runs outside the
+ * extended client's operation pipeline, so there was nowhere to put it.
+ *
+ * **The array form `$transaction([...])` is unchanged**, and still writes its
+ * audit rows outside the transaction. Prisma exposes no client for that form, so
+ * there is nothing to capture. It is used for a handful of account writes in
+ * `auth.controller.js` and `user.controller.js`, none of which are contended, so
+ * the ceiling does not bite there.
  */
 
 // Master data and the accounts that touch it. What this deliberately leaves out
@@ -34,8 +65,15 @@ const AUDITED = new Set([
 // Single-record writes only. `updateMany`/`deleteMany` are excluded on purpose:
 // the one that matters is the stock decrement inside invoice creation, which is
 // an updateMany and is already attributable through the invoice it belongs to.
-// Auditing it would also mean an audit row for a sale that later rolled back,
-// because the audit write cannot join the caller's transaction.
+//
+// This exclusion used to carry a second reason — that auditing it would leave a
+// row behind for a sale that later rolled back, because the audit write could
+// not join the caller's transaction. **That reason is gone as of 2026-08-31**
+// and is recorded here rather than quietly deleted, because it was real: the
+// write now joins the transaction and rolls back with it. What still stands is
+// the first reason, which is sufficient on its own — auditing the decrement
+// would double the write volume of the hottest path in the product to restate
+// something `Invoice.userId` already records.
 const AUDITED_ACTIONS = {
   create: "CREATE",
   update: "UPDATE",
@@ -125,88 +163,128 @@ const strip = (value) => {
   return out;
 };
 
-const auditMiddleware = (prisma) => async (params, next) => {
-  const declared = currentActor()?.reason;
-  const bulk = BULK_ACTIONS[params.action];
-  const action =
-    AUDITED_ACTIONS[params.action] ??
-    (bulk && (declared || auditsBulkWrite(params.model, params.args))
-      ? bulk
-      : undefined);
-  if (!action || !AUDITED.has(params.model)) return next(params);
+/**
+ * Builds the extension.
+ *
+ * `baseClient` is the **unextended** client, and that is deliberate. Its reads
+ * do not re-enter this extension, so there is no recursion to guard against, and
+ * it is only ever reached when there is no transaction to use.
+ */
+const auditExtension = (baseClient) => ({
+  name: "audit",
+  query: {
+    $allOperations: async ({ model, operation, args, query }) => {
+      const declared = currentActor()?.reason;
+      const bulk = BULK_ACTIONS[operation];
+      const action =
+        AUDITED_ACTIONS[operation] ??
+        (bulk && (declared || auditsBulkWrite(model, args)) ? bulk : undefined);
+      // `model` is undefined for client-level operations ($queryRaw, $executeRaw),
+      // which `$allOperations` also sees and `$use` did not.
+      if (!action || !model || !AUDITED.has(model)) return query(args);
 
-  // Read the prior state before the write lands. One extra query per audited
-  // write, on master data only — the hot paths are excluded above.
-  //
-  // `findFirst` for a bulk write, `findUnique` for a singular one. They are not
-  // interchangeable: a tenant-scoped `updateMany` selects on `{ id, shopId }`,
-  // and `findUnique` rejects a non-unique field outright rather than filtering
-  // by it. Sent there, every bulk `before` was thrown away by the catch below
-  // and the audit row recorded a change from nothing.
-  let before = null;
-  if (action !== "CREATE" && params.args?.where) {
-    const model = prisma[modelAccessor(params.model)];
-    try {
-      before = bulk
-        ? await model.findFirst({ where: params.args.where })
-        : await model.findUnique({ where: params.args.where });
-    } catch {
-      // A `where` this lookup cannot use is not a reason to fail the write.
-      before = null;
-    }
-  }
+      // Everything this extension does itself — the before/after reads and the
+      // audit insert — goes through the caller's transaction when there is one.
+      //
+      // That is the whole point of the migration. On the global client these
+      // took a second pooled connection while the caller held the first, which
+      // is what capped concurrent voids at five; and the insert committed
+      // independently, so a rolled-back write left an audit row behind claiming
+      // it had happened.
+      //
+      // It also makes the `before` read correct inside a transaction, which it
+      // was not: read on the global client it could not see the transaction's
+      // own earlier writes, so a second edit to the same row in one transaction
+      // recorded the state from before the first.
+      const db = currentTransactionClient() ?? baseClient;
 
-  const result = await next(params);
-
-  // A bulk write returns `{ count }`, not the row, so the resulting state has to
-  // be read back — otherwise `after` records how many rows changed instead of
-  // what they changed to, which is not an audit trail.
-  let after = result;
-  if (bulk) {
-    after = null;
-    const id = params.args?.where?.id;
-    if (id && action !== "DELETE") {
-      try {
-        after = await prisma[modelAccessor(params.model)].findUnique({
-          where: { id },
-        });
-      } catch {
-        after = null;
+      // Read the prior state before the write lands. One extra query per audited
+      // write, on master data only — the hot paths are excluded above.
+      //
+      // `findFirst` for a bulk write, `findUnique` for a singular one. They are
+      // not interchangeable: a tenant-scoped `updateMany` selects on
+      // `{ id, shopId }`, and `findUnique` rejects a non-unique field outright
+      // rather than filtering by it. Sent there, every bulk `before` was thrown
+      // away by the catch below and the audit row recorded a change from nothing.
+      let before = null;
+      if (action !== "CREATE" && args?.where) {
+        const accessor = db[modelAccessor(model)];
+        try {
+          before = bulk
+            ? await accessor.findFirst({ where: args.where })
+            : await accessor.findUnique({ where: args.where });
+        } catch {
+          // A `where` this lookup cannot use is not a reason to fail the write.
+          before = null;
+        }
       }
-    }
-  }
 
-  // Never let bookkeeping fail the operation it is describing. A lost audit row
-  // is a gap in a record; a rejected write is a pharmacist unable to do their
-  // job, and the second is worse.
-  try {
-    const actor = currentActor();
-    await prisma.auditLog.create({
-      data: {
+      const result = await query(args);
+
+      // A bulk write returns `{ count }`, not the row, so the resulting state
+      // has to be read back — otherwise `after` records how many rows changed
+      // instead of what they changed to, which is not an audit trail.
+      let after = result;
+      if (bulk) {
+        after = null;
+        const id = args?.where?.id;
+        if (id && action !== "DELETE") {
+          try {
+            after = await db[modelAccessor(model)].findUnique({
+              where: { id },
+            });
+          } catch {
+            after = null;
+          }
+        }
+      }
+
+      const actor = currentActor();
+      const row = {
         shopId: actor?.shopId ?? null,
         actorId: actor?.id ?? null,
         actorEmail: actor?.email ?? null,
         requestId: actor?.requestId ?? null,
         reason: actor?.reason ?? null,
         action,
-        model: params.model,
+        model,
         // `updateMany` returns a count, not a row, so fall back to the id the
         // caller targeted — and leave it null when the where clause was not an
         // identity, rather than inventing one.
-        recordId: result?.id ?? before?.id ?? params.args?.where?.id ?? null,
+        recordId: result?.id ?? before?.id ?? args?.where?.id ?? null,
         before: action === "CREATE" ? undefined : strip(before),
         after: action === "DELETE" ? undefined : strip(after),
-      },
-    });
-  } catch (err) {
-    console.error("audit: failed to record a write", {
-      model: params.model,
-      action,
-      message: err.message,
-    });
-  }
+      };
 
-  return result;
-};
+      // Outside a transaction: never let bookkeeping fail the operation it is
+      // describing. A lost audit row is a gap in a record; a rejected write is a
+      // pharmacist unable to do their job, and the second is worse.
+      //
+      // **Inside one, the same swallow would be actively harmful**, which is new
+      // with this migration and is the one behaviour it deliberately changes. A
+      // failed statement aborts the whole Postgres transaction, so by the time
+      // this catch ran the caller's transaction would already be doomed —
+      // swallowing would hide the cause and surface it later as an unrelated
+      // "current transaction is aborted" on the caller's next statement. Letting
+      // it propagate rolls the write back with a message that names what
+      // actually failed.
+      if (currentTransactionClient()) {
+        await db.auditLog.create({ data: row });
+      } else {
+        try {
+          await db.auditLog.create({ data: row });
+        } catch (err) {
+          console.error("audit: failed to record a write", {
+            model,
+            action,
+            message: err.message,
+          });
+        }
+      }
 
-module.exports = { auditMiddleware, AUDITED, REDACTED };
+      return result;
+    },
+  },
+});
+
+module.exports = { auditExtension, AUDITED, REDACTED };

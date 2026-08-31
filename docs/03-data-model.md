@@ -387,7 +387,21 @@ This is the only raw SQL in the codebase; the atomicity guarantee is the reason.
 
 **No relation to `User`.** A foreign key would either block deleting an account or null the column out, and a trail that forgets who did something the moment their account is removed is not a trail. `actorId` and `actorEmail` are therefore copies.
 
-**Written by a Prisma middleware** (`config/audit.js`), not by controllers, so a new write path records itself without being asked. The actor reaches the data layer through an `AsyncLocalStorage` context set per request — a Prisma middleware has no idea a request exists, and threading an actor through every call would put the remembering back into the controllers.
+**Written by a Prisma client extension** (`config/audit.js`), not by controllers, so a new write path records itself without being asked. The actor reaches the data layer through an `AsyncLocalStorage` context set per request — the data layer has no idea a request exists, and threading an actor through every call would put the remembering back into the controllers.
+
+**It was a Prisma middleware (`$use`) until 2026-08-31**, and the change is worth understanding before touching this file, because it fixed two things at once. A middleware cannot see the transaction its caller is in, so its reads and its `AuditLog` insert went out on the *global* client while the caller's transaction still held a pooled connection:
+
+- **Every audited write inside a transaction cost two connections**, so N concurrent voids deadlocked once N passed half the pool. Measured: twelve concurrent partial returns produced **zero** successes, all of them dying on pool exhaustion and the 5s transaction timeout. `tests/billing/invoice-void.test.js` had capped its own concurrency at four to stay underneath — a test written around a defect rather than against it.
+- **The audit row outlived a write that rolled back**, since it committed on its own connection. A rolled-back sale left a row claiming a change that never happened.
+
+An extension alone does not fix this — Prisma gives a `query` extension no handle on the caller's transaction either. `config/db.js` wraps `$transaction` so its callback runs inside a second `AsyncLocalStorage` holding the transaction client, and the extension writes through whatever it finds there. The same trick as the actor, for the same reason.
+
+Two consequences of that are worth knowing:
+
+- **The `before` read is now correct inside a transaction.** On the global client it could not see the transaction's own uncommitted writes, so a second edit to the same row in one transaction recorded the state from before the *first*.
+- **The array form `$transaction([...])` is unchanged.** Prisma exposes no client for it, so its audit rows still commit independently. It is used only for a few uncontended account writes.
+
+Guarded by `tests/audit/audit-log.test.js` — a rolled-back transaction must leave no audit row, and a committed one must still leave a correct one. Both fail if anyone reverts to `$use` or drops the wrapper; verified by doing exactly that.
 
 **What is covered:** `Medicine`, `Batch`, `Supplier`, `Category`, `Manufacturer`, `Customer`, `User`, for single-record `create`, `update` and `delete`.
 
@@ -399,11 +413,13 @@ This is the only raw SQL in the codebase; the atomicity guarantee is the reason.
 | `RefreshToken`             | Churns by design — a 30-minute access token means each device rotates one about 48 times a day, which would bury everything worth reading  |
 | `InvoiceCounter`           | A serial allocator, not business data                                                                                                       |
 | `AuditLog`                 | Auditing the audit log does not terminate                                                                                                   |
-| `updateMany` / `deleteMany` **unless a reason is declared** | The one that matters is the stock decrement inside invoice creation, which is attributable through its invoice. A handler that calls `setReason` is stating the write is worth recording, which opts it back in — that is how manual stock adjustment (FR-BATCH-11) is audited while the sale stays out. The resulting state is read back, since a bulk write returns a count rather than a row. It is also the only write inside a long transaction, and the audit row cannot join that transaction — so a rolled-back sale would leave a row claiming stock moved |
+| `updateMany` / `deleteMany` **unless a reason is declared** | The one that matters is the stock decrement inside invoice creation, which is attributable through its invoice. A handler that calls `setReason` is stating the write is worth recording, which opts it back in — that is how manual stock adjustment (FR-BATCH-11) is audited while the sale stays out. The resulting state is read back, since a bulk write returns a count rather than a row. *(This row used to carry a second reason — that the audit write could not join the sale's transaction, so a rollback would leave a row claiming stock moved. **That is no longer true as of 2026-08-31** and is recorded rather than deleted, because it was real. The volume argument stands on its own.)* |
 
 **`password` and `tokenVersion` are stripped** from both `before` and `after`. An audit row must never become a second place credential material lives.
 
-**Failure is non-fatal.** If the audit insert throws, the error is logged and the original write still succeeds. A lost audit row is a gap in a record; a rejected write is a pharmacist who cannot do their job.
+**Failure is non-fatal outside a transaction.** If the audit insert throws, the error is logged and the original write still succeeds. A lost audit row is a gap in a record; a rejected write is a pharmacist who cannot do their job.
+
+**Inside a transaction it is fatal, deliberately, since 2026-08-31.** Now that the insert shares the caller's transaction, a failed statement has already aborted it at the database — swallowing the error would hide the cause and surface it later as an unrelated *"current transaction is aborted"* on the caller's next statement. Letting it propagate rolls the write back with a message naming what actually failed.
 
 #### Retention — decided 2026-08-22
 

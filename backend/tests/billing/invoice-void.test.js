@@ -424,21 +424,32 @@ describe("partial returns", () => {
     expect(await prisma.invoice.count({ where: { reversesId: invoice.id } })).toBe(1);
   });
 
-  // Four, not eight, and the number is load-bearing.
+  // Twelve, and the number is load-bearing — it was four until 2026-08-31.
   //
-  // A void restores stock with `tx.batch.update`, and Batch is an audited model,
-  // so the audit middleware issues its before/after reads and its AuditLog insert
-  // on the *global* client while the caller's transaction still holds a pooled
-  // connection. Every concurrent void therefore needs two connections at once.
-  // The pool is 9, so N voids deadlock as soon as N > 9 - N — five and up. At
-  // eight, measured, five of eight die on the 5s transaction timeout with a 500.
+  // A void restores stock with `tx.batch.update`, and Batch is an audited model.
+  // While auditing ran as a Prisma middleware it could not see the caller's
+  // transaction, so its before/after reads and its AuditLog insert went out on
+  // the *global* client while the transaction still held a pooled connection.
+  // Every concurrent void therefore needed two connections at once, and N voids
+  // deadlocked as soon as N exceeded half the pool — whatever the pool happens
+  // to be, since Prisma sizes it from the host's CPU count.
   //
-  // That ceiling is a real defect and it predates partial returns (the full-void
-  // path has always restored stock this way); createInvoice escapes it only
-  // because it moves stock with `updateMany`, which auditing skips. It is not
-  // this test's business. Four exercises the cumulative guard under genuine
-  // concurrency and stays inside the pool, so a failure here means the guard
-  // leaked, not that the connection pool ran dry.
+  // So this test capped itself at four: a test written around a defect rather
+  // than against it, which is why the cap carried a paragraph explaining that
+  // the number was not about the thing being tested.
+  //
+  // The audit trail is now a client extension writing through the caller's
+  // transaction (config/audit.js), so an audited write inside a transaction
+  // costs one connection again. Measured on 2026-08-31 by disabling only the
+  // `$transaction` wrapper in config/db.js and re-running this test: twelve
+  // concurrent returns produced **zero** successes, every one dying on pool
+  // exhaustion and the 5s transaction timeout. With the wrapper, twelve of
+  // twelve pass in about 300ms.
+  //
+  // Twelve is therefore chosen to sit well past the old ceiling: a regression to
+  // the middleware — or losing that wrapper — turns this red rather than leaving
+  // it quietly passing under a lower bar.
+  //
   // GUARD G-15/b — guards the *second* half of that design: deciding whether a
   // return completes the invoice by reading back inside the transaction rather
   // than from the pre-transaction snapshot. Move that decision back outside and
@@ -446,23 +457,23 @@ describe("partial returns", () => {
   it("survives concurrent single-unit returns without over-returning", async () => {
     const { token } = await signIn(app, "ADMIN");
     const { batch, medicine } = await makeSellable({ quantity: 20 });
-    const invoice = await sell(token, batch, medicine, 4);
+    const invoice = await sell(token, batch, medicine, 12);
     const lineId = lineOf(invoice).id;
 
-    // Four requests, four units, all racing for the same line.
+    // Twelve requests, twelve units, all racing for the same line.
     const results = await Promise.all(
-      Array.from({ length: 4 }, () =>
+      Array.from({ length: 12 }, () =>
         ret(token, invoice.id, [{ invoiceItemId: lineId, quantity: 1 }]),
       ),
     );
 
-    expect(results.filter((r) => r.status === 201).length).toBe(4);
+    expect(results.filter((r) => r.status === 201).length).toBe(12);
 
     const after = await prisma.invoice.findUnique({
       where: { id: invoice.id },
       include: { items: true },
     });
-    expect(after.items[0].returnedQty).toBe(4);
+    expect(after.items[0].returnedQty).toBe(12);
     expect(after.status).toBe("CANCELLED");
     expect(await stockOf(batch.id)).toBe(20);
   });

@@ -19,12 +19,14 @@ timeline
         Phase 4 : Customers & suppliers
         Phase 5 : Reports & GST
         Phase 6 : Print, polish, docs
-    section Proposed
+    section Delivered since
         Phase 7 : Correctness & integrity
         Phase 8 : Production readiness
         Phase 9 : Test & CI foundation
         Phase 10 : Purchases (cancelled)
         Phase 11 : Performance & scale
+        Phase 12 : Multi-tenancy
+        Phase 13 : Audit in-transaction
 ```
 
 **Health snapshot**
@@ -32,9 +34,9 @@ timeline
 | Dimension                               | State                                                                                                                                                                                                                                                     |
 | --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Feature completeness for a single store | Strong — the full sell/stock/report loop works                                                                                                                                                                                                           |
-| Correctness under concurrency           | **Sound** — both races fixed and proven by concurrent tests; stock also has a database `CHECK` backstop                                                                                                                                          |
+| Correctness under concurrency           | **Sound** — both races fixed and proven by concurrent tests; stock also has a database `CHECK` backstop. The last structural limit went on 2026-08-31: audited writes inside a transaction no longer need a second connection, so the void path's ceiling of five is gone and its test now runs twelve (Phase 13) |
 | Production deployability                | **Ready to trial** — multi-stage images, TLS with HSTS and a CSP, no credential literals, data ports unpublished, structured logging, a readiness probe and a rehearsed restore. A real certificate and a retention decision remain the operator's |
-| Test coverage                           | 604 backend tests (~92% statements) with a 90% gate on the money and auth paths, 125 frontend unit tests, and a 7-flow browser smoke — all three on CI. gates on the invoice, auth, dashboard and trend paths; `medicine.controller.js` at 74.5% is now the largest remaining gap |
+| Test coverage                           | **634 backend tests across 24 files (91.8% statements, measured 2026-08-31)** with 90% gates on the invoice, auth and dashboard paths and 100% on the shared trend query, plus frontend unit tests and a 7-flow browser smoke — all three on CI. `medicine.controller.js` at 74.5% is the largest remaining gap. The frontend count is due a re-measure; see [09](./09-testing-strategy.md) |
 | Documentation accuracy                  | This`docs/` set is the reference; the component READMEs were trimmed to point at it on 2026-08-20                                                                                                                                                       |
 
 The honest read as of **2026-08-20**: the correctness gaps that made v1.0.0 unsafe for real money are closed and tested. What remains between here and a deployment is Phase 8 — images, TLS, secrets and backups — not the arithmetic.
@@ -238,9 +240,33 @@ What it would take to build it properly, recorded so a future decision starts fr
 
 - **Auditing broke for master data**, and stayed broken for a day. Moving edits onto `updateMany` took them out of the audit middleware's single-record path, so category renames, supplier retirements and user deactivations wrote no audit row at all. Fixed by auditing bulk writes on those models unconditionally.
 - **Signup deadlocked the connection pool.** Shop and User are both audited, and the audit write goes on the outer client — so every in-flight signup needed a second connection while its own transaction held the first. Eight concurrent signups returned eight `500`s and created nothing. Fixed by replacing the interactive transaction with a nested write.
-- **The same hazard remains on the void path**, where `tx.batch.update` audits inside a transaction. Five concurrent voids is the measured ceiling. `backend/tests/billing/invoice-void.test.js` documents the arithmetic and caps its own concurrency at four to stay under it. The durable fix is migrating the audit middleware from `$use` to a client extension, which can write through the caller's transaction — **the highest-value open work in the codebase**.
+- ~~**The same hazard remains on the void path**, where `tx.batch.update` audits inside a transaction. Five concurrent voids is the measured ceiling.~~ **Fixed 2026-08-31**, and it turned out to be two defects rather than one — see Phase 13 below.
 
 **Exit criteria met:** two shops created through the public signup share no row, and a foreign id answers 404 rather than 403 on every resource controller, the user list and the dashboard — asserted in `backend/tests/auth/signup.test.js`.
+
+### Phase 13 — The audit trail joins its own transaction ✅ *(delivered 2026-08-31)*
+
+The item Phase 12 left behind, and which this document called **the highest-value open work in the codebase**. It was.
+
+`config/audit.js` ran as a Prisma middleware (`prisma.$use`). A middleware cannot see the transaction its caller is in, so its before/after reads and its `AuditLog` insert went out on the *global* client while the caller's transaction still held a pooled connection.
+
+| # | Work |
+| --- | ---- |
+| 13.1 | The audit trail moved from `prisma.$use` to a Prisma **client extension** (`$extends`, `query.$allOperations`) |
+| 13.2 | `config/db.js` wraps `$transaction` so its callback runs inside an `AsyncLocalStorage` holding the transaction client — an extension alone does not get one, so this is the half that actually closes it |
+| 13.3 | The extension's reads and its insert go through that client when there is one, and through the unextended base client when there is not |
+| 13.4 | `tests/billing/invoice-void.test.js` raised its concurrency cap from **4 to 12** |
+| 13.5 | Three guards in `tests/audit/audit-log.test.js`: a rolled-back transaction leaves no audit row, a committed one still leaves a correct one, and `before` reflects the transaction's own earlier writes |
+
+**Two defects, not one.** The concurrency ceiling was the known half. The other was never written down: because the insert committed on its own connection, **a rolled-back write left an audit row behind claiming it had happened** — a record of something that never occurred, which is worse than no record. A third, smaller one fell out with them: the `before` read could not see the transaction's uncommitted state, so a second edit to the same row in one transaction recorded the state from before the first.
+
+**Measured, by disabling only the `$transaction` wrapper and re-running:** twelve concurrent partial returns produced **zero** successes, every one dying on pool exhaustion and the 5s transaction timeout. With it, twelve of twelve pass in about 300 ms. Both audit guards fail the same way, which is what makes them guards rather than assertions.
+
+**One behaviour deliberately changed.** An audit insert that fails inside a transaction now propagates instead of being swallowed. The old swallow was right when the write was on its own connection; inside a transaction the failed statement has already aborted it at the database, so swallowing would only hide the cause and resurface it as an unrelated *"current transaction is aborted"* on the caller's next statement.
+
+**What is unchanged, and why:** the array form `$transaction([...])` still writes its audit rows outside the transaction, because Prisma exposes no client for that form. It is used only for a handful of uncontended account writes.
+
+**Exit criteria met:** 634 backend tests across 24 files pass; twelve concurrent returns succeed; a rolled-back transaction leaves no audit row.
 
 ### Backlog — candidate features (unsequenced)
 

@@ -123,6 +123,98 @@ describe("audit log", () => {
     expect(await prisma.auditLog.count()).toBe(before);
   });
 
+  // ─── The audit row belongs to the transaction it describes ───────────────
+  //
+  // GUARD for the 2026-08-31 migration off `prisma.$use`. A Prisma middleware
+  // cannot see the transaction its caller is in, so it wrote on the global
+  // client: the row committed on its own connection and outlived a write that
+  // rolled back. Measured against this database before the change — one
+  // surviving row per rolled-back transaction — and the reason the migration was
+  // worth doing beyond the concurrency ceiling it also lifted.
+  //
+  // This is the test that fails if anyone reverts to `$use`, or removes the
+  // `$transaction` wrapper in config/db.js that makes the transaction reachable.
+  describe("inside a transaction", () => {
+    it("rolls the audit row back with the write it records", async () => {
+      const shop = await makeShop();
+      const category = await prisma.category.create({
+        data: { shopId: shop.id, name: "Survives The Rollback" },
+      });
+      const before = await prisma.auditLog.count();
+
+      await expect(
+        prisma.$transaction(async (tx) => {
+          await tx.category.update({
+            where: { id: category.id },
+            data: { name: "Never Committed" },
+          });
+          throw new Error("deliberate rollback");
+        }),
+      ).rejects.toThrow("deliberate rollback");
+
+      // The write is gone, so its audit row must be too. A row here would be a
+      // record of something that never happened, which is worse than no record.
+      const after = await prisma.category.findUnique({
+        where: { id: category.id },
+      });
+      expect(after.name).toBe("Survives The Rollback");
+      expect(await prisma.auditLog.count()).toBe(before);
+    });
+
+    it("still records a write that commits", async () => {
+      // The other half, and not redundant: rolling everything back is trivially
+      // achieved by never writing an audit row at all.
+      const shop = await makeShop();
+      const category = await prisma.category.create({
+        data: { shopId: shop.id, name: "Committed In A Transaction" },
+      });
+
+      await prisma.$transaction(async (tx) => {
+        await tx.category.update({
+          where: { id: category.id },
+          data: { name: "Renamed In A Transaction" },
+        });
+      });
+
+      const row = await auditFor("Category", category.id);
+      expect(row.action).toBe("UPDATE");
+      expect(row.before.name).toBe("Committed In A Transaction");
+      expect(row.after.name).toBe("Renamed In A Transaction");
+    });
+
+    it("sees the transaction's own earlier writes when reading `before`", async () => {
+      // A second defect the old middleware carried, unnoticed because nothing
+      // wrote the same row twice in one transaction: the `before` read went out
+      // on the global client, which cannot see uncommitted state, so a second
+      // edit recorded the state from before the first. Reading through the
+      // caller's transaction fixes it, and this pins it down.
+      const shop = await makeShop();
+      const category = await prisma.category.create({
+        data: { shopId: shop.id, name: "First" },
+      });
+
+      await prisma.$transaction(async (tx) => {
+        await tx.category.update({
+          where: { id: category.id },
+          data: { name: "Second" },
+        });
+        await tx.category.update({
+          where: { id: category.id },
+          data: { name: "Third" },
+        });
+      });
+
+      const rows = await prisma.auditLog.findMany({
+        where: { model: "Category", recordId: category.id },
+        orderBy: { at: "asc" },
+      });
+      const last = rows[rows.length - 1];
+      expect(last.after.name).toBe("Third");
+      // "Second", not "First" — the state this write actually changed.
+      expect(last.before.name).toBe("Second");
+    });
+  });
+
   it("attributes a write with no signed-in user to nobody, rather than guessing", async () => {
     // Mirrors the seed script and migrations: writes that happen outside a
     // request run outside the actor context.
