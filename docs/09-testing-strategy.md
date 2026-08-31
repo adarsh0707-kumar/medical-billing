@@ -1,10 +1,10 @@
 # Testing Strategy
 
-**Backend, measured 2026-08-31: 634 tests across 24 files, all passing.** Frontend and browser: 125 unit tests across 16 files and a 7-flow smoke, last measured 2026-08-27. All three layers on CI.
+**Measured 2026-08-31: 634 backend tests across 24 files, 144 frontend unit tests across 18 files, and a 7-flow browser smoke — all three layers on CI, all passing.**
 
-⚠️ **The frontend total is stale and understated.** The file table below has been brought back in step with the tree — 18 files, not 16 — but its *count* has not, because this document's rule is that counts come from a run, and the run needs Node 22 (below it the suite dies in jsdom with `webidl.util.markAsUncloneable is not a function`, which says nothing about the cause). Three files are missing from the last measurement: `Signup`, `amount-in-words` and `print-document`. **Run `npm test` in `frontend/` on Node 22 and replace the number**; do not add up the table to get it.
-
-> Counts here are taken by **running the suites**, not by adding up the table below. Three documents previously carried four different numbers because the table was maintained by hand and two suites were never added to it — which is the same failure the warning above is recording, caught earlier this time.
+> Counts here are taken by **running the suites**, not by adding up the tables below. Three documents once carried four different numbers because the tables were maintained by hand and two suites were never added to them.
+>
+> The frontend number needs **Node 22** to produce. Below it the suite does not fail a test — it fails to start its workers, with `webidl.util.markAsUncloneable is not a function` from inside jsdom, which says nothing about the cause. `docker compose exec frontend npm test` is the reliable way to get it on a machine running anything older.
 
 ---
 
@@ -84,33 +84,30 @@ Two failures worth remembering, both fixed 2026-08-27:
 | `tests/billing/invoice-concurrency.test.js`   |     5 | Last-unit races, oversell bursts, gapless serials                          |
 | `tests/api/shop.test.js`                      |     8 | `GET`/`PUT /api/shop`: the caller's own shop only, the ADMIN gate on `PUT`, and read access for every role because printing a bill is a cashier's job (FR-SHOP-07). **Added with multi-tenancy and missing from this table until 2026-08-31** |
 
-A dash in the **Tests** column means the file postdates the last measured run.
-
-**Frontend — 125 across 16 files.** Counted from a run on 2026-08-25; the 67
-recorded here previously predated the screen-by-screen component coverage.
+**Frontend — 144 across 18 files, all passing.** Measured 2026-08-31 on Node 22.
+The 125 recorded here before that dated from 2026-08-25 and had been overtaken by
+three files the table listed but the total never counted.
 
 | File                                             | Tests | Covers                                                           |
 | ------------------------------------------------ | ----: | ----------------------------------------------------------------- |
 | `src/pages/__tests__/cart-math.test.ts`        |    41 | The §4 fixtures in integer paise, mirroring the server ([G-17](./08-gap-analysis.md#g-17)) |
+| `src/lib/__tests__/amount-in-words.test.ts`    |    14 | The rupees-and-paise words on the printed invoice, in lakhs and crores, computed in paise throughout (FR-BILL-20) |
 | `src/pages/__tests__/Reports.void.test.tsx`    |    11 | The void and partial-return dialog: role gating, client-side bounds, the refetch ([FR-BILL-17](./01-product-requirements.md)) |
 | `src/pages/__tests__/Billing.guards.test.tsx`  |     9 | POS stock guards, driven through the rendered page                |
+| `src/pages/__tests__/Signup.test.tsx`          |     8 | The signup page: what it sends, what it refuses, and that it creates a shop rather than joining one (FR-AUTH-12) |
 | `src/lib/__tests__/api.test.ts`                |     8 | The 401 interceptor and the password-change redirect              |
 | `src/store/__tests__/auth.store.test.ts`       |     7 | Sign-out reaches the server, and clears locally whatever it answers |
-| `src/hooks/__tests__/useNotifications.test.ts` |     6 | Alert derivation and severity thresholds                          |
 | `src/pages/__tests__/Inventory.batches.test.tsx` |   6 | Batch form fields and the `mfgDate` guard ([G-04](./08-gap-analysis.md#g-04)) |
+| `src/hooks/__tests__/useNotifications.test.ts` |     6 | Alert derivation and severity thresholds                          |
+| `src/pages/__tests__/Reports.export.test.tsx`  |     5 | The export button requests the right period                       |
+| `src/lib/__tests__/print-document.test.ts`     |     5 | `printAs()` sets `document.title` so a saved PDF is named after the invoice, and restores it on `afterprint` (FR-BILL-20) |
 | `src/components/__tests__/Sidebar.test.tsx`    |     5 | The role filter on navigation                                     |
-| `src/lib/__tests__/download.test.ts`           |     4 | Blob download and the `Content-Disposition` filename              |
-| `src/pages/__tests__/Customers.test.tsx`       |     4 | Customer list, search and the history restriction                 |
 | `src/pages/__tests__/Settings.users.test.tsx`  |     4 | User management, admin-only                                       |
+| `src/pages/__tests__/Customers.test.tsx`       |     4 | Customer list, search and the history restriction                 |
+| `src/lib/__tests__/download.test.ts`           |     4 | Blob download and the `Content-Disposition` filename              |
 | `src/components/__tests__/ProtectedRoute.test.tsx` | 3 | Redirect when unauthenticated                                     |
-| `src/pages/__tests__/Reports.export.test.tsx`  |     3 | The export button requests the right period                       |
-| `src/hooks/__tests__/query-cancellation.test.tsx` |  2 | In-flight queries cancel on unmount                               |
 | `src/pages/__tests__/Suppliers.test.tsx`       |     2 | Supplier list and form                                            |
-| `src/pages/__tests__/Signup.test.tsx`         |     — | The signup page: what it sends, what it refuses, and that it creates a shop rather than joining one (FR-AUTH-12) |
-| `src/lib/__tests__/amount-in-words.test.ts`   |     — | The rupees-and-paise words on the printed invoice, in lakhs and crores, computed in paise throughout (FR-BILL-20) |
-| `src/lib/__tests__/print-document.test.ts`    |     — | `printAs()` sets `document.title` so a saved PDF is named after the invoice, and restores it on `afterprint` |
-
-A dash in the **Tests** column means the file postdates the last measured run.
+| `src/hooks/__tests__/query-cancellation.test.tsx` |  2 | In-flight queries cancel on unmount                               |
 
 **Browser — 7 flows**, `e2e/smoke.spec.ts`. Chromium runs all seven; Firefox runs
 only the CSV download, the one flow built on browser machinery rather than ours.
