@@ -1,6 +1,6 @@
 # Testing Strategy
 
-**Measured 2026-08-31: 634 backend tests across 24 files, 144 frontend unit tests across 18 files, and a 7-flow browser smoke — all three layers on CI, all passing.**
+**Measured 2026-08-31: 642 backend tests across 25 files, 144 frontend unit tests across 18 files, and a 7-flow browser smoke — all three layers on CI, all passing.**
 
 > Counts here are taken by **running the suites**, not by adding up the tables below. Three documents once carried four different numbers because the tables were maintained by hand and two suites were never added to them.
 >
@@ -50,7 +50,7 @@ Two decisions worth knowing:
 
 ### What exists
 
-**Backend — 634 across 24 files, all passing.** The count is what a run reports, not what passes — recording it the other way would be the drift this section exists to prevent, and for a while the two genuinely differed.
+**Backend — 642 across 25 files, all passing.** The count is what a run reports, not what passes — recording it the other way would be the drift this section exists to prevent, and for a while the two genuinely differed.
 
 Two failures worth remembering, both fixed 2026-08-27:
 
@@ -79,6 +79,7 @@ Two failures worth remembering, both fixed 2026-08-27:
 | `tests/users/password-reset.test.js`          |    13 | The generated temporary password, its single use, and the sessions it ends |
 | `tests/billing/customer-erasure.test.js`      |    11 | Anonymisation in place, the audit-trail sweep, invoices left reconciling   |
 | `tests/reports/csv-export.test.js`            |    11 | The four export endpoints: filenames, headers, money as stored             |
+| `tests/audit/audit-retention.test.js`         |     8 | The 24-month sweep: both sides of the window boundary, the dry run changing nothing, that it writes no audit rows of its own, and that an erasure still completes when the sweep has already taken its rows |
 | `tests/audit/audit-log.test.js`               |     9 | Actor and before/after on every audited write, what is deliberately not audited, and — since the 2026-08-31 migration off `$use` — that an audit row rolls back with the transaction it describes |
 | `tests/auth/rate-limit.test.js`               |     5 | Failed-login budget, per-client isolation, successful sign-ins not counted |
 | `tests/billing/invoice-concurrency.test.js`   |     5 | Last-unit races, oversell bursts, gapless serials                          |
@@ -87,6 +88,24 @@ Two failures worth remembering, both fixed 2026-08-27:
 **Frontend — 144 across 18 files, all passing.** Measured 2026-08-31 on Node 22.
 The 125 recorded here before that dated from 2026-08-25 and had been overtaken by
 three files the table listed but the total never counted.
+
+> **Two timeouts are raised deliberately, and the suite was flaky without them.**
+> `testTimeout` is 15s in `vitest.config.ts` (Vitest defaults to 5s) and
+> `asyncUtilTimeout` is 5s in `src/test/setup.ts` (Testing Library defaults to
+> 1s). Neither weakens an assertion — they change how long a test waits before
+> concluding something never happened.
+>
+> They are there because the component tests drive the UI through `userEvent`,
+> which types one keystroke at a time, and the search screens debounce by 300ms
+> before querying and rendering. On an idle machine that fits inside the
+> defaults; on a loaded one it does not, and `Inventory.batches` failed while
+> passing 6/6 when run alone. Measured on 2026-08-31 with the machine
+> deliberately loaded: **five failures at the old settings, none at these.**
+>
+> The second failure mode is the one worth remembering, because it does not look
+> like a timing problem at all — `Unable to find role="button" and name
+> "Amoxicillin 500mg"` reads as a missing element and sends you to the
+> component, when the element was merely still on its way.
 
 | File                                             | Tests | Covers                                                           |
 | ------------------------------------------------ | ----: | ----------------------------------------------------------------- |

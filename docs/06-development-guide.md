@@ -103,6 +103,7 @@ npm run dev                      # Vite on :5173
 | `RATE_LIMIT_MAX` | | `500` | Requests per 15 minutes per client on `/api` |
 | `LOGIN_RATE_LIMIT_MAX` | | `10` | **Failed** logins per 15 minutes on `/api/auth/login`; successes are not counted |
 | `CUSTOMER_RETENTION_MONTHS` | | `36` | Inactivity window used by `npm run purge:customers` |
+| `AUDIT_RETENTION_MONTHS` | | `24` | Age at which `npm run purge:audit` deletes an audit row |
 
 **The CORS allowlist has two branches, and they share nothing.** Under
 `NODE_ENV=production` it is exactly `CORS_ORIGINS`, because "restrict CORS to
@@ -140,6 +141,7 @@ All `.env` files are gitignored. Never commit one.
 | `npm run dev`             | nodemon on`src/index.js`                                                                                                                                            |
 | `npm start`               | plain node                                                                                                                                                            |
 | `npm run seed`            | Upsert the admin user                                                                                                                                                 |
+| `npm run purge:audit` | Audit-log retention sweep — reports what it would delete and how old. Add `-- --apply` to do it. Never runs itself; see [§ Audit-log retention](#audit-log-retention) |
 | `npm run purge:customers` | Retention sweep — reports what it would erase. Add`-- --apply` to do it. Never runs itself; see [§ Customer retention](#customer-retention)                       |
 | `npm run prisma:generate` | Regenerate the Prisma client (after any schema edit)                                                                                                                  |
 | `npm run prisma:migrate`  | `prisma migrate dev` — author and apply a migration                                                                                                                |
@@ -385,6 +387,26 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod exec backend npm 
 ```
 
 Override the window with `CUSTOMER_RETENTION_MONTHS` if the shop's policy differs. The dry run is the default precisely because a purge cannot be undone.
+
+### Audit-log retention
+
+The audit log keeps **24 months** and is then purged (NFR-17, [03 §3.12](./03-data-model.md#312-auditlog--who-changed-what)). Same shape as the customer sweep, same reason: the software supplies the tool, you schedule it.
+
+```bash
+# What would be deleted, and how old the oldest row is — changes nothing.
+docker compose -f docker-compose.prod.yml --env-file .env.prod exec backend npm run purge:audit
+
+# Actually delete.
+docker compose -f docker-compose.prod.yml --env-file .env.prod exec backend npm run purge:audit -- --apply
+```
+
+```cron
+45 2 * * *  cd /srv/medical-billing && docker compose -f docker-compose.prod.yml --env-file .env.prod exec -T backend npm run purge:audit -- --apply >> /var/log/medbill-retention.log 2>&1
+```
+
+Half an hour after the customer sweep rather than alongside it, so that if one fails the log says plainly which. Override the window with `AUDIT_RETENTION_MONTHS`.
+
+**These two sweeps are independent, and deliberately so.** Both touch a customer's audit rows — erasure redacts their payloads, this deletes them by age — but neither needs the other to have run. Deleting a row is stronger than redacting one, and an erasure whose audit history has already aged out still completes cleanly. Run them in either order, or one without the other.
 
 ### Backups
 

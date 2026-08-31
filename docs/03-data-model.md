@@ -423,7 +423,16 @@ Guarded by `tests/audit/audit-log.test.js` — a rolled-back transaction must le
 
 #### Retention — decided 2026-08-22
 
-**Keep for 24 months, then purge.** No purge job exists yet, so today the table grows without bound; at this shop's volume that is a few hundred rows a day and not urgent, but it is not indefinite by decision.
+**Keep for 24 months, then purge.** Enforced since 2026-08-31 by `npm run purge:audit` (`src/utils/audit-retention.js`) — reports what it would delete and how old, `-- --apply` to do it. **It never runs itself**: the same arrangement as the customer purge and `scripts/backup.sh`, because there is no background worker in this stack by design ([02 §1](./02-architecture.md)). Between 2026-08-22 and that date the policy was decided and unenforced, so the table grew without bound while four documents described a rule that was not in force.
+
+Two properties worth knowing before changing it:
+
+- **It is not scoped by shop**, which is the one place in this codebase that is deliberate rather than an oversight. Retention is a property of the installation the operator runs, applied on one clock to every tenant; a per-shop sweep would let one shop's operator keep what another had purged.
+- **It writes no audit rows of its own.** `AuditLog` is absent from the audited model set, so the sweep's `deleteMany` passes through the extension untouched. A purge that audited itself could never shrink the table — it would replace every row it removed.
+
+**How it interacts with customer erasure**, since both act on the same rows: it cannot undermine it, because **deleting a row is strictly stronger than redacting one**. Redaction exists so an audit row stops holding a copy of data erased everywhere else; a purge that removed the row first achieves that and more. And nothing depends on a row still being there — `redactAuditTrail` is an `updateMany`, so matching zero rows is a no-op rather than a failure, and an erasure whose audit history has already aged out still succeeds and still leaves nothing personal behind. Asserted in `tests/audit/audit-retention.test.js` rather than reasoned about, because it is the claim here that would be expensive to have wrong.
+
+**The row recording an erasure gets no carve-out.** It ages on this same 24-month clock. The paragraph below says audit retention must outlive the customer-retention period; it was written while [PRD Q6](./01-product-requirements.md#14-open-questions) was open and the number unknown, and Q6 landed at 36 months — longer than 24. The two are not in conflict: they measure different things from different origins, 36 months from a customer's last purchase against 24 from an individual write. What the constraint actually asks for is that an erasure stay auditable for a good while after it happens, and two years is that. Exempting erasure rows so they outlive everything else would be a different policy from the one decided.
 
 Two constraints shaped the number. It must **outlive the customer-retention period** ([PRD Q6](./01-product-requirements.md#14-open-questions), still open), because an erasure needs to be auditable — deleting a customer without a record of who deleted them replaces one gap with another. And it must be long enough to answer "who changed this price" across at least one full annual cycle of GST filings, since that is when a wrong figure typically surfaces.
 

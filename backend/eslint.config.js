@@ -67,7 +67,12 @@ module.exports = [
   {
     // Scripts and the seed talk to an operator at a terminal; that is what
     // stdout is for.
-    files: ["scripts/**/*.js", "src/utils/seed.js", "src/utils/retention.js"],
+    files: [
+      "scripts/**/*.js",
+      "src/utils/seed.js",
+      "src/utils/retention.js",
+      "src/utils/audit-retention.js",
+    ],
     rules: { "no-console": "off" },
   },
 

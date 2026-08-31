@@ -20,6 +20,7 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
     "purge:customers": "node src/utils/retention.js",
+    "purge:audit": "node src/utils/audit-retention.js",
     "types:generate": "node scripts/generate-api-types.js",
     "types:check": "node scripts/generate-api-types.js --check",
     "lint": "eslint .",

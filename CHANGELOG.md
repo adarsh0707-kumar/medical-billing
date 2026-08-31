@@ -9,7 +9,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+#### The audit log's 24-month retention is enforced, not just decided (NFR-17)
+
+`npm run purge:audit` — reports what it would delete and how old the oldest row is; `-- --apply` commits. The policy was decided when the log shipped on 2026-08-22, and until now nothing applied it: the table only grew while four documents described a rule that was not in force.
+
+- **Dry by default**, like the customer purge. Deleting an audit trail cannot be undone, and a tool that does it because somebody was exploring is a bad tool.
+- **Operator-scheduled, not self-running.** No background worker exists in this stack by design, and `scripts/backup.sh` set the precedent. `docs/06` carries a cron line, half an hour after the customer sweep so a failure says plainly which one.
+- **Not scoped by shop** — the one deliberate exception to a codebase where everything filters on `shopId`. Retention belongs to the installation, on one clock for every tenant; a per-shop sweep would let one operator keep what another had purged.
+- **It writes no audit rows of its own.** `AuditLog` is absent from the audited model set, so the sweep passes through the extension untouched. A purge that audited itself could never shrink the table.
+
+**On the interaction with customer erasure**, since `erase-customer.js` redacts an erased customer's audit payloads in place and both therefore act on the same rows: the sweep cannot undermine it, because **deleting a row is strictly stronger than redacting one**. Redaction exists so an audit row stops holding a copy of data erased everywhere else; removing the row achieves that and more. And nothing depends on a row still being there — `redactAuditTrail` is an `updateMany`, so matching zero rows is a no-op, and an erasure whose audit history has already aged out still completes and still leaves nothing personal behind. Asserted rather than assumed: three tests drive erasure *after* a purge has taken its rows.
+
+**The row recording an erasure gets no carve-out**, and that is a decision rather than an oversight. docs/03 said audit retention must outlive the 36-month customer window; it was written while PRD Q6 was open and the number unknown. The two clocks measure different things from different origins — 36 months from a customer's last purchase, 24 from an individual write — so the comparison was never the right one. What the constraint asks is that an erasure stay auditable well after it happens, and two years is that.
+
+Eight tests, including both sides of the window boundary.
+
 ### Fixed
+
+#### The frontend suite was flaky on a loaded machine, and said so misleadingly
+
+`Inventory.batches.test.tsx` failed intermittently — on one machine at 62s and not at 31s, on the same commit, and passing 6/6 whenever that file was run on its own. Two timeouts were too tight for what these tests actually do, and both are now raised: `testTimeout` to 15s in `vitest.config.ts` (Vitest defaults to 5s) and `asyncUtilTimeout` to 5s in `src/test/setup.ts` (Testing Library defaults to 1s).
+
+Neither weakens an assertion. They change how long a test waits before concluding that something never happened.
+
+- **Why the defaults do not fit.** The component tests drive the UI through `userEvent`, which types one keystroke at a time, and the batch form's medicine lookup debounces 300ms before it queries and renders. A `findByRole` for a search result therefore has to cover a debounce, a request and a paint inside one second — comfortable on an idle machine, not on a busy one.
+- **The second failure mode is the instructive one**, because it does not look like timing at all: `Unable to find role="button" and name "Amoxicillin 500mg"` reads as a missing element and sends whoever hits it to the component, when the element was simply still on its way.
+- **Measured with the machine deliberately loaded:** five failures at the old settings, none at these. Verified in both directions rather than assumed — the failure was reproduced first, then fixed.
+
+This was a latent CI failure, not only a local annoyance: the browser-smoke job runs only if the frontend job passes, so a flake here silently skips the layer below it — the same shape as the skipped-not-passing smoke job recorded under 2026-08-27.
 
 #### The audit trail joins the transaction it describes
 
