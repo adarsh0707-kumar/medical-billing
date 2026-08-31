@@ -1,4 +1,5 @@
 import api from "@/lib/api";
+import { amountInWords } from "@/lib/amount-in-words";
 import type { CreateInvoiceInput } from "@/types/api.generated";
 import { useQuery } from "@tanstack/react-query";
 import { calcItemTotal, calcCartTotals } from "@/lib/cart-math";
@@ -195,6 +196,31 @@ interface ShopInfo {
   gstNumber?: string | null;
 }
 
+/** One printed line, as the API returns it — not the cart's shape. */
+interface PrintedItem {
+  medicineName: string;
+  quantity: number;
+  unitPrice: number;
+  discount: number;
+  gstPercent: number;
+  totalPrice: number;
+  batch?: {
+    batchNumber: string;
+    expiryDate: string;
+    medicine?: { hsnCode?: string | null; unit?: string | null } | null;
+  } | null;
+}
+
+/** `MM/YY`, the way an expiry is printed on a pharmacy invoice. */
+const expShort = (iso?: string) => {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return `${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getFullYear()).slice(2)}`;
+};
+
+/** Bare 2 dp — the money columns are a table, so the ₹ goes in the header. */
+const amt = (n: number) => Number(n ?? 0).toFixed(2);
+
 function PrintInvoice({
   invoice,
   shop,
@@ -214,7 +240,7 @@ function PrintInvoice({
       address?: string;
     };
     user: { name: string };
-    items: CartItem[];
+    items: PrintedItem[];
     subtotal: number;
     discountAmt: number;
     cgst: number;
@@ -227,112 +253,212 @@ function PrintInvoice({
   // a brand-new shop that hasn't visited Settings still gets a printable
   // invoice, just without its own details on it.
   const shopName = shop?.name || "MedBill Pro";
-  // Only the details the shop has actually entered — an address or GST line
-  // built from missing pieces would print "undefined" or a bare ", ".
-  const addressLine = shop?.address;
-  const gstLine = shop?.gstNumber ? `GSTIN: ${shop.gstNumber}` : null;
-  const phoneLine = shop?.phone ? `Phone: ${shop.phone}` : null;
-  const contactLine = [addressLine, phoneLine, gstLine]
-    .filter(Boolean)
-    .join(" | ");
+  // Address, phone and GSTIN are rendered as their own lines in the seller box
+  // below, each guarded individually, so a shop that has filled in only some of
+  // them never prints a stray separator or the word "undefined".
+
+  // Both halves of the tax, rounded and equal by construction — printed as the
+  // rate rather than as a bare figure, because that is what a GST return is
+  // reconciled against.
+  const halfRate = inv.items.length
+    ? Number(inv.items[0].gstPercent ?? 0) / 2
+    : 0;
+  const mixedRates =
+    new Set(inv.items.map((i) => Number(i.gstPercent ?? 0))).size > 1;
 
   return (
     <div
       id="print-invoice"
-      className="hidden print:block text-black p-8 font-mono text-sm"
+      className="hidden print:block text-black p-6 font-sans text-[11px] leading-tight"
     >
-      <div className="text-center border-b pb-4 mb-4">
-        <h1 className="text-xl font-bold">{shopName}</h1>
-        {contactLine && <p className="text-xs">{contactLine}</p>}
-      </div>
-
-      {/* Header Info */}
-      <div className="flex justify-between mb-2 text-xs">
-        <div>
-          <p>
-            <strong>Invoice:</strong> {inv.invoiceNumber}
-          </p>
-          <p>
-            <strong>Date:</strong>{" "}
-            {new Date(inv.date).toLocaleDateString("en-IN")}
-          </p>
-          <p>
-            <strong>Cashier:</strong> {inv.user?.name}
-          </p>
+      {/* ── Parties. Seller left, buyer right, the way a tax invoice is read. */}
+      <div className="border border-black">
+        <div className="grid grid-cols-2">
+          <div className="p-2 border-r border-black">
+            <p className="font-bold text-sm uppercase">{shopName}</p>
+            {shop?.address && <p>{shop.address}</p>}
+            {shop?.phone && <p>Phone : {shop.phone}</p>}
+            {shop?.gstNumber && <p>GSTIN : {shop.gstNumber}</p>}
+          </div>
+          <div className="p-2">
+            <p>
+              <span className="font-semibold">M/S : </span>
+              {inv.customer?.name ?? "Walk-in Customer"}
+            </p>
+            {inv.customer?.address && <p>ADD. : {inv.customer.address}</p>}
+            {inv.customer?.phone && <p>MOB. : {inv.customer.phone}</p>}
+          </div>
         </div>
-      </div>
 
-      {/* Customer Details - Single Line */}
-      {inv.customer && (
-        <div className="text-xs mb-4 p-2 bg-gray-50">
-          <strong>Customer:</strong> {inv.customer.name}
-          {inv.customer.phone && ` | Phone: ${inv.customer.phone}`}
-          {inv.customer.age && ` | Age: ${inv.customer.age}y`}
-          {inv.customer.gender &&
-            ` | Gender: ${inv.customer.gender.charAt(0) + inv.customer.gender.slice(1).toLowerCase()}`}
-          {inv.customer.address && ` | Address: ${inv.customer.address}`}
+        <div className="grid grid-cols-2 border-t border-black">
+          <div className="p-1 px-2 border-r border-black text-center">
+            <span className="font-bold tracking-wide">GST INVOICE</span>
+          </div>
+          <div className="p-1 px-2 flex justify-between">
+            <span>
+              <span className="font-semibold">Invoice No. : </span>
+              {inv.invoiceNumber}
+            </span>
+            <span>
+              <span className="font-semibold">Date : </span>
+              {new Date(inv.date).toLocaleDateString("en-GB")}
+            </span>
+          </div>
         </div>
-      )}
 
-      {/* Items Table */}
-      <table className="w-full text-xs mb-4">
-        <thead>
-          <tr className="border-b border-t">
-            <th className="text-left py-1">Medicine</th>
-            <th className="text-center">Qty</th>
-            <th className="text-right">Price</th>
-            <th className="text-right">Total</th>
-          </tr>
-        </thead>
-        <tbody>
-          {inv.items.map((item, i) => (
-            <tr key={i} className="border-b border-dashed">
-              <td className="py-1">
-                <p>{item.medicineName}</p>
-                <p className="text-gray-500">Batch: {item.batchNumber}</p>
-              </td>
-              <td className="text-center">
-                {item.quantity} {item.unit}
-              </td>
-              <td className="text-right">₹{item.unitPrice}</td>
-              <td className="text-right">
-                ₹{calcItemTotal(item).total.toFixed(2)}
-              </td>
+        {/* ── Lines. The column set a distributor's GST invoice carries, minus
+             the two this system has no field for — see the note below. */}
+        <table className="w-full border-collapse border-t border-black">
+          <thead>
+            <tr className="border-b border-black">
+              {[
+                "SN.",
+                "PRODUCT NAME",
+                "HSN",
+                "BATCH",
+                "EXP.",
+                "QTY",
+                "RATE",
+                "DIS%",
+                "GST",
+                "N.RATE",
+                "AMOUNT",
+              ].map((h, i) => (
+                <th
+                  key={h}
+                  className={`px-1 py-0.5 font-semibold border-black ${
+                    i === 1 ? "text-left" : "text-right"
+                  } ${i ? "border-l" : ""}`}
+                >
+                  {h}
+                </th>
+              ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
-      <div className="text-right text-xs space-y-1 border-t pt-2 mb-6">
-        <p>Subtotal: {formatINR(inv.subtotal)}</p>
-        {inv.discountAmt > 0 && <p>Discount: -{formatINR(inv.discountAmt)}</p>}
-        <p>CGST: {formatINR(inv.cgst)}</p>
-        <p>SGST: {formatINR(inv.sgst)}</p>
-        <p className="font-bold text-base border-t pt-1">
-          Total: {formatINR(inv.totalAmount)}
-        </p>
-        <p>Payment: {inv.paymentMode}</p>
-      </div>
+          </thead>
+          <tbody>
+            {inv.items.map((item, i) => {
+              const rate = Number(item.unitPrice ?? 0);
+              const disc = Number(item.discount ?? 0);
+              // What the line is actually charged at, after its discount —
+              // the figure that times quantity gives the taxable value.
+              const netRate = rate * (1 - disc / 100);
+              return (
+                <tr key={i} className="align-top">
+                  <td className="px-1 text-right">{i + 1}.</td>
+                  <td className="px-1 text-left">
+                    {item.medicineName}
+                    {item.batch?.medicine?.unit && (
+                      <span className="text-[9px]"> ({item.batch.medicine.unit})</span>
+                    )}
+                  </td>
+                  <td className="px-1 text-right border-l border-black">
+                    {item.batch?.medicine?.hsnCode ?? ""}
+                  </td>
+                  <td className="px-1 text-right border-l border-black">
+                    {item.batch?.batchNumber ?? ""}
+                  </td>
+                  <td className="px-1 text-right border-l border-black">
+                    {expShort(item.batch?.expiryDate)}
+                  </td>
+                  <td className="px-1 text-right border-l border-black">
+                    {item.quantity}
+                  </td>
+                  <td className="px-1 text-right border-l border-black">
+                    {amt(rate)}
+                  </td>
+                  <td className="px-1 text-right border-l border-black">
+                    {disc ? `${amt(disc)}%` : "—"}
+                  </td>
+                  <td className="px-1 text-right border-l border-black">
+                    {Number(item.gstPercent ?? 0)}%
+                  </td>
+                  <td className="px-1 text-right border-l border-black">
+                    {amt(netRate)}
+                  </td>
+                  <td className="px-1 text-right border-l border-black">
+                    {amt(item.totalPrice)}
+                  </td>
+                </tr>
+              );
+            })}
+            {/* Keeps the box a consistent height on a short bill, so the
+                totals block does not ride up under the header. */}
+            {Array.from({ length: Math.max(0, 8 - inv.items.length) }).map(
+              (_, i) => (
+                <tr key={`pad-${i}`}>
+                  <td colSpan={11} className="px-1">
+                    &nbsp;
+                  </td>
+                </tr>
+              ),
+            )}
+          </tbody>
+        </table>
 
-      {/* Footer Section */}
-      <div className="mt-8">
-        <p className="text-center text-xs mb-6 border-t pt-3">
-          Thank you for your purchase! Get well soon 💊
-        </p>
-
-        {/* Signature Section */}
-        <div className="flex justify-between items-end text-xs">
-          <div className="w-32">
-            <p className="text-center">Customer Sign</p>
-            <div className="border-t border-black mt-6 h-12"></div>
+        {/* ── Tax summary and totals. */}
+        <div className="grid grid-cols-2 border-t border-black">
+          <div className="p-2 border-r border-black">
+            <p>
+              GST : {amt(inv.subtotal)}
+              {mixedRates
+                ? " @ mixed rates"
+                : ` @ ${halfRate}% + ${halfRate}%`}{" "}
+              = {amt(inv.sgst)} SGST + {amt(inv.cgst)} CGST
+            </p>
+            <p className="mt-1">
+              <span className="font-semibold">Payment : </span>
+              {inv.paymentMode}
+            </p>
+            <p className="mt-2 font-semibold">{amountInWords(inv.totalAmount)}</p>
           </div>
+          <div className="p-2">
+            <table className="w-full">
+              <tbody>
+                <tr>
+                  <td>SUB TOTAL</td>
+                  <td className="text-right">{amt(inv.subtotal)}</td>
+                </tr>
+                {inv.discountAmt > 0 && (
+                  <tr>
+                    <td>Discount</td>
+                    <td className="text-right">{amt(inv.discountAmt)}</td>
+                  </tr>
+                )}
+                <tr>
+                  <td>SGST</td>
+                  <td className="text-right">{amt(inv.sgst)}</td>
+                </tr>
+                <tr>
+                  <td>CGST</td>
+                  <td className="text-right">{amt(inv.cgst)}</td>
+                </tr>
+                <tr className="border-t border-black font-bold text-sm">
+                  <td className="pt-1">GRAND TOTAL</td>
+                  <td className="text-right pt-1">{amt(inv.totalAmount)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
 
-          <div className="w-32 text-right">
-            <p className="text-center">Cashier</p>
-            <div className="border-t border-black mt-6 h-12"></div>
-            <p className="mt-2">{inv.user?.name}</p>
+        {/* ── Terms and signature. */}
+        <div className="grid grid-cols-2 border-t border-black">
+          <div className="p-2 border-r border-black">
+            <p className="font-semibold underline">Terms &amp; Conditions</p>
+            <p>Goods once sold will not be taken back or exchanged.</p>
+            <p>All disputes subject to local jurisdiction only.</p>
+            <p>Medicines dispensed against a valid prescription where required.</p>
+          </div>
+          <div className="p-2 flex flex-col justify-between">
+            <p className="text-right">For {shopName}</p>
+            <p className="text-right mt-8">Authorised Signatory</p>
           </div>
         </div>
       </div>
+
+      <p className="mt-1 text-[9px] text-right">
+        Billed by {inv.user?.name}
+      </p>
     </div>
   );
 }

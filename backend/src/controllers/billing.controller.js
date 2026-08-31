@@ -36,6 +36,36 @@ const money = (v) => new D(v).toDecimalPlaces(2, D.ROUND_HALF_UP);
 // failing a sale the customer has already paid for.
 const MAX_INVOICE_NUMBER_ATTEMPTS = 5;
 
+/**
+ * What a line needs to be *printed*, beyond what `InvoiceItem` stores itself.
+ *
+ * A GST tax invoice has to show the batch number, the expiry and the HSN code
+ * per line. `InvoiceItem` snapshots the commercial figures — name, unit price,
+ * discount, GST rate — but reaches the rest through its batch.
+ *
+ * Shared by `createInvoice` and `getOne` because the two print the *same*
+ * document: the receipt handed over at the till and the reprint from history.
+ * They had drifted — `createInvoice` returned `items: true` and nothing more, so
+ * the batch number and expiry were simply absent from the response the till
+ * prints from, and the print view rendered "Batch: undefined" while a reprint of
+ * the very same sale showed it correctly. One definition, so that cannot recur.
+ *
+ * `hsnCode` and `unit` are read through the medicine rather than snapshotted on
+ * the line. That is a deliberate limitation and not a good one: editing a
+ * medicine's HSN silently changes what an already-issued invoice reprints,
+ * which is the drift `medicineName` and `unitPrice` are snapshotted to prevent.
+ * Fixing it properly means new columns on `InvoiceItem` and a migration.
+ */
+const PRINTABLE_ITEM_INCLUDE = {
+  batch: {
+    select: {
+      batchNumber: true,
+      expiryDate: true,
+      medicine: { select: { hsnCode: true, unit: true } },
+    },
+  },
+};
+
 // ─── Create Invoice ────────────────────────────────────
 const createInvoice = async (req, res, next) => {
   try {
@@ -230,7 +260,9 @@ const createInvoice = async (req, res, next) => {
               ...(prescription && { prescription: { create: prescription } }),
             },
             include: {
-              items: true,
+              // The same shape `getOne` returns: the till prints straight from
+              // this response, so anything the print view reads has to be here.
+              items: { include: PRINTABLE_ITEM_INCLUDE },
               customer: true,
               prescription: true,
               user: { select: { name: true } },
@@ -653,11 +685,7 @@ const getOne = async (req, res, next) => {
     const invoice = await prisma.invoice.findFirst({
       where: { id: req.params.id, shopId: req.user.shopId },
       include: {
-        items: {
-          include: {
-            batch: { select: { batchNumber: true, expiryDate: true } },
-          },
-        },
+        items: { include: PRINTABLE_ITEM_INCLUDE },
         customer: true,
         user: { select: { name: true } },
       },
