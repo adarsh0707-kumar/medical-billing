@@ -89,6 +89,9 @@ backend/src/
 │                                and can dial rate limits down to exercise them.
 ├── config/
 │   ├── db.js                    PrismaClient singleton; exits the process if connect fails
+│   ├── origins.js               The one web-origin allowlist. Read by the CORS middleware and
+│   │                            by the CSRF guard, which answer different questions and must
+│   │                            not drift apart.
 │   └── logger.js                pino + pino-http. One JSON object per line in production,
 │                                pretty in development, silent under test. Every request
 │                                carries a correlation id echoed as X-Request-Id, and the
@@ -100,6 +103,10 @@ backend/src/
 │   ├── password-change.middleware.js
 │   │                            403 PASSWORD_CHANGE_REQUIRED while the flag is set, so the
 │   │                            seeded admin cannot use the system until it is replaced
+│   ├── csrf.middleware.js       requireKnownOrigin — an Origin allowlist check on
+│   │                            POST /api/auth/refresh, the only cookie-authenticated route.
+│   │                            Mounted ahead of CORS in app.js, or CORS would reject a
+│   │                            foreign origin first and turn its 403 into a 500.
 │   ├── validate.middleware.js   validate(zodSchema) — parses, replaces req.body, 400 on failure
 │   ├── validate-query.middleware.js
 │   │                            validateQuery(zodSchema) → req.validatedQuery. Deliberately

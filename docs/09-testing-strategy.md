@@ -1,8 +1,8 @@
 # Testing Strategy
 
-**Last measured 2026-08-27: 604 backend tests across 23 files, 125 frontend unit tests across 16 files, and a 7-flow browser smoke — all three layers on CI.**
+**Backend, measured 2026-08-31: 631 tests across 24 files, all passing.** Frontend and browser: 125 unit tests across 16 files and a 7-flow smoke, last measured 2026-08-27. All three layers on CI.
 
-⚠️ **Those totals are stale and understated as of 2026-08-31.** The file tables below have been brought back in step with the tree — the backend is **24** files and the frontend **18** — but the *counts* have not, because this document's rule is that they come from a run. Added since the measurement and not reflected in the totals: `tests/api/shop.test.js` (new with multi-tenancy), the eleven monthly/yearly cases inside `tests/billing/reports.test.js`, the tenant-isolation cases added to `tests/auth/signup.test.js`, and three frontend files (`Signup`, `amount-in-words`, `print-document`). **Re-run both suites and replace the headline numbers**; do not add up the tables to get them.
+⚠️ **The frontend total is stale and understated.** The file table below has been brought back in step with the tree — 18 files, not 16 — but its *count* has not, because this document's rule is that counts come from a run, and the run needs Node 22 (below it the suite dies in jsdom with `webidl.util.markAsUncloneable is not a function`, which says nothing about the cause). Three files are missing from the last measurement: `Signup`, `amount-in-words` and `print-document`. **Run `npm test` in `frontend/` on Node 22 and replace the number**; do not add up the table to get it.
 
 > Counts here are taken by **running the suites**, not by adding up the table below. Three documents previously carried four different numbers because the table was maintained by hand and two suites were never added to it — which is the same failure the warning above is recording, caught earlier this time.
 
@@ -50,7 +50,7 @@ Two decisions worth knowing:
 
 ### What exists
 
-**Backend — 604 across 23 files, all passing.** The count is what a run reports, not what passes — recording it the other way would be the drift this section exists to prevent, and for a while the two genuinely differed.
+**Backend — 631 across 24 files, all passing.** The count is what a run reports, not what passes — recording it the other way would be the drift this section exists to prevent, and for a while the two genuinely differed.
 
 Two failures worth remembering, both fixed 2026-08-27:
 
@@ -62,14 +62,14 @@ Two failures worth remembering, both fixed 2026-08-27:
 | `tests/auth/rbac.test.js`                     |   142 | The full role matrix, plus anonymous rejection on every route              |
 | `tests/billing/invoice-create.test.js`        |    48 | GST fixtures, invariants, rejections, atomicity, Schedule H and expiry     |
 | `tests/api/logging.test.js`                   |     5 | The path in the human-readable log line, which a mounted router strips off `req.url` |
-| `tests/auth/signup.test.js`                   |    23 | Signup: the shop and its first administrator, an eight-way concurrent burst, what it refuses, and **tenant isolation** asserted across the resource controllers, the user list and the dashboard. *(Description corrected 2026-08-31 — it said "the endpoint closing itself", which stopped being true when signup reopened on 2026-08-29.)* |
+| `tests/auth/signup.test.js`                   |    25 | Signup: the shop and its first administrator, an eight-way concurrent burst, what it refuses, and **tenant isolation** asserted across the resource controllers, the user list and the dashboard. *(Description corrected 2026-08-31 — it said "the endpoint closing itself", which stopped being true when signup reopened on 2026-08-29.)* |
 | `tests/api/dashboard.test.js`                 |    26 | Every panel of `GET /api/dashboard/stats`: counting under a void, count-vs-items, the expiry and low-stock windows, and the trend's day bucketing |
 | `tests/api/query-validation.test.js`          |    46 | Every query surface: bounds, coercion, and that a filter actually filters ([G-19](./08-gap-analysis.md#g-19)) |
 | `tests/api/route-layout.test.js`              |    41 | All nine moved paths: alias and successor return the same body, and only the alias is marked deprecated |
-| `tests/auth/auth.test.js`                     |    41 | Login, token rejection, immediate revocation, password change, refresh rotation and reuse detection |
-| `tests/inventory/batches.test.js`             |    28 | Opening stock, manufacture dates, strict updates, alert windows, manual adjustment |
+| `tests/auth/auth.test.js`                     |    48 | Login, token rejection, immediate revocation, password change, refresh rotation and reuse detection, and the `Origin` guard on the refresh route |
+| `tests/inventory/batches.test.js`             |    29 | Opening stock, manufacture dates, strict updates, alert windows, manual adjustment |
 | `tests/users/users.test.js`                   |    28 | User CRUD, validation, profile safety                                      |
-| `tests/billing/reports.test.js`               |    23 | Daily, trend and GST reports, date boundaries, paid-only filtering — **plus the monthly and yearly reports** added 2026-08-30: day/month boundaries, reconciliation with an unpaid invoice in the period, the zero-fill, both CSV shapes and the role split |
+| `tests/billing/reports.test.js`               |    36 | Daily, trend and GST reports, date boundaries, paid-only filtering — **plus the monthly and yearly reports** added 2026-08-30: day/month boundaries, reconciliation with an unpaid invoice in the period, the zero-fill, both CSV shapes and the role split |
 | `tests/billing/invoice-void.test.js`          |    22 | Stock restoration, credit notes, partial returns, concurrent voids, period rule |
 | `tests/inventory/medicines.test.js`           |    19 | Stock totals, POS search, soft delete, validation                          |
 | `tests/reports/csv.test.js`                   |    16 | Escaping, the formula-injection guard, the BOM and CRLF                    |
@@ -81,8 +81,8 @@ Two failures worth remembering, both fixed 2026-08-27:
 | `tests/reports/csv-export.test.js`            |    11 | The four export endpoints: filenames, headers, money as stored             |
 | `tests/audit/audit-log.test.js`               |     6 | Actor and before/after on every audited write, and what is deliberately not audited |
 | `tests/auth/rate-limit.test.js`               |     5 | Failed-login budget, per-client isolation, successful sign-ins not counted |
-| `tests/billing/invoice-concurrency.test.js`   |     4 | Last-unit races, oversell bursts, gapless serials                          |
-| `tests/api/shop.test.js`                      |     — | `GET`/`PUT /api/shop`: the caller's own shop only, the ADMIN gate on `PUT`, and read access for every role because printing a bill is a cashier's job (FR-SHOP-07). **Added with multi-tenancy and missing from this table until 2026-08-31** |
+| `tests/billing/invoice-concurrency.test.js`   |     5 | Last-unit races, oversell bursts, gapless serials                          |
+| `tests/api/shop.test.js`                      |     8 | `GET`/`PUT /api/shop`: the caller's own shop only, the ADMIN gate on `PUT`, and read access for every role because printing a bill is a cashier's job (FR-SHOP-07). **Added with multi-tenancy and missing from this table until 2026-08-31** |
 
 A dash in the **Tests** column means the file postdates the last measured run.
 
@@ -241,6 +241,13 @@ These are the acceptance set for `createInvoice`. All values follow [PRD §8 BR-
 - `changePassword` with the wrong current password → 400; with the right one → the new password logs in and the old one does not.
 - **RBAC matrix:** table-drive the whole of [04 §4](./04-api-reference.md#4-role-matrix) — for each (role, route) pair assert 403 or non-403. One parameterised test covers ~40 assertions.
 - An admin cannot delete their own account → 400.
+
+**CSRF on `POST /api/auth/refresh`** — the only route authenticated by a cookie, and therefore the only one with a surface. Added 2026-08-31 with the guard:
+
+- A foreign `Origin` → `403`, **and the session survives it.** The second half is the one that matters: the guard deliberately does not clear the cookie the way `refresh`'s own denial path does, because being refused must not become a way for a stranger to sign someone out.
+- An allowlisted `Origin` → `200`.
+- The literal `null` origin — what a sandboxed iframe or a `data:` document sends → `403`.
+- **No `Origin` header at all → allowed**, asserted so that tightening it later is a decision rather than an accident. No browser sends a cookie-bearing cross-site POST without one, so such a request had its cookie set by hand.
 
 ### 5.3 Inventory — P1/P2
 

@@ -113,32 +113,42 @@ is in [04 §2a](./docs/04-api-reference.md).
 
 ---
 
-## Hosted deployment — one origin, and an open question
+## Hosted deployment — two sites, settled
 
 The Docker stack is unambiguously same-origin: nginx and the Vite dev server
 both serve the SPA and proxy `/api` to the backend, so CORS never applies to the
 browser.
 
-The hosted deployment is meant to work the same way. `frontend/vercel.json`
-rewrites `/api/:path*` to the Render backend, and a Vercel rewrite is a
-**server-side proxy** — the browser requests `/api/...` on the Vercel origin and
-never learns that Render answered. `frontend/Dockerfile` and `lib/api.ts` agree:
-no `VITE_API_URL` is set, so the client uses a relative base URL.
+**The hosted deployment is not.** This was an open question in this README until
+2026-08-31, because two things in the repository pointed the other way:
+`frontend/vercel.json` rewrites `/api/:path*` to the Render backend — and a
+Vercel rewrite is a server-side proxy, so the browser would never learn Render
+answered — while `frontend/Dockerfile` and `lib/api.ts` both assume no
+`VITE_API_URL` and a relative base URL.
 
-**But the refresh cookie was relaxed to `SameSite=None` on 2026-08-29** to fix
-silent refresh failing, on the reasoning that the SPA and API are cross-site.
-Both cannot be true. The rewrite predates that change by two days, so if it is
-what the deployment actually uses, `SameSite=None` is unnecessary — and it is
-not free: it widens CSRF exposure on `POST /api/auth/refresh`, which
-`SameSite=Strict` was chosen to close.
+**`VITE_API_URL` is set in the Vercel project**, which the repository cannot
+show. So the built SPA calls the API host directly, the rewrite is bypassed, and
+the browser really is making cross-site requests. That settles it: the refresh
+cookie's `SameSite=None` is **required**, not an over-correction — with `Strict`
+the cookie is set once at login and never sent again, so every silent refresh
+fails and a 30-minute access token expires into a full logout.
 
-The one thing that would make the deployment genuinely cross-site is
-`VITE_API_URL` being set in the Vercel project's environment, which is not
-visible in this repository. **To settle it:** check that variable in the Vercel
-dashboard, or open the deployed app and look at whether the network panel shows
-`/api/...` on the app's own origin or an absolute `onrender.com` URL. If it is
-same-origin, revert `refreshCookieOptions()` in
-`backend/src/controllers/auth.controller.js` to `sameSite: "strict"`.
+`None` is not free, and the cost is now paid explicitly rather than left open.
+`POST /api/auth/refresh` is the only endpoint in the API authenticated by a
+cookie rather than a Bearer token, so it is the only one another site can drive.
+It is guarded by an `Origin` check —
+`backend/src/middlewares/csrf.middleware.js`, mounted ahead of CORS in
+`app.js` — which refuses a request from any origin not on the allowlist, and
+deliberately does *not* clear the cookie when it refuses. That file sets out why
+an `Origin` check rather than the usual double-submit token: the SPA is on a
+different site from the API, so script there cannot read a cookie scoped to the
+API's host, and handing the token back in the login response would put a
+session-renewing credential in `localStorage` — the exact thing the HttpOnly
+refresh cookie exists to keep out of reach.
+
+> If `VITE_API_URL` is ever removed from the Vercel project, the deployment
+> becomes same-origin through the rewrite and `sameSite` should go back to
+> `"strict"`. The `Origin` guard is harmless either way and should stay.
 
 ## Tests
 

@@ -464,6 +464,95 @@ describe("POST /api/auth/refresh", () => {
     }
   });
 
+  // ─── CSRF on the one cookie-authenticated route ──────────
+  //
+  // Relaxing the cookie to SameSite=None (the test above) is what makes these
+  // necessary: a Strict cookie is never sent cross-site, so the browser was the
+  // defence, and None gives that up. `requireKnownOrigin` replaces it.
+  //
+  // The attack being guarded is not theft — CORS still stops another origin
+  // reading the response. It is forced session loss: trigger the refresh from
+  // anywhere, the row rotates, and if the victim's browser does not keep the
+  // replacement cookie their own next refresh replays an already-rotated token,
+  // which `refresh` reads as theft and answers by revoking every session they
+  // have.
+  describe("CSRF guard", () => {
+    it("refuses a refresh carrying a foreign Origin", async () => {
+      const { cookie } = await signInFor("csrf-foreign@test.local");
+
+      const res = await request(app)
+        .post("/api/auth/refresh")
+        .set("Cookie", cookie)
+        .set("Origin", "https://evil.example");
+
+      expect(res.status).toBe(403);
+      expect(res.body.success).toBe(false);
+    });
+
+    // The half that matters more than the 403, and the reason the guard does
+    // not clear the cookie the way `refresh`'s own denial path does. If being
+    // refused ended the session, an attacker would achieve by being blocked
+    // exactly what this middleware exists to stop them achieving.
+    it("leaves the session intact when it refuses one", async () => {
+      const { cookie } = await signInFor("csrf-survives@test.local");
+
+      await request(app)
+        .post("/api/auth/refresh")
+        .set("Cookie", cookie)
+        .set("Origin", "https://evil.example")
+        .expect(403);
+
+      // The same cookie the attacker's request carried still works, and is
+      // still on its first rotation — nothing was consumed or revoked.
+      const legitimate = await request(app)
+        .post("/api/auth/refresh")
+        .set("Cookie", cookie);
+
+      expect(legitimate.status).toBe(200);
+      expect(legitimate.body.data.token).toBeTruthy();
+    });
+
+    it("allows a refresh from an origin on the allowlist", async () => {
+      const { cookie } = await signInFor("csrf-known@test.local");
+
+      const res = await request(app)
+        .post("/api/auth/refresh")
+        .set("Cookie", cookie)
+        .set("Origin", "http://localhost:5173");
+
+      expect(res.status).toBe(200);
+    });
+
+    // A sandboxed iframe and a `data:` document both send the literal string
+    // "null". It is not an origin any deployment can list, so it must be
+    // refused rather than treated as absent.
+    it("refuses the literal null origin", async () => {
+      const { cookie } = await signInFor("csrf-null@test.local");
+
+      await request(app)
+        .post("/api/auth/refresh")
+        .set("Cookie", cookie)
+        .set("Origin", "null")
+        .expect(403);
+    });
+
+    // Deliberate, and asserted so that tightening it later is a decision rather
+    // than an accident: a request with no Origin at all is allowed through. No
+    // browser sends a cookie-bearing cross-site POST without one, so a request
+    // arriving without it had its cookie set by hand — by curl, by this suite,
+    // by a server-to-server caller — and whoever set it already held the
+    // credential. Every other test in this file relies on this.
+    it("allows a request with no Origin header, which is not a browser", async () => {
+      const { cookie } = await signInFor("csrf-absent@test.local");
+
+      const res = await request(app)
+        .post("/api/auth/refresh")
+        .set("Cookie", cookie);
+
+      expect(res.status).toBe(200);
+    });
+  });
+
   it("issues an access token that expires in 30 minutes, not 7 days", async () => {
     const { res } = await signInFor("shortlived@test.local");
     const { iat, exp } = jwt.decode(res.body.data.token);

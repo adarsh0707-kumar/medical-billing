@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+#### The refresh route has an explicit CSRF guard, and the cross-site question is settled
+
+`VITE_API_URL` **is** set in the Vercel project, so the built SPA calls the API host directly rather than through the `vercel.json` rewrite. The deployment really is cross-site, which makes the refresh cookie's `SameSite=None` **required** rather than the over-correction `README.md` had been flagging since 2026-08-29: with `Strict` the cookie is set once at login and never sent again, so every silent refresh fails and a 30-minute access token expires into a full logout.
+
+`None` is what makes `POST /api/auth/refresh` — the only endpoint authenticated by a cookie rather than a Bearer token, and therefore the only one another site can drive — reachable cross-site. It now carries an `Origin` allowlist check, `requireKnownOrigin`.
+
+- **This was not an open hole in the interim, and saying otherwise would overstate the fix.** `app.js` rejects an unlisted origin by calling the CORS origin callback with an `Error`, which `cors` turns into `next(err)`, so a cross-site request was already dying before the router saw it. What was wrong is that the protection was *incidental*: nothing named it, no test asserted it, and the documented way to stop it returning a `500` — `callback(null, false)` — passes the request through to the route and only withholds the response header. Somebody tidying a noisy 500 would have opened the hole with no reason to suspect it.
+- **Mounted ahead of CORS**, so the guard is genuinely first and the answer is a `403` about the caller rather than a `500` about the server.
+- **It does not clear the cookie when it refuses.** `refresh` clears on every denial, which is right when the credential is bad — but doing it here would hand an attacker the exact outcome the guard exists to prevent: signing a victim out by being refused. A test asserts the session survives a rejection.
+- **A missing `Origin` is allowed through, deliberately.** No browser sends a cookie-bearing cross-site POST without one, so a request arriving without it had its cookie set by hand and whoever set it already held the credential. Refusing those would break curl and the test suite while blocking nothing.
+- **An `Origin` check rather than the usual double-submit token**, because double-submit cannot work here: the SPA is on a different site from the API, so its script cannot read a cookie scoped to the API's host. Returning the token in the login body instead would put a session-renewing credential in `localStorage` — precisely what the `HttpOnly` refresh cookie exists to deny an XSS (threat T-13).
+- The CORS allowlist moved to `config/origins.js` so the two consumers cannot drift apart, which is the defect `utils/trend.js` was written to close.
+
+Five tests, and the backend suite is **631 across 24 files** — the 604 previously recorded dated from 2026-08-27.
+
 ### Added
 
 #### The printed bill is a GST tax invoice (FR-BILL-20)
@@ -68,7 +85,7 @@ Every row of shop-specific data now carries a `shopId`, and a shop's data is vis
 - **`User.email` stays globally unique.** Login takes an email and a password with no shop selector, so a shared address would be ambiguous at the one lookup that matters. Somebody running two shops holds two accounts.
 - **An admin-editable shop profile** (`GET`/`PUT /api/shop`, and a Shop tab in Settings) replaces the hardcoded placeholder in the printed invoice header. `GET` is open to every signed-in role, because printing a bill is a cashier's job and the contents are already on every invoice the shop hands out; `PUT` is ADMIN only and audited.
 - **`GET /api/auth/setup-status` is gone.** It answered "does this installation still need its first account", which is no longer a question that has an answer.
-- **The refresh cookie relaxed to `SameSite=None`** in production, paired with `Secure`, on the theory that a Vercel-hosted SPA calling a Render-hosted API is cross-site. **This may be unnecessary** — `frontend/vercel.json` rewrites `/api` to the backend, and a Vercel rewrite is a server-side proxy, so the browser should see one origin. It is flagged in `README.md` because `SameSite=None` widens CSRF exposure and should be reverted to `strict` if the rewrite is what the deployment actually uses.
+- **The refresh cookie relaxed to `SameSite=None`** in production, paired with `Secure`, on the theory that a Vercel-hosted SPA calling a Render-hosted API is cross-site. **Confirmed necessary on 2026-08-31** and now guarded — see the entry below.
 
 **What it cost, recorded rather than smoothed over.** Auditing broke for master data and stayed broken for a day: moving edits onto `updateMany` took them out of the audit middleware's single-record path, so category renames, supplier retirements and user deactivations wrote no audit row at all. Signup deadlocked the connection pool, because `Shop` and `User` are both audited and the audit write takes a second connection while the caller's transaction still holds the first — eight concurrent signups returned eight `500`s and created nothing, while the log kept five shop creations that had rolled back. Both are fixed. **The same hazard remains on the void path**, where `tx.batch.update` audits inside a transaction and five concurrent voids is the measured ceiling; `backend/tests/billing/invoice-void.test.js` documents the arithmetic and caps its own concurrency at four to stay under it.
 

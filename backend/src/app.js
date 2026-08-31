@@ -5,6 +5,7 @@ const compression = require("compression");
 const rateLimit = require("express-rate-limit");
 const prisma = require("./config/db");
 const { httpLogger } = require("./config/logger");
+const { isAllowedOrigin } = require("./config/origins");
 const { Prisma } = require("@prisma/client");
 
 const authRoutes = require("./routes/auth.routes");
@@ -19,6 +20,7 @@ const userRoutes = require("./routes/user.routes");
 const dashboardRoutes = require("./routes/dashboard.routes");
 const shopRoutes = require("./routes/shop.routes");
 const auditContextMiddleware = require("./middlewares/audit-context.middleware");
+const requireKnownOrigin = require("./middlewares/csrf.middleware");
 
 /**
  * Builds the Express application.
@@ -56,39 +58,34 @@ const createApp = ({
     process.env.TRUST_PROXY || "loopback, linklocal, uniquelocal",
   );
 
-  // ─── CORS ─────────────────────────────────────────────
-  // Only needed for callers that reach port 5000 directly and cross-origin. The
-  // SPA no longer does: it calls /api on its own origin through nginx or the Vite
-  // dev-server proxy, so its requests are same-origin and never preflighted.
-  // In production the allowlist is exactly CORS_ORIGINS and nothing else — the
-  // development origins are not appended, or "restrict CORS to your real origin"
-  // would be impossible to actually do. The SPA is same-origin through nginx and
-  // never appears here; this governs callers reaching the API directly.
-  const allowedOrigins =
-    process.env.NODE_ENV === "production"
-      ? (process.env.CORS_ORIGINS || "")
-          .split(",")
-          .map((o) => o.trim())
-          .filter(Boolean)
-      : [
-          "http://localhost", // nginx entry point on :80
-          "http://localhost:3000",
-          "http://localhost:5173",
-          "http://127.0.0.1:5173",
-          // Docker's default bridge gateway. Kept generic on purpose: a
-          // container's actual address depends on which networks the daemon has
-          // already created, so hard-coding the one this machine happened to get
-          // fixes it for one developer and breaks it for the next. If your
-          // bridge is not the default, set FRONTEND_URL rather than editing
-          // this list — that is what the variable is for.
-          "http://172.17.0.1:5173",
-          process.env.FRONTEND_URL,
-        ].filter(Boolean);
+  // ─── CSRF on the refresh route ────────────────────────
+  // POST /api/auth/refresh is the only route in this API authenticated by a
+  // cookie rather than a Bearer token, so it is the only one another site can
+  // drive. Mounted *before* CORS, and that ordering is the point rather than a
+  // preference: the origin callback below rejects an unknown origin by calling
+  // back with an Error, which `cors` turns into `next(err)`, so without this the
+  // request dies there instead — protection that is real but incidental, and
+  // reported as a 500, which is wrong. A foreign origin is the caller's problem,
+  // not this server's.
+  //
+  // Making it explicit means the guard is named, tested and first, and the
+  // property survives the obvious tidy-up: `callback(null, false)` is the
+  // documented way to silence that 500, and it would pass the request through
+  // to the route while only withholding the response header. See
+  // `middlewares/csrf.middleware.js` for what that would cost.
+  app.use("/api/auth/refresh", requireKnownOrigin);
 
+  // ─── CORS ─────────────────────────────────────────────
+  // Only needed for callers that reach port 5000 directly and cross-origin, and
+  // for the hosted deployment, where the SPA and the API are genuinely on
+  // different sites. Through nginx or the Vite dev-server proxy the SPA is
+  // same-origin and never preflighted at all. The allowlist itself lives in
+  // `config/origins.js`, because the guard above needs the same list and two
+  // copies of it would drift.
   app.use(
     cors({
       origin: (origin, callback) => {
-        if (!origin || allowedOrigins.includes(origin)) {
+        if (!origin || isAllowedOrigin(origin)) {
           callback(null, true);
         } else {
           callback(new Error("Not allowed by CORS"));

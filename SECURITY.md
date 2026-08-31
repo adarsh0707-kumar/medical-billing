@@ -119,6 +119,7 @@ These are **already documented** in [`docs/07-security.md`](./docs/07-security.m
 | ~~Query parameters are unvalidated — e.g. `?limit=999999` is honoured~~ | **Fixed 2026-08-20.** Every query string is validated; `limit` is capped at 100 |
 | ~~Any authenticated role can read every customer's purchase history~~ | **Restricted 2026-08-24.** A cashier can find a customer and bill them, but purchase history is ADMIN/PHARMACIST only. Pharmacists and admins can still read every customer, and reads are not logged |
 | PostgreSQL and Redis publish host ports, and Redis has no password | **Fixed 2026-08-20**: the production stack publishes only 80 and 443, and Redis was removed as an unused dependency |
+| The refresh cookie is `SameSite=None` in production | **Accepted, and guarded since 2026-08-31.** The hosted SPA and API are genuinely on different sites — `VITE_API_URL` is set in the Vercel project, so the built client calls the API host directly rather than through the `vercel.json` rewrite. A `Strict` cookie is never sent cross-site, so it would be set at login and never sent again, and every session would end at the 30-minute access token's expiry. `None` is therefore required rather than chosen. It is what makes `POST /api/auth/refresh` — the only cookie-authenticated endpoint — drivable from another site, so that route now carries an explicit `Origin` check (`backend/src/middlewares/csrf.middleware.js`) mounted ahead of CORS. **This was not an open hole in the interim**: the CORS origin callback rejects an unlisted origin with an error, so such a request already died before reaching the route. What changed is that the protection is now named, tested, first in the chain, and answers `403` instead of `500` |
 
 If you can demonstrate impact **beyond** what's described here — a way to exploit one of these that the documentation doesn't anticipate — that is a genuine finding. Please report it.
 
@@ -198,6 +199,7 @@ Briefly, so you know what to expect when reviewing:
 | Password storage | bcrypt, cost factor 12; hashes are never returned by any endpoint |
 | Sessions | JWT (HS256) access token, **30-minute** expiry, carrying `{ id, tokenVersion }`. The week is carried by a rotating `HttpOnly` `refresh_token` cookie |
 | Revocation | Three levers, all effective on the next request because every protected request reloads the user: `POST /api/auth/logout`, a password change, and deactivating an account. Each bumps `User.tokenVersion`, which every token carries a copy of, so all of that account's sessions end. A password change hands the caller a replacement token so only the other sessions drop |
+| CSRF | Only `POST /api/auth/refresh` has a surface — every other protected route authenticates with a `Bearer` token that another origin's script cannot read. It is guarded by an `Origin` allowlist check ahead of CORS, which refuses a foreign origin with `403` and leaves the session untouched. A double-submit token was rejected: the SPA is on a different site from the API, so it cannot read a cookie scoped to the API's host, and returning the token in the login body would put a session-renewing credential in `localStorage` |
 | Authorisation | Server-side `authorize(...roles)` on every mutating route; client-side checks are cosmetic only |
 | Tenant isolation | Every shop-specific row carries a `shopId`; the caller's comes from a JWT claim, never from the request. Reads and writes scope by `{ id, shopId }` in the same `where`, so a foreign id is a 404 rather than a 403 |
 | Input validation | Zod on every mutating route; unknown keys stripped, and rejected outright on the most sensitive routes |
@@ -210,4 +212,4 @@ Full detail, including the threat model and the prioritised hardening backlog: [
 
 ---
 
-*Last reviewed: 29 August 2026.*
+*Last reviewed: 31 August 2026.*

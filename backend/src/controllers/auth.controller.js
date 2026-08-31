@@ -26,11 +26,9 @@ const DUMMY_PASSWORD_HASH = bcrypt.hashSync(
 
 // httpOnly so script in the page cannot read it — that is the point of holding
 // the long-lived half here rather than in localStorage alongside the access
-// token. SameSite=Strict means a cross-site request never carries it, which is
-// what stands in for CSRF protection on the refresh route. Path scopes it to the
-// auth endpoints, so it is not attached to every API call. Secure only in
-// production, because the development stack is deliberately plain HTTP and a
-// Secure cookie would simply never be sent there.
+// token. Path scopes it to the auth endpoints, so it is not attached to every
+// API call. Secure only in production, because the development stack is
+// deliberately plain HTTP and a Secure cookie would simply never be sent there.
 //
 // `sameSite` cannot be a flat "strict" once frontend and backend are on
 // different sites — a browser refuses to send a Strict (or Lax) cookie on any
@@ -45,6 +43,14 @@ const DUMMY_PASSWORD_HASH = bcrypt.hashSync(
 // and browsers require Secure whenever SameSite is None — which production
 // already sets. Kept at "strict" outside production, where frontend and
 // backend share an origin through the dev proxy and Strict costs nothing.
+//
+// **Strict used to be the CSRF defence on the refresh route, and None gives
+// that up.** It is not a free change and it is not left uncovered: the
+// protection the browser was providing is now an explicit `Origin` check,
+// `requireKnownOrigin` in `middlewares/csrf.middleware.js`, which that file
+// argues at length. Confirmed 2026-08-31 that the deployment really is
+// cross-site — `VITE_API_URL` is set in the Vercel project, so the SPA calls the
+// API host directly rather than through the `vercel.json` rewrite.
 const refreshCookieOptions = () => ({
   httpOnly: true,
   sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
