@@ -6,7 +6,11 @@ const {
   generateCreditNoteNumber,
   isDuplicateNumber,
 } = require("../utils/invoice.utils");
-const { trendForDays, bucketedSales } = require("../utils/trend");
+const {
+  trendForDays,
+  bucketedSales,
+  bucketedMargin,
+} = require("../utils/trend");
 
 // Thrown from inside the invoice transaction when a batch can no longer cover
 // the requested quantity at the moment of deduction. Rolls the transaction back
@@ -907,6 +911,101 @@ const yearlyReportData = async ({ year }, shopId) => {
   return { year, label: String(year), start, end, summary, months };
 };
 
+// ─── Margin report (FR-RPT-08) ───────────────────────────
+//
+// A month's revenue against what the stock cost, day by day. ADMIN only, and
+// that is the one place this departs from the other period reports: those are
+// open to every role because a shop's takings are its own trading record, which
+// a cashier reconciling a till has a reason to see. What a batch *cost* is not
+// that, and a report is a poor place to learn it.
+//
+// **It carries `summaryForPeriod` unchanged**, so the invoices, takings and tax
+// printed at the top of this report are computed by the same function as the
+// monthly report's — not merely the same way. Two screens that disagree about
+// one month is the defect `utils/trend.js` exists to prevent, and margin sitting
+// beside figures derived independently would have reintroduced it.
+const marginReportData = async ({ month, year }, shopId) => {
+  const { start, end } = monthBounds(month, year);
+  const period = { shopId, date: { gte: start, lte: end } };
+
+  const [summary, rows] = await Promise.all([
+    summaryForPeriod(period),
+    bucketedMargin({ start, end, bucket: "day", shopId }),
+  ]);
+
+  // Zero-filled across the month, for the same reason the monthly report is: a
+  // day with no trade that simply went missing shifts every later point left
+  // and reads as a trend rather than a closed shop.
+  const byDay = new Map(rows.map((r) => [r.bucket, r]));
+  const days = [];
+  let revenue = new D(0);
+  let cost = new D(0);
+  let unpricedLines = 0;
+
+  for (let d = 1; d <= end.getDate(); d++) {
+    const key = `${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    const row = byDay.get(key);
+    const dayRevenue = row ? row.revenue : new D(0);
+    const dayCost = row ? row.cost : new D(0);
+
+    revenue = revenue.plus(dayRevenue);
+    cost = cost.plus(dayCost);
+    unpricedLines += row ? row.unpricedLines : 0;
+
+    days.push({
+      date: key,
+      day: d,
+      revenue: dayRevenue,
+      cost: dayCost,
+      profit: dayRevenue.minus(dayCost),
+    });
+  }
+
+  const profit = revenue.minus(cost);
+
+  return {
+    month,
+    year,
+    label: `${MONTH_NAMES[month - 1]} ${year}`,
+    start,
+    end,
+    summary,
+    margin: {
+      revenue,
+      cost,
+      profit,
+      // Null rather than 0 on a month that sold nothing. Zero percent is a
+      // claim about a period that traded; a month with no revenue has no margin
+      // to state, and printing 0.00% invites the reader to believe it did.
+      //
+      // Negative revenue is possible and left alone: a month whose only activity
+      // is credit notes against earlier sales genuinely ran at a loss, and the
+      // percentage is meaningful — it is the same arithmetic with both signs
+      // flipped.
+      marginPercent: revenue.isZero()
+        ? null
+        : Number(profit.dividedBy(revenue).times(100).toFixed(2)),
+      // Lines sold from a batch whose recorded cost is zero. `purchasePrice` is
+      // validated positive, so a zero is a cost that was never really entered —
+      // and in the arithmetic it is indistinguishable from stock that was free,
+      // which reads as pure profit. Surfacing the count is what stops the report
+      // quietly overstating the month: while this is non-zero, `profit` is an
+      // upper bound rather than a figure.
+      unpricedLines,
+    },
+    days,
+  };
+};
+
+const getMarginReport = async (req, res, next) => {
+  try {
+    const data = await marginReportData(req.validatedQuery, req.user.shopId);
+    res.json({ success: true, data });
+  } catch (err) {
+    next(err);
+  }
+};
+
 const getMonthlyReport = async (req, res, next) => {
   try {
     const data = await monthlyReportData(req.validatedQuery, req.user.shopId);
@@ -1093,6 +1192,29 @@ const exportMonthlyReport = async (req, res, next) => {
   }
 };
 
+// Money as the stored 2 dp string, never through the API's Decimal-to-Number
+// replacer: `days` carries Decimals all the way here for exactly that reason
+// (G-21). A margin file is the one an owner takes to an accountant.
+const MARGIN_COLUMNS = [
+  { header: "Date", get: (r) => r.date },
+  { header: "Revenue", kind: "money", get: (r) => r.revenue },
+  { header: "Cost", kind: "money", get: (r) => r.cost },
+  { header: "Profit", kind: "money", get: (r) => r.profit },
+];
+
+const exportMarginReport = async (req, res, next) => {
+  try {
+    const { month, year, days } = await marginReportData(
+      req.validatedQuery,
+      req.user.shopId,
+    );
+    const period = `${year}-${String(month).padStart(2, "0")}`;
+    sendCsv(res, `margin-report-${period}.csv`, toCsv(MARGIN_COLUMNS, days));
+  } catch (err) {
+    next(err);
+  }
+};
+
 const exportYearlyReport = async (req, res, next) => {
   try {
     const { year, months } = await yearlyReportData(
@@ -1116,6 +1238,8 @@ module.exports = {
   getGstReport,
   getMonthlyReport,
   exportMonthlyReport,
+  getMarginReport,
+  exportMarginReport,
   getYearlyReport,
   exportYearlyReport,
   voidInvoice,

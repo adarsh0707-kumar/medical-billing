@@ -80,6 +80,24 @@ router.get(
   billingCtrl.exportYearlyReport,
 );
 
+// ─── Margin (FR-RPT-08) ───────────────────────────────
+// ADMIN only, and the contrast with the two reports above is the point: those
+// are open to everyone because a shop's takings are its own trading record.
+// What the stock cost is not, so this sits with the GST return rather than with
+// the period reports it otherwise mirrors exactly.
+router.get(
+  "/margin",
+  authorize("ADMIN"),
+  validateQuery(monthlyReportQuerySchema),
+  billingCtrl.getMarginReport,
+);
+router.get(
+  "/margin/export",
+  authorize("ADMIN"),
+  validateQuery(monthlyReportQuerySchema),
+  billingCtrl.exportMarginReport,
+);
+
 // ─── Tax ──────────────────────────────────────────────
 // A GST return is the shop's filing position, not a cashier's screen.
 router.get(

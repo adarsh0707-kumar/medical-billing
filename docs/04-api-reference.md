@@ -28,7 +28,7 @@ Ten routers are mounted. **Since 2.0.0 the paths are grouped by resource**, so t
 | `/api/customers` | customer CRUD · erasure                                                            |
 | `/api/medicines` | medicine CRUD ·`search` (the POS lookup)                                          |
 | `/api/suppliers` | supplier CRUD                                                                       |
-| `/api/reports`   | daily-summary · monthly · yearly · gst · trend · expiring · low-stock, each with`/export` |
+| `/api/reports`   | daily-summary · monthly · yearly · margin · gst · trend · expiring · low-stock, each with`/export`. All open to every role except **margin** and **gst**, which are ADMIN(+PHARMACIST) only |
 | `/api/inventory` | categories · manufacturers · batches                                              |
 | `/api/billing`   | invoices · void · credit notes                                                     |
 | `/api/dashboard` | `stats` — every dashboard panel in one request                                    |
@@ -1011,6 +1011,40 @@ CSV of the **breakdown**, not the documents — `Period, Invoices, Credit Notes,
 
 Filenames are `monthly-report-2026-08.csv` and `yearly-report-2026.csv`.
 
+### `GET /api/reports/margin?month=&year=` — **ADMIN only** (FR-RPT-08)
+
+Added 2026-08-31. The same month as `/monthly`, priced against what the stock cost. Parameters and bounds are identical, and `summary` is produced by the *same function*, so the two reports cannot disagree about a month.
+
+```json
+{
+  "month": 3, "year": 2026, "label": "March 2026",
+  "start": "…", "end": "…",
+  "summary": { "totalInvoices": 2, "creditNotes": 0, "totalSales": 548.80, "…": "…" },
+  "margin": {
+    "revenue": 245.00, "cost": 100.00, "profit": 145.00,
+    "marginPercent": 59.18, "unpricedLines": 0
+  },
+  "days": [{ "date": "2026-03-01", "day": 1, "revenue": 0, "cost": 0, "profit": 0 }]
+}
+```
+
+**ADMIN only, and the contrast with the two reports above is deliberate.** Those are open to every role because a shop's takings are its own trading record, which a cashier reconciling a till has reason to see. What a batch *cost* is not, so this sits with the GST return. A `PHARMACIST` or `CASHIER` gets **403** on both the report and its export.
+
+Four things worth knowing before reading the figures:
+
+| Field | Meaning |
+|---|---|
+| `revenue` | `subtotal − discountAmt` — what the shop keeps, **before tax**. Not `totalAmount`, which carries GST the shop collects and remits; counting it would overstate profit by the tax |
+| `cost` | The batch's `purchasePrice` at the quantity sold, **negated for a credit note** — returned stock is back on the shelf, so its cost comes off the period that took it back |
+| `marginPercent` | `profit / revenue`, or **`null`** on a month that sold nothing. Zero percent is a claim about a period that traded |
+| `unpricedLines` | Lines sold from a batch whose recorded cost is zero. `purchasePrice` is validated positive, so a zero is a cost never really entered — and in the arithmetic it is indistinguishable from free stock, which reads as 100% margin. **While this is non-zero, `profit` is an upper bound** |
+
+**A reversed sale stays in its own month** and its credit note lands in the month it was issued, the same rule the GST report follows (BR-14). A sale in March returned in April leaves March's margin untouched and puts `−revenue`, `−cost` into April — the two net to zero across periods, and neither is rewritten after the fact.
+
+### `GET /api/reports/margin/export?month=&year=` — **ADMIN only**
+
+CSV of the daily breakdown: `Date, Revenue, Cost, Profit`, one row per day including the quiet ones. Money is the stored 2 dp string, so a credit note's month exports as `-245.00` rather than a float. Filename `margin-report-2026-03.csv`.
+
 ---
 
 ## 9c. The shop — `/api/shop`
@@ -1100,11 +1134,14 @@ The `summary` and `trend` blocks follow the same counting rules as `GET /api/rep
 
 ## 9b. CSV exports — `FR-RPT-09`
 
-Four endpoints, one per report. Each takes **the same query parameters, the same validation and the same roles** as the JSON report it mirrors, and is served by the same query — the screen and the file cannot report different figures because there is only one source for both.
+One endpoint per report. Each takes **the same query parameters, the same validation and the same roles** as the JSON report it mirrors, and is served by the same query — the screen and the file cannot report different figures because there is only one source for both.
 
 | Endpoint                                                        | Mirrors                    | Roles             |
 | ----------------------------------------------------------------- | ---------------------------- | ------------------- |
 | `GET /api/reports/daily-summary/export?date=`        | `daily-summary`          | any role          |
+| `GET /api/reports/monthly/export?month=&year=`       | `monthly`                | any role          |
+| `GET /api/reports/yearly/export?year=`               | `yearly`                 | any role          |
+| `GET /api/reports/margin/export?month=&year=`        | `margin`                 | **ADMIN**         |
 | `GET /api/reports/gst/export?month=&year=`    | `gst-report`             | ADMIN, PHARMACIST |
 | `GET /api/reports/expiring/export?days=`            | `batches/expiring`       | any role          |
 | `GET /api/reports/low-stock/export?threshold=`      | `batches/low-stock`      | any role          |

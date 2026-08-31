@@ -11,6 +11,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Profit and margin report (FR-RPT-08)
+
+`GET /api/reports/margin?month=&year=`, plus `/export`. A month's revenue against what the stock cost, broken down by day and zero-filled, built on the period reports' shape rather than a new one — `summaryForPeriod` unchanged, so the trading figures at the top of this report are produced by the *same function* as the monthly report's and cannot drift from them. No schema change: the data has been there since 1.0.0.
+
+**The two definitions are the whole report, and both are decisions rather than arithmetic:**
+
+- **Revenue is `subtotal − discountAmt`** — what the shop keeps, before tax. Not `totalAmount`, which carries GST the shop collects and remits and never owns; counting it would overstate every month's profit by its tax. Both columns are stored, so nothing is re-derived ([G-21](./docs/08-gap-analysis.md#g-21)), and a credit note already holds both negated — which is what makes a reversal net itself out without a special case.
+- **Cost is the batch's `purchasePrice` at the quantity sold**, negated for a credit note: returned stock is back on the shelf, so its cost comes off the period that took it back. The sign has to come from the invoice's type, because credit-note lines carry a positive `quantity` and a negative `totalPrice`.
+
+**ADMIN only, and the contrast is the point.** The monthly and yearly reports are open to every role because a shop's takings are its own trading record, which a cashier reconciling a till has reason to see. What a batch cost is not, so this sits with the GST return instead. A test asserts a `CASHIER` gets `200` on `/monthly` and `403` on `/margin`, because that contrast is the design and not an accident of route ordering.
+
+**A batch with no recorded cost is counted, not treated as free.** `purchasePrice` is validated positive, so a zero is a cost nobody entered — and in the arithmetic that is indistinguishable from stock that cost nothing, which reads as a flawless 100% margin with nothing on the screen to say why. `unpricedLines` surfaces the count, and while it is non-zero `profit` is documented as an upper bound rather than a figure.
+
+**`marginPercent` is `null` on a month that sold nothing**, not `0`. Zero percent is a claim about a period that traded.
+
+**A reversed sale stays in the month it was raised** and its credit note lands in the month it was issued, the same rule the GST report follows (BR-14). Asserted in both directions: March keeps its margin when the return happens in April, and April carries the negative.
+
+Twenty tests, including the reconciliation of the day rows to the headline, both sides of the month boundary, the shop scoping — a leak here would put one pharmacy's cost prices on another's screen — and the CSV's money as the stored 2 dp string.
+
+*Also corrected while counting:* the raw-SQL statement count in SECURITY.md, docs/01 and CONTRIBUTING said six. It was five, and the six came from a grep that also matched the phrase `` `$queryRaw` `` inside a comment. It is seven now, with this report's two aggregations, and CONTRIBUTING no longer keeps a second copy of the number — which is what let the first one rot.
+
 #### The audit log's 24-month retention is enforced, not just decided (NFR-17)
 
 `npm run purge:audit` — reports what it would delete and how old the oldest row is; `-- --apply` commits. The policy was decided when the log shipped on 2026-08-22, and until now nothing applied it: the table only grew while four documents described a rule that was not in force.

@@ -1,4 +1,9 @@
+const { Prisma } = require("@prisma/client");
 const prisma = require("../config/db");
+
+// Money stays exact all the way to the response boundary, where the app's json
+// replacer turns it into a number — and to the CSV, where it must not.
+const Decimal = Prisma.Decimal;
 
 /**
  * The daily sales trend, bucketed by the store's day.
@@ -112,6 +117,101 @@ const bucketedSales = (
 };
 
 /** `YYYY-MM-DD` for a date's **local** day — the key `dailyTrend` returns. */
+/**
+ * Revenue and cost of goods, bucketed the same way (FR-RPT-08).
+ *
+ * Lives here rather than in the controller for one reason: the day boundary.
+ * `date_trunc` on a naked UTC timestamp buckets in UTC, which put early-morning
+ * sales on the previous day everywhere east of Greenwich and made the dashboard
+ * and the daily summary disagree about the same sale. That is fixed once, in
+ * `APP_TIME_ZONE` and the two statements above, and a third copy of the
+ * conversion is how it comes back. (The file's name is now narrower than its
+ * contents — it holds the period aggregations, of which the trend is one.)
+ *
+ * **Two statements, not a join, because the grain differs.** Revenue is a
+ * property of the invoice and cost is a property of its lines, so summing both
+ * across one join would multiply each invoice's revenue by its line count. They
+ * are grouped separately and merged on the bucket key, of which there are at
+ * most 31.
+ *
+ * **Revenue is `subtotal − discountAmt`: what the shop keeps, before tax.**
+ * Not `totalAmount`, which includes GST the shop collects and remits and never
+ * owns — counting it would overstate profit by the tax. Both columns are stored,
+ * so nothing is re-derived here (G-21): a credit note already holds both negated,
+ * which is what makes a reversal net itself out of its own period without a
+ * special case.
+ *
+ * **Cost is the batch's `purchasePrice` at the quantity sold**, negated for a
+ * credit note — returned stock is back on the shelf, so its cost comes off the
+ * period that took it back. Credit-note lines carry a positive `quantity` and a
+ * negative `totalPrice`, so the sign has to be taken from the invoice's type
+ * rather than from the line.
+ *
+ * `unpricedLines` counts lines whose batch cost is zero. `purchasePrice` is
+ * validated positive, so a zero means the cost was never really recorded — and a
+ * zero cost is indistinguishable from free stock in the arithmetic, which would
+ * read as 100% margin. Counting them lets the report say so instead.
+ */
+const bucketedMargin = async (
+  { start, end, bucket, shopId, timeZone = APP_TIME_ZONE },
+  client = prisma,
+) => {
+  const { trunc, format } = BUCKETS[bucket] ?? BUCKETS.day;
+
+  const [revenueRows, costRows] = await Promise.all([
+    client.$queryRaw`
+      SELECT to_char(
+               date_trunc(${trunc}, "date" AT TIME ZONE 'UTC' AT TIME ZONE ${timeZone}),
+               ${format}
+             )                                          AS bucket,
+             COALESCE(SUM("subtotal" - "discountAmt"), 0) AS revenue
+      FROM "Invoice"
+      WHERE "shopId" = ${shopId}
+        AND "date" >= ${start} AND "date" <= ${end}
+      GROUP BY 1
+      ORDER BY 1`,
+    client.$queryRaw`
+      SELECT to_char(
+               date_trunc(${trunc}, i."date" AT TIME ZONE 'UTC' AT TIME ZONE ${timeZone}),
+               ${format}
+             )                                          AS bucket,
+             COALESCE(SUM(
+               b."purchasePrice" * ii."quantity"
+               * (CASE WHEN i."type" = 'CREDIT_NOTE' THEN -1 ELSE 1 END)
+             ), 0)                                      AS cost,
+             COUNT(*) FILTER (WHERE b."purchasePrice" = 0)::int AS "unpricedLines"
+      FROM "InvoiceItem" ii
+      JOIN "Invoice" i ON i."id" = ii."invoiceId"
+      JOIN "Batch"   b ON b."id" = ii."batchId"
+      WHERE i."shopId" = ${shopId}
+        AND i."date" >= ${start} AND i."date" <= ${end}
+      GROUP BY 1
+      ORDER BY 1`,
+  ]);
+
+  const merged = new Map();
+  const at = (key) => {
+    if (!merged.has(key)) {
+      merged.set(key, {
+        bucket: key,
+        revenue: new Decimal(0),
+        cost: new Decimal(0),
+        unpricedLines: 0,
+      });
+    }
+    return merged.get(key);
+  };
+
+  for (const r of revenueRows) at(r.bucket).revenue = new Decimal(r.revenue);
+  for (const c of costRows) {
+    const row = at(c.bucket);
+    row.cost = new Decimal(c.cost);
+    row.unpricedLines = c.unpricedLines;
+  }
+
+  return [...merged.values()].sort((a, b) => a.bucket.localeCompare(b.bucket));
+};
+
 const localDayKey = (d) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
@@ -157,6 +257,7 @@ const trendForDays = async (
 module.exports = {
   dailyTrend,
   bucketedSales,
+  bucketedMargin,
   fillWindow,
   localDayKey,
   trendForDays,
