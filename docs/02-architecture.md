@@ -106,11 +106,12 @@ backend/src/
 │   │                            NOT req.query: in Express 5 that is a getter, and assigning
 │   │                            to it reads as working code while silently doing nothing
 │   └── error.middleware.js      notFound() + errorHandler() incl. Prisma P2002/P2003/P2025
-├── validators/                  Zod schemas — billing · common · inventory · user
-├── routes/                      auth · customer · medicine · supplier · report · inventory
-│                                · billing · user · dashboard  (9, all mounted)
-├── controllers/                 auth · user · category · manufacturer · medicine · batch
-│                                · supplier · customer · billing · dashboard
+├── validators/                  Zod schemas — billing · common · inventory · shop · user
+│                                · password (the shared strength rules, not a route schema)
+├── routes/                      auth · shop · customer · medicine · supplier · report
+│                                · inventory · billing · user · dashboard  (10, all mounted)
+├── controllers/                 auth · user · shop · category · manufacturer · medicine
+│                                · batch · supplier · customer · billing · dashboard
 └── utils/
     ├── jwt.utils.js             generateToken (30m access) · generateRefreshToken (7d,
     │                            carries the RefreshToken row id as jti). Both embed

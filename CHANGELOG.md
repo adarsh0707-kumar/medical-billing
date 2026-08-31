@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+#### The printed bill is a GST tax invoice (FR-BILL-20)
+
+The print view was reworked to the layout an Indian pharmacy invoice actually uses: seller and buyer side by side, a **GST INVOICE** band carrying the number and date, then a line table of SN, product, PACK, HSN, batch, expiry, MRP, qty, rate, discount, GST %, net rate and amount, with the tax summary and totals below it, terms, the total in words and an authorised-signatory block.
+
+- **It surfaced a live defect, and that is the part worth reading.** The till printed from the *create* response, which returned `items: true` — plain `InvoiceItem` rows with no batch relation — while the view read `item.batchNumber` and `item.unit`, which only the *detail* endpoint supplies. **Every receipt handed over the counter read "Batch: undefined"**, and a reprint of the same sale from history showed it correctly. That asymmetry is why it survived: the path anyone would check by hand was the working one. Both paths now share `PRINTABLE_ITEM_INCLUDE`, so they cannot drift again.
+- **`amountInWords` is its own module**, not a helper in the view. It works in paise throughout, because rounding to rupees first drops a paisa often enough to contradict the figure printed beside it, and it groups in lakhs and crores rather than thousands.
+- **Saving as PDF names the file after the invoice.** It produced `frontend.pdf` every time, because browsers take the filename from `document.title`. `printAs()` sets the title for the duration of the print and restores it on `afterprint` — no timer fallback, since restoring on a guess races the preview.
+- **Roundoff and the distributor's 5+1 free-goods notation are deliberately absent.** Roundoff changes what the customer is charged and would break `subtotal + cgst + sgst − discountAmt = totalAmount`; free goods have no column to compute from.
+
+#### Pack size, batch MRP and the shop's drug licence number (FR-MED-13, FR-BATCH-12, FR-SHOP-09)
+
+Migration `20260831123451_add_pack_mrp_and_drug_licence` adds three nullable columns the printed invoice needs and had nowhere to read. All three are enterable from the medicine, batch and shop forms.
+
+- **`Medicine.packSize`** — the PACK label off the carton (`1*10`, `1*15ML`). Free text, because it is a label rather than a quantity to compute with and every distributor writes it differently. Distinct from `unit`, which is the *dispensing* unit: a strip of ten tablets is unit `tablet`, packSize `1*10`.
+- **`Batch.mrp`** — per batch, not per medicine, because the same product is repriced between print runs. **Nullable and never defaulted from `sellingPrice`**: printing the two as equal would assert on a tax document that no discount was given, so an unrecorded MRP prints as blank instead.
+- **`Shop.drugLicenceNo`** — a retail pharmacy dispenses under a licence and is expected to show it on the bill. Nullable, so a shop that has not entered one can still trade.
+
 ### Fixed
 
 #### Only one shop could trade — the multi-tenant migration half-applied

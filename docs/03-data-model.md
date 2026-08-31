@@ -162,6 +162,7 @@ Added 2026-08-29. One row per pharmacy. Every other table holding shop-specific 
 | `address`   | String?  |             | Optional: a shop can bill with a name alone                    |
 | `phone`     | String?  |             |                                                                |
 | `gstNumber` | String?  |             | The shop's own GSTIN, printed on tax documents                 |
+| `drugLicenceNo` | String? |          | Added 2026-08-31. The retail drug licence the shop dispenses under, printed as **D.L. No.** on the invoice header — the reference format carries one for the seller and one for the buyer. Nullable, because a shop that has not entered it yet must still be able to trade |
 | `createdAt` | DateTime | auto        | No`updatedAt` — the row is written rarely and audited when it is |
 
 Relations, all one-to-many: `users`, `categories`, `manufacturers`, `medicines`, `batches`, `customers`, `suppliers`, `invoices`, `invoiceCounters`, `auditLogs`.
@@ -219,6 +220,7 @@ Identical shape to `Category`: `id`, `shopId`, `name` unique **per shop**, `medi
 | `manufacturerId`            | String       | FK → Manufacturer |                                                                                                                                |
 | `hsnCode`                   | String?      | optional           | HSN for GST classification; searchable                                                                                         |
 | `unit`                      | String       | required           | Constrained by Zod to: tablet, capsule, syrup, injection, cream, drops, powder, inhaler, other —**not** by the database |
+| `packSize`                  | String?      | optional, free text | Added 2026-08-31. How the product is packed, copied off the carton as a distributor writes it —`1*15ML`, `1*10`, `1*15GM`. Printed as **PACK** on the invoice. Free text on purpose: it is a label, not a quantity to compute with. **Distinct from `unit`**, which is the dispensing unit — a strip of ten tablets has unit `tablet` and packSize `1*10` |
 | `gstPercent`                | Decimal(5,2) | default`12`      | Zod restricts to 0 / 5 / 12 / 18                                                                                               |
 | `isScheduledH`              | Boolean      | default`false`   | Prescription-only flag; displayed at POS, not enforced                                                                         |
 | `isActive`                  | Boolean      | default`true`    | Soft-delete flag; list and search filter on it                                                                                 |
@@ -245,6 +247,7 @@ Relations: `category`, `manufacturer`, `batches Batch[]`.
 | `mfgDate`       | DateTime?     | optional, must precede`expiryDate` | Added by migration`20260419152932_add_mfgdate`; recordable since 2026-08-19 — [G-04](./08-gap-analysis.md#g-04) |
 | `purchasePrice` | Decimal(12,2) | > 0                                  | Cost. Never exposed at POS                                                                                        |
 | `sellingPrice`  | Decimal(12,2) | > 0                                  | Pre-GST price used as the POS unit price                                                                          |
+| `mrp`           | Decimal(12,2)? | optional                            | Added 2026-08-31. Maximum retail price printed on the pack, shown as **MRP** on the invoice. **Per batch, not per medicine** — the same product is repriced between print runs, which is why a pharmacy tracks it against the batch it arrived in. Never used in arithmetic: the sale is priced from `sellingPrice`. Left **blank** on the printed line when unrecorded rather than defaulted from `sellingPrice`, because printing the two as equal asserts on a tax document that no discount was given |
 | `quantity`      | Int           | > 0 at creation                      | **Live stock.** Decremented per sale                                                                        |
 | `initialQty`    | Int           | set =`quantity` at creation        | Opening stock, for depletion analysis                                                                             |
 | `supplierId`    | String        | FK → Supplier                       |                                                                                                                   |
@@ -252,9 +255,9 @@ Relations: `category`, `manufacturer`, `batches Batch[]`.
 
 **Unique:** `@@unique([medicineId, batchNumber])` — the same batch number can recur across different medicines, never within one.
 
-Relations: `medicine`, `supplier`, `invoiceItems`, `purchaseItems`.
+Relations: `shop`, `medicine`, `supplier`, `invoiceItems`. *(`purchaseItems` was listed here until 2026-08-31; the purchases tables were dropped on 2026-08-24.)*
 
-> `quantity` has **no non-negative constraint**. Since 2026-08-18 the decrement is a conditional `updateMany` inside the invoice transaction, so a concurrent sale can no longer drive it negative ([G-09](./08-gap-analysis.md#g-09)). A `CHECK (quantity >= 0)` constraint remains worth adding as a database-level backstop against any future write path.
+> `quantity` is guarded twice. The mechanism is the conditional `updateMany` inside the invoice transaction, so a concurrent sale cannot drive it negative ([G-09](./08-gap-analysis.md#g-09)); the **backstop** is a database `CHECK (quantity >= 0)`, added on 2026-08-20 as `Batch_quantity_non_negative` (§4). Prisma cannot express CHECK, so it exists only in migration `20260820052324_add_batch_quantity_check` and is invisible in `schema.prisma`.
 
 ### 3.6 `Supplier`
 
@@ -538,10 +541,10 @@ These must hold at all times. Any new write path must preserve them.
 | `20260824112334_add_audit_reason`        | 2026-08-24 | Adds`AuditLog.reason` — the "why" behind an audited write, required by manual stock adjustment (FR-BATCH-11) |
 | `20260824113643_add_partial_returns`     | 2026-08-24 | Adds`InvoiceItem.returnedQty` and **drops** the unique index on `Invoice.reversesId`. A sale may now have several credit notes, so the single-shot guarantee moves from that index to a cumulative per-line counter applied with a conditional update (FR-BILL-17) |
 | `20260828120000_add_shops_multi_tenant`  | 2026-08-28 | Adds the`Shop` table and a `shopId` on User, Category, Manufacturer, Medicine, Batch, Customer, Supplier, Invoice, InvoiceCounter and AuditLog, with an index on each. Re-keys `Category` and `Manufacturer` to `@@unique([shopId, name])`, `Customer` to `@@unique([shopId, phone])`, `Invoice` to `@@unique([shopId, invoiceNumber])`, and `InvoiceCounter` to `@@id([shopId, day])`. See §3.0 |
-
 | `20260830190000_drop_stale_global_unique_indexes` | 2026-08-30 | **Hand-written.** Drops`Category_name_key`, `Manufacturer_name_key`, `Customer_phone_key` and `Invoice_invoiceNumber_key`, which the multi-tenant migration meant to remove and did not — it used `ALTER TABLE ... DROP CONSTRAINT IF EXISTS`, and Prisma writes `@unique` as a bare `CREATE UNIQUE INDEX`, so all four missed silently. See the note below |
+| `20260831123451_add_pack_mrp_and_drug_licence` | 2026-08-31 | Adds three nullable columns the printed invoice needs and had nowhere to read: `Medicine.packSize`, `Batch.mrp` and `Shop.drugLicenceNo`. All nullable and none defaulted — see §3.4, §3.5 and §3.0 for why `mrp` in particular is not derived from `sellingPrice` |
 
-All 18 are applied — confirmed against `_prisma_migrations` on 2026-08-30. Two of them contain SQL that exists **only** in migration history and cannot be reproduced from `schema.prisma`; see the note in §4 before rebuilding a database with `db push`.
+All 19 are applied — confirmed against `_prisma_migrations` on 2026-08-31. Two of them contain SQL that exists **only** in migration history and cannot be reproduced from `schema.prisma`; see the note in §4 before rebuilding a database with `db push`.
 
 Workflow:
 

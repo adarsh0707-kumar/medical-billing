@@ -20,7 +20,7 @@ Domain and system vocabulary used across this documentation and in the code.
 
 **Medicine** — A catalogue entry: brand name, generic name, category, manufacturer, unit, GST rate and Schedule H flag. Holds **no stock and no price** of its own — both come from its batches.
 
-**MRP** — Maximum Retail Price. Not modelled separately; `Batch.sellingPrice` serves this role and is treated as pre-GST.
+**MRP** — Maximum Retail Price, printed on the pack. Modelled since 2026-08-31 as `Batch.mrp` — per batch, because the same product is repriced between print runs. It is a **display** value: nullable, never used in arithmetic, and left blank on the printed line when unrecorded rather than defaulted from `sellingPrice`, since printing the two as equal would assert on a tax document that no discount was given. The price the sale actually uses is `Batch.sellingPrice`, which is pre-GST.
 
 **Schedule H** — A category under India's Drugs and Cosmetics Rules covering medicines that may be sold only against a registered practitioner's prescription. `Medicine.isScheduledH` flags them, the POS shows a badge, and since 2026-08-24 an invoice containing such a line **cannot be created without a register entry** — prescriber, council registration number, prescription date and patient name, written in the same transaction as the sale ([FR-MED-12](./01-product-requirements.md#64-medicine-catalogue--fr-med)).
 

@@ -1,8 +1,10 @@
 # Testing Strategy
 
-**Current state (measured 2026-08-27): 604 backend tests across 23 files, 125 frontend unit tests across 16 files, and a 7-flow browser smoke — all three layers on CI.** Sections 1–4 describe the approach and the acceptance fixtures; §5 lists the cases, most of which now exist.
+**Last measured 2026-08-27: 604 backend tests across 23 files, 125 frontend unit tests across 16 files, and a 7-flow browser smoke — all three layers on CI.**
 
-> Counts here are taken by **running the suites**, not by adding up the table below. Three documents previously carried four different numbers because the table was maintained by hand and two suites were never added to it.
+⚠️ **Those totals are stale and understated as of 2026-08-31.** The file tables below have been brought back in step with the tree — the backend is **24** files and the frontend **18** — but the *counts* have not, because this document's rule is that they come from a run. Added since the measurement and not reflected in the totals: `tests/api/shop.test.js` (new with multi-tenancy), the eleven monthly/yearly cases inside `tests/billing/reports.test.js`, the tenant-isolation cases added to `tests/auth/signup.test.js`, and three frontend files (`Signup`, `amount-in-words`, `print-document`). **Re-run both suites and replace the headline numbers**; do not add up the tables to get them.
+
+> Counts here are taken by **running the suites**, not by adding up the table below. Three documents previously carried four different numbers because the table was maintained by hand and two suites were never added to it — which is the same failure the warning above is recording, caught earlier this time.
 
 ---
 
@@ -60,14 +62,14 @@ Two failures worth remembering, both fixed 2026-08-27:
 | `tests/auth/rbac.test.js`                     |   142 | The full role matrix, plus anonymous rejection on every route              |
 | `tests/billing/invoice-create.test.js`        |    48 | GST fixtures, invariants, rejections, atomicity, Schedule H and expiry     |
 | `tests/api/logging.test.js`                   |     5 | The path in the human-readable log line, which a mounted router strips off `req.url` |
-| `tests/auth/signup.test.js`                   |    23 | First-run setup: the one administrator, the endpoint closing itself, an eight-way concurrent burst, and what it refuses |
+| `tests/auth/signup.test.js`                   |    23 | Signup: the shop and its first administrator, an eight-way concurrent burst, what it refuses, and **tenant isolation** asserted across the resource controllers, the user list and the dashboard. *(Description corrected 2026-08-31 — it said "the endpoint closing itself", which stopped being true when signup reopened on 2026-08-29.)* |
 | `tests/api/dashboard.test.js`                 |    26 | Every panel of `GET /api/dashboard/stats`: counting under a void, count-vs-items, the expiry and low-stock windows, and the trend's day bucketing |
 | `tests/api/query-validation.test.js`          |    46 | Every query surface: bounds, coercion, and that a filter actually filters ([G-19](./08-gap-analysis.md#g-19)) |
 | `tests/api/route-layout.test.js`              |    41 | All nine moved paths: alias and successor return the same body, and only the alias is marked deprecated |
 | `tests/auth/auth.test.js`                     |    41 | Login, token rejection, immediate revocation, password change, refresh rotation and reuse detection |
 | `tests/inventory/batches.test.js`             |    28 | Opening stock, manufacture dates, strict updates, alert windows, manual adjustment |
 | `tests/users/users.test.js`                   |    28 | User CRUD, validation, profile safety                                      |
-| `tests/billing/reports.test.js`               |    23 | Daily, trend and GST reports, date boundaries, paid-only filtering         |
+| `tests/billing/reports.test.js`               |    23 | Daily, trend and GST reports, date boundaries, paid-only filtering — **plus the monthly and yearly reports** added 2026-08-30: day/month boundaries, reconciliation with an unpaid invoice in the period, the zero-fill, both CSV shapes and the role split |
 | `tests/billing/invoice-void.test.js`          |    22 | Stock restoration, credit notes, partial returns, concurrent voids, period rule |
 | `tests/inventory/medicines.test.js`           |    19 | Stock totals, POS search, soft delete, validation                          |
 | `tests/reports/csv.test.js`                   |    16 | Escaping, the formula-injection guard, the BOM and CRLF                    |
@@ -80,6 +82,9 @@ Two failures worth remembering, both fixed 2026-08-27:
 | `tests/audit/audit-log.test.js`               |     6 | Actor and before/after on every audited write, and what is deliberately not audited |
 | `tests/auth/rate-limit.test.js`               |     5 | Failed-login budget, per-client isolation, successful sign-ins not counted |
 | `tests/billing/invoice-concurrency.test.js`   |     4 | Last-unit races, oversell bursts, gapless serials                          |
+| `tests/api/shop.test.js`                      |     — | `GET`/`PUT /api/shop`: the caller's own shop only, the ADMIN gate on `PUT`, and read access for every role because printing a bill is a cashier's job (FR-SHOP-07). **Added with multi-tenancy and missing from this table until 2026-08-31** |
+
+A dash in the **Tests** column means the file postdates the last measured run.
 
 **Frontend — 125 across 16 files.** Counted from a run on 2026-08-25; the 67
 recorded here previously predated the screen-by-screen component coverage.
@@ -101,6 +106,11 @@ recorded here previously predated the screen-by-screen component coverage.
 | `src/pages/__tests__/Reports.export.test.tsx`  |     3 | The export button requests the right period                       |
 | `src/hooks/__tests__/query-cancellation.test.tsx` |  2 | In-flight queries cancel on unmount                               |
 | `src/pages/__tests__/Suppliers.test.tsx`       |     2 | Supplier list and form                                            |
+| `src/pages/__tests__/Signup.test.tsx`         |     — | The signup page: what it sends, what it refuses, and that it creates a shop rather than joining one (FR-AUTH-12) |
+| `src/lib/__tests__/amount-in-words.test.ts`   |     — | The rupees-and-paise words on the printed invoice, in lakhs and crores, computed in paise throughout (FR-BILL-20) |
+| `src/lib/__tests__/print-document.test.ts`    |     — | `printAs()` sets `document.title` so a saved PDF is named after the invoice, and restores it on `afterprint` |
+
+A dash in the **Tests** column means the file postdates the last measured run.
 
 **Browser — 7 flows**, `e2e/smoke.spec.ts`. Chromium runs all seven; Firefox runs
 only the CSV download, the one flow built on browser machinery rather than ours.
