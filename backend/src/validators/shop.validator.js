@@ -14,6 +14,9 @@ const updateShopSchema = z
     address: z.string().max(500).optional().nullable(),
     phone: z.string().max(20).optional().nullable(),
     gstNumber: z.string().max(20).optional().nullable(),
+    // Printed on the invoice header. A retail pharmacy dispenses under a
+    // licence and is expected to show it on the bill.
+    drugLicenceNo: z.string().max(40).optional().nullable(),
   })
   .strict();
 

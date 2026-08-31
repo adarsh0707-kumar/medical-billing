@@ -61,7 +61,9 @@ const PRINTABLE_ITEM_INCLUDE = {
     select: {
       batchNumber: true,
       expiryDate: true,
-      medicine: { select: { hsnCode: true, unit: true } },
+      // MRP is per batch, so it comes from here rather than the medicine.
+      mrp: true,
+      medicine: { select: { hsnCode: true, unit: true, packSize: true } },
     },
   },
 };

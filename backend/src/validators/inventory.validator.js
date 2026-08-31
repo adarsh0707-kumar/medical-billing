@@ -15,6 +15,9 @@ const medicineSchema = z.object({
   categoryId: z.string().min(1, "Category is required"),
   manufacturerId: z.string().min(1, "Manufacturer is required"),
   hsnCode: z.string().optional(),
+  // Printed on the invoice as PACK. Free text — it is a label off the
+  // carton ("1*15ML"), not a quantity, so no shape is imposed on it.
+  packSize: z.string().max(30, "Pack size is too long").optional(),
   unit: z.enum([
     "tablet",
     "capsule",
@@ -54,6 +57,9 @@ const batchSchema = z
       .optional(),
     purchasePrice: z.number().positive("Purchase price must be positive"),
     sellingPrice: z.number().positive("Selling price must be positive"),
+    // Optional: a shop that does not track MRP simply prints no MRP
+    // column. Never defaulted from sellingPrice — see the schema note.
+    mrp: z.number().positive("MRP must be positive").optional(),
     quantity: z.number().int().positive("Quantity must be positive"),
     supplierId: z.string().min(1, "Supplier is required"),
   })
@@ -107,6 +113,7 @@ const batchUpdateSchema = z
       .optional(),
     purchasePrice: z.number().positive("Purchase price must be positive").optional(),
     sellingPrice: z.number().positive("Selling price must be positive").optional(),
+    mrp: z.number().positive("MRP must be positive").optional(),
   })
   .strict()
   .refine(datesInOrder, dateOrderError);

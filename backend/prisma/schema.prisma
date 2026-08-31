@@ -26,6 +26,12 @@ model Shop {
   address   String?
   phone     String?
   gstNumber String?
+  /// Drug licence number, printed on the invoice header. A retail pharmacy in
+  /// India dispenses under a licence and is expected to show it on the bill —
+  /// the reference invoice this format follows carries one for both the seller
+  /// and the buyer. Nullable, because a shop that has not entered it yet must
+  /// still be able to trade.
+  drugLicenceNo String?
   createdAt DateTime @default(now())
 
   users         User[]
@@ -191,6 +197,14 @@ model Medicine {
   manufacturerId String
   hsnCode        String?
   unit           String       // tablet, syrup, injection, etc.
+  /// How the product is packed, as printed on a distributor's invoice:
+  /// `1*15ML`, `1*10`, `1*15GM`. Free text on purpose — it is a label copied
+  /// off the carton, not a quantity to compute with, and every distributor
+  /// writes it slightly differently.
+  ///
+  /// Distinct from `unit`, which is the dispensing unit ("tablet"). A strip of
+  /// ten tablets has unit `tablet` and packSize `1*10`.
+  packSize       String?
   gstPercent     Decimal      @default(12) @db.Decimal(5, 2) // 0, 5, 12, 18
   isScheduledH   Boolean      @default(false) // prescription required
   isActive       Boolean      @default(true)
@@ -219,6 +233,17 @@ model Batch {
   mfgDate        DateTime?
   purchasePrice  Decimal  @db.Decimal(12, 2)
   sellingPrice   Decimal  @db.Decimal(12, 2)
+  /// Maximum retail price printed on the pack. Per batch, not per medicine —
+  /// the same product is repriced between print runs, which is exactly why a
+  /// pharmacy tracks it against the batch it arrived in.
+  ///
+  /// Nullable, and never used in arithmetic: the sale is priced from
+  /// `sellingPrice`. This exists so the invoice can show what the customer
+  /// would have paid at list, and it is left out of the printed column
+  /// entirely when the shop has not recorded one, rather than being defaulted
+  /// to the selling price — printing those as equal would be a claim about
+  /// the discount given, on a tax document.
+  mrp            Decimal? @db.Decimal(12, 2)
   /// Current stock. A CHECK constraint (`Batch_quantity_non_negative`) keeps this
   /// at or above zero — Prisma cannot express CHECK, so it lives in the migration
   /// `20260820052324_add_batch_quantity_check` and is invisible here otherwise.

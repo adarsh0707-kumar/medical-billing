@@ -75,6 +75,7 @@ interface Medicine {
   unit: string;
   gstPercent: number;
   hsnCode?: string;
+  packSize?: string;
   isScheduledH: boolean;
   isActive: boolean;
   category: Category;
@@ -157,6 +158,7 @@ function MedicinesTab() {
     categoryId: "",
     manufacturerId: "",
     hsnCode: "",
+    packSize: "",
     unit: "tablet",
     gstPercent: 12,
     isScheduledH: false,
@@ -207,6 +209,7 @@ function MedicinesTab() {
       categoryId: "",
       manufacturerId: "",
       hsnCode: "",
+      packSize: "",
       unit: "tablet",
       gstPercent: 12,
       isScheduledH: false,
@@ -222,6 +225,7 @@ function MedicinesTab() {
       categoryId: med.category.id,
       manufacturerId: med.manufacturer.id,
       hsnCode: med.hsnCode || "",
+      packSize: med.packSize || "",
       unit: med.unit,
       gstPercent: med.gstPercent,
       isScheduledH: med.isScheduledH,
@@ -588,6 +592,18 @@ function MedicinesTab() {
                   className={inputCls}
                 />
               </Field>
+              {/* Printed as PACK on the invoice: the label off the carton, not
+                  a quantity — "1*15ML" for a bottle, "1*10" for a strip. */}
+              <Field label="Pack Size">
+                <Input
+                  value={form.packSize}
+                  onChange={(e) =>
+                    setForm({ ...form, packSize: e.target.value })
+                  }
+                  placeholder="1*10"
+                  className={inputCls}
+                />
+              </Field>
             </div>
             <div className="flex items-center gap-2 pt-1">
               <input
@@ -649,6 +665,7 @@ function BatchesTab() {
     mfgDate: "",
     purchasePrice: "",
     sellingPrice: "",
+    mrp: "",
     quantity: "",
   });
 
@@ -725,6 +742,7 @@ function BatchesTab() {
         ...(form.mfgDate ? { mfgDate: form.mfgDate } : {}),
         purchasePrice: Number(form.purchasePrice),
         sellingPrice: Number(form.sellingPrice),
+        ...(form.mrp !== "" && { mrp: Number(form.mrp) }),
         quantity: Number(form.quantity),
       };
       await api.post("/api/inventory/batches", payload);
@@ -739,6 +757,7 @@ function BatchesTab() {
         mfgDate: "",
         purchasePrice: "",
         sellingPrice: "",
+        mrp: "",
         quantity: "",
       });
       queryClient.invalidateQueries({ queryKey: ["batches"] });
@@ -1072,6 +1091,20 @@ function BatchesTab() {
                   }
                   required
                   placeholder="₹0.00"
+                  className={inputCls}
+                />
+              </Field>
+              {/* Printed as MRP. Per batch, because the same product is
+                  repriced between print runs. Blank prints no MRP for the
+                  line, rather than repeating the selling price as though the
+                  two were the same figure. */}
+              <Field label="MRP">
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={form.mrp}
+                  onChange={(e) => setForm({ ...form, mrp: e.target.value })}
+                  placeholder="₹0.00 (optional)"
                   className={inputCls}
                 />
               </Field>

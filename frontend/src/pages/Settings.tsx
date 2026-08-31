@@ -192,6 +192,7 @@ function ShopTab() {
       address: shop.address ?? "",
       phone: shop.phone ?? "",
       gstNumber: shop.gstNumber ?? "",
+      drugLicenceNo: shop.drugLicenceNo ?? "",
     });
   }
 
@@ -207,6 +208,7 @@ function ShopTab() {
         address: form.address || null,
         phone: form.phone || null,
         gstNumber: form.gstNumber || null,
+        drugLicenceNo: form.drugLicenceNo || null,
       };
       const res = await api.put("/api/shop", body);
       queryClient.setQueryData(["shop"], res.data.data);
@@ -274,6 +276,18 @@ function ShopTab() {
                   setForm({ ...form, gstNumber: e.target.value })
                 }
                 placeholder="e.g. 09AAACM1234A1Z5"
+                className={inputCls}
+              />
+            </Field>
+            {/* Printed on the invoice header. A retail pharmacy dispenses
+                under a licence and is expected to show it on the bill. */}
+            <Field label="Drug Licence No.">
+              <Input
+                value={form.drugLicenceNo ?? ""}
+                onChange={(e) =>
+                  setForm({ ...form, drugLicenceNo: e.target.value })
+                }
+                placeholder="e.g. MOT-110/110A"
                 className={inputCls}
               />
             </Field>

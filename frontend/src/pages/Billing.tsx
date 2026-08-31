@@ -1,5 +1,6 @@
 import api from "@/lib/api";
 import { amountInWords } from "@/lib/amount-in-words";
+import { printAs } from "@/lib/print-document";
 import type { CreateInvoiceInput } from "@/types/api.generated";
 import { useQuery } from "@tanstack/react-query";
 import { calcItemTotal, calcCartTotals } from "@/lib/cart-math";
@@ -194,6 +195,7 @@ interface ShopInfo {
   address?: string | null;
   phone?: string | null;
   gstNumber?: string | null;
+  drugLicenceNo?: string | null;
 }
 
 /** One printed line, as the API returns it — not the cart's shape. */
@@ -207,7 +209,12 @@ interface PrintedItem {
   batch?: {
     batchNumber: string;
     expiryDate: string;
-    medicine?: { hsnCode?: string | null; unit?: string | null } | null;
+    mrp?: number | null;
+    medicine?: {
+      hsnCode?: string | null;
+      unit?: string | null;
+      packSize?: string | null;
+    } | null;
   } | null;
 }
 
@@ -247,6 +254,7 @@ function PrintInvoice({
     sgst: number;
     totalAmount: number;
     paymentMode: string;
+    notes?: string | null;
   };
 
   // Falls back to the product name if the shop hasn't filled in its own yet —
@@ -279,6 +287,7 @@ function PrintInvoice({
             {shop?.address && <p>{shop.address}</p>}
             {shop?.phone && <p>Phone : {shop.phone}</p>}
             {shop?.gstNumber && <p>GSTIN : {shop.gstNumber}</p>}
+            {shop?.drugLicenceNo && <p>D.L. No. : {shop.drugLicenceNo}</p>}
           </div>
           <div className="p-2">
             <p>
@@ -314,10 +323,12 @@ function PrintInvoice({
               {[
                 "SN.",
                 "PRODUCT NAME",
+                "PACK",
                 "HSN",
                 "BATCH",
                 "EXP.",
                 "QTY",
+                "MRP",
                 "RATE",
                 "DIS%",
                 "GST",
@@ -352,6 +363,9 @@ function PrintInvoice({
                     )}
                   </td>
                   <td className="px-1 text-right border-l border-black">
+                    {item.batch?.medicine?.packSize ?? ""}
+                  </td>
+                  <td className="px-1 text-right border-l border-black">
                     {item.batch?.medicine?.hsnCode ?? ""}
                   </td>
                   <td className="px-1 text-right border-l border-black">
@@ -362,6 +376,9 @@ function PrintInvoice({
                   </td>
                   <td className="px-1 text-right border-l border-black">
                     {item.quantity}
+                  </td>
+                  <td className="px-1 text-right border-l border-black">
+                    {item.batch?.mrp != null ? amt(item.batch.mrp) : ""}
                   </td>
                   <td className="px-1 text-right border-l border-black">
                     {amt(rate)}
@@ -386,7 +403,7 @@ function PrintInvoice({
             {Array.from({ length: Math.max(0, 8 - inv.items.length) }).map(
               (_, i) => (
                 <tr key={`pad-${i}`}>
-                  <td colSpan={11} className="px-1">
+                  <td colSpan={13} className="px-1">
                     &nbsp;
                   </td>
                 </tr>
@@ -425,11 +442,11 @@ function PrintInvoice({
                   </tr>
                 )}
                 <tr>
-                  <td>SGST</td>
+                  <td>SGST{mixedRates ? "" : ` ${halfRate}%`}</td>
                   <td className="text-right">{amt(inv.sgst)}</td>
                 </tr>
                 <tr>
-                  <td>CGST</td>
+                  <td>CGST{mixedRates ? "" : ` ${halfRate}%`}</td>
                   <td className="text-right">{amt(inv.cgst)}</td>
                 </tr>
                 <tr className="border-t border-black font-bold text-sm">
@@ -444,6 +461,12 @@ function PrintInvoice({
         {/* ── Terms and signature. */}
         <div className="grid grid-cols-2 border-t border-black">
           <div className="p-2 border-r border-black">
+            {inv.notes && (
+              <p className="mb-1">
+                <span className="font-semibold">Remark : </span>
+                {inv.notes}
+              </p>
+            )}
             <p className="font-semibold underline">Terms &amp; Conditions</p>
             <p>Goods once sold will not be taken back or exchanged.</p>
             <p>All disputes subject to local jurisdiction only.</p>
@@ -708,7 +731,9 @@ export default function Billing() {
       setExtraDiscount(0);
       setPrescription(emptyRx);
       setPaymentMode("CASH");
-      setTimeout(() => window.print(), 500);
+      // Named after the invoice, so "Save as PDF" produces
+      // INV260831-0005.pdf rather than overwriting frontend.pdf each time.
+      setTimeout(() => printAs(res.data.data.invoiceNumber), 500);
     } catch (err: unknown) {
       const error = err as { response?: { data?: { message?: string } } };
       toast.error(error.response?.data?.message || "Failed to create invoice");
@@ -1332,7 +1357,10 @@ export default function Billing() {
               </Button>
               <Button
                 variant="outline"
-                onClick={() => lastInvoice && window.print()}
+                onClick={() =>
+                  lastInvoice &&
+                  printAs(String(lastInvoice.invoiceNumber ?? "invoice"))
+                }
                 disabled={!lastInvoice}
                 className="w-full border-slate-600 text-slate-300 hover:bg-slate-700 h-9"
               >

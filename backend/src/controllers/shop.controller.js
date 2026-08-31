@@ -15,6 +15,7 @@ const getShop = async (req, res, next) => {
         address: true,
         phone: true,
         gstNumber: true,
+        drugLicenceNo: true,
       },
     });
     res.json({ success: true, data: shop });
@@ -38,6 +39,7 @@ const updateShop = async (req, res, next) => {
         address: true,
         phone: true,
         gstNumber: true,
+        drugLicenceNo: true,
       },
     });
     res.json({ success: true, message: "Shop details updated", data: shop });

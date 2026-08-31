@@ -32,6 +32,7 @@ export type BatchInput = {
   quantity: number;
   supplierId: string;
   mfgDate?: string | undefined;
+  mrp?: number | undefined;
 };
 
 /** `batchListQuerySchema` — `backend/src/validators/inventory.validator.js` */
@@ -50,6 +51,7 @@ export type BatchUpdateInput = {
   mfgDate?: string | undefined;
   purchasePrice?: number | undefined;
   sellingPrice?: number | undefined;
+  mrp?: number | undefined;
 };
 
 /** `categorySchema` — `backend/src/validators/inventory.validator.js` */
@@ -157,6 +159,7 @@ export type MedicineInput = {
   gstPercent: number;
   genericName?: string | undefined;
   hsnCode?: string | undefined;
+  packSize?: string | undefined;
   isScheduledH?: boolean | undefined;
 };
 
@@ -222,6 +225,7 @@ export type UpdateShopInput = {
   address?: string | null | undefined;
   phone?: string | null | undefined;
   gstNumber?: string | null | undefined;
+  drugLicenceNo?: string | null | undefined;
 };
 
 /** `updateUserSchema` — `backend/src/validators/user.validator.js` */
