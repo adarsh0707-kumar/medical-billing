@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation
+
+#### FR-BILL-18 is superseded, not planned
+
+The server-generated PDF invoice was specified when the printed bill was a receipt, and a PDF meant leaving the browser to get a document worth handing over. **FR-BILL-20 now prints a full GST tax invoice, and the browser saves it as a PDF named after the invoice number** — so what that requirement was reaching for exists, without either of the dependencies its backlog note proposed. Puppeteer in particular would have pulled a Chromium into a backend image whose entire deployment story is one small container.
+
+What a server renderer would still add is **emailing a bill with no browser open**. Nobody has asked for it in the four months since 1.0.0, and it needs the same SMTP decision FR-AUTH-11 and FR-NOTIF-06 are waiting on — so it is one question to answer once, not three.
+
+**The row is kept in both documents rather than deleted.** A requirement recorded as superseded tells the next reader why not to build it; one that quietly vanished tells them nothing, and invites somebody to re-derive the argument from scratch. `docs/01` §6.8 carries the reasoning and `docs/05`'s backlog points at it.
+
 ### Added
 
 #### Top-selling medicines (FR-RPT-07)
