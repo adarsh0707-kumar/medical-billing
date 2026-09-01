@@ -8,6 +8,7 @@ const {
   gstReportQuerySchema,
   monthlyReportQuerySchema,
   topSellersQuerySchema,
+  prescriptionRegisterQuerySchema,
   yearlyReportQuerySchema,
   trendQuerySchema,
 } = require("../validators/billing.validator");
@@ -126,6 +127,24 @@ router.get(
   authorize("ADMIN", "PHARMACIST"),
   validateQuery(gstReportQuerySchema),
   billingCtrl.exportGstReport,
+);
+
+// ─── Schedule H register (FR-MED-12) ──────────────────
+// ADMIN and PHARMACIST, like the GST return rather than the trading reports.
+// Every row names a patient and what they were dispensed — the most sensitive
+// join in this database (threat T-9) — and a pharmacist needs it, because
+// dispensing Schedule H is their job.
+router.get(
+  "/prescriptions",
+  authorize("ADMIN", "PHARMACIST"),
+  validateQuery(prescriptionRegisterQuerySchema),
+  billingCtrl.getPrescriptionRegister,
+);
+router.get(
+  "/prescriptions/export",
+  authorize("ADMIN", "PHARMACIST"),
+  validateQuery(prescriptionRegisterQuerySchema),
+  billingCtrl.exportPrescriptionRegister,
 );
 
 // ─── Stock ────────────────────────────────────────────

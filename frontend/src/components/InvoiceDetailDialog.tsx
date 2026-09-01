@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2, RotateCcw, TriangleAlert } from "lucide-react";
+import { Loader2, RotateCcw, Stethoscope, TriangleAlert } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -59,6 +59,21 @@ interface InvoiceItemDetail {
   batch?: { batchNumber: string; expiryDate: string } | null;
 }
 
+/**
+ * The Schedule H register entry, present only on a sale that needed one.
+ *
+ * Recorded at the till since FR-MED-12 and displayed nowhere: the one question
+ * a pharmacist asks of a past sale — who prescribed this — could be answered
+ * only from the database.
+ */
+interface PrescriptionDetail {
+  prescriberName: string;
+  prescriberRegNo: string;
+  prescribedOn: string;
+  patientName: string;
+  notes?: string | null;
+}
+
 interface InvoiceDetail extends InvoiceListRow {
   subtotal: number;
   discountAmt: number;
@@ -67,6 +82,7 @@ interface InvoiceDetail extends InvoiceListRow {
   notes?: string | null;
   items: InvoiceItemDetail[];
   user?: { name: string } | null;
+  prescription?: PrescriptionDetail | null;
 }
 
 const formatINR = (val: number) =>
@@ -351,6 +367,34 @@ function InvoiceDetailBody({
           );
         })}
       </div>
+
+      {/* ── Prescription (FR-MED-12) ── */}
+      {invoice.prescription && (
+        <div
+          className="rounded-md border border-teal-900 bg-teal-950/30 px-3 py-2
+            space-y-1"
+        >
+          <div className="flex items-center gap-2">
+            <Stethoscope className="w-4 h-4 text-teal-400 shrink-0" />
+            <h3 className="text-sm font-semibold text-white">
+              Prescribed by {invoice.prescription.prescriberName}
+            </h3>
+          </div>
+          <p className="text-xs text-slate-500">
+            Reg. no {invoice.prescription.prescriberRegNo} · written{" "}
+            {new Date(invoice.prescription.prescribedOn).toLocaleDateString(
+              "en-IN",
+              { dateStyle: "medium" },
+            )}{" "}
+            · for {invoice.prescription.patientName}
+          </p>
+          {invoice.prescription.notes && (
+            <p className="text-xs text-slate-500 italic">
+              {invoice.prescription.notes}
+            </p>
+          )}
+        </div>
+      )}
 
       <Separator className="bg-slate-700" />
 

@@ -365,6 +365,8 @@ This is the only raw SQL in the codebase; the atomicity guarantee is the reason.
 
 **Written in the invoice's transaction.** A Schedule H invoice without its register entry is exactly the gap this closes, so the two cannot come apart: a rolled-back sale leaves no orphan entry.
 
+**Produced by `GET /api/reports/prescriptions`, since 2026-09-01.** The two indexes above were added on 2026-08-24 for a query nothing made: for eight days the register was written and could not be read except from a `psql` prompt, which is not "able to produce" in the sense Rule 65(11) means. The endpoint filters on `prescribedOn` rather than the invoice date, for the reason the column's own note gives.
+
 **No image, deliberately.** The rules permit the register in lieu of the paper; this stack has no file storage; and a scan would be a second copy of patient-identifying data with its own retention and erasure obligations. Adding one later does not disturb these columns.
 
 > **`patientName` is not reached by customer erasure.** The register is a statutory record the pharmacy is required to be able to produce, and a right to erasure does not override an obligation to retain — the same reasoning that keeps the invoice. An erased customer's name therefore disappears from `Customer` and from the audit trail, and survives in the register of any Schedule H medicine they were dispensed. See §8.

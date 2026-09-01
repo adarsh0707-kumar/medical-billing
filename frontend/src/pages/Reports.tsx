@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useDebounced } from "@/hooks/useDebounced";
 import { ScrollableChart } from "@/components/layout/ScrollableChart";
 import { useQuery } from "@tanstack/react-query";
 import { useAuthStore } from "@/store/auth.store";
@@ -18,6 +19,8 @@ import {
   IndianRupee,
   ShoppingCart,
   FileText,
+  Search,
+  Stethoscope,
 } from "lucide-react";
 import {
   BarChart,
@@ -1552,6 +1555,248 @@ function SalesTrend() {
   );
 }
 
+// ─── Schedule H register (FR-MED-12) ─────────────────────
+//
+// Rule 65(11) obliges a pharmacy to *produce* the particulars of a Schedule H
+// supply. The till has recorded them since 2026-08-24 and there was nowhere to
+// read them: `Prescription` carries indexes on `prescriberRegNo` and
+// `prescribedOn` for exactly the query an inspection asks, and nothing asked
+// it. Producing the register meant somebody with a psql prompt.
+//
+// ADMIN and PHARMACIST, matching GST rather than the trading reports: every row
+// names a patient and what they were dispensed, which is the most sensitive
+// join in this database.
+interface PrescriptionRow {
+  id: string;
+  prescriberName: string;
+  prescriberRegNo: string;
+  prescribedOn: string;
+  patientName: string;
+  notes?: string | null;
+  invoice: {
+    id: string;
+    invoiceNumber: string;
+    date: string;
+    status: string;
+    totalAmount: number;
+    items: { medicineName: string; quantity: number }[];
+  };
+}
+
+const shortDate = (iso: string) =>
+  new Date(iso).toLocaleDateString("en-IN", { dateStyle: "medium" });
+
+function PrescriptionRegister() {
+  const [search, setSearch] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [page, setPage] = useState(1);
+  const [exporting, setExporting] = useState(false);
+
+  // Typing a prescriber's name is a request per keystroke otherwise, and the
+  // register is a join across three tables.
+  const debouncedSearch = useDebounced(search, 300);
+
+  // Both dates or neither: the server ignores a lone bound rather than treating
+  // it as open-ended, so sending one would silently widen the register back to
+  // everything while the box says otherwise.
+  const range = startDate && endDate ? `&startDate=${startDate}&endDate=${endDate}` : "";
+  const filters = `${debouncedSearch ? `search=${encodeURIComponent(debouncedSearch)}` : ""}${range}`;
+  const query = `page=${page}&limit=20&${filters}`;
+
+  const { data, isLoading: loading } = useQuery({
+    queryKey: ["prescription-register", query],
+    queryFn: async ({ signal }) => {
+      const res = await api.get(`/api/reports/prescriptions?${query}`, {
+        signal,
+      });
+      return res.data as {
+        data: PrescriptionRow[];
+        pagination: { total: number; pages: number };
+      };
+    },
+  });
+
+  const entries = data?.data ?? [];
+  const totalPages = data?.pagination.pages ?? 0;
+
+  const exportCsv = async () => {
+    setExporting(true);
+    try {
+      // The export starts from the first row whatever page is on screen, so the
+      // page number is deliberately left out of what it sends.
+      await downloadCsv(
+        `/api/reports/prescriptions/export?${filters}`,
+        "prescription-register.csv",
+      );
+      toast.success("Prescription register exported");
+    } catch {
+      toast.error("Failed to export the register");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  // Any change of filter puts the reader back on page one — page 3 of a
+  // narrower result set is usually empty, which reads as "nothing found".
+  const onFilterChange = (set: (v: string) => void) => (value: string) => {
+    set(value);
+    setPage(1);
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+        <div className="flex flex-1 items-center gap-2 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2">
+          <Search className="w-4 h-4 text-slate-400 shrink-0" />
+          <input
+            value={search}
+            onChange={(e) => onFilterChange(setSearch)(e.target.value)}
+            aria-label="Search prescriber, registration number or patient"
+            placeholder="Prescriber, reg. no or patient"
+            className="bg-transparent text-white text-sm outline-none w-full
+              placeholder:text-slate-500"
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <input
+            type="date"
+            value={startDate}
+            onChange={(e) => onFilterChange(setStartDate)(e.target.value)}
+            aria-label="Prescribed from"
+            className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2
+              text-white text-sm outline-none"
+          />
+          <span className="text-slate-500 text-sm">to</span>
+          <input
+            type="date"
+            value={endDate}
+            onChange={(e) => onFilterChange(setEndDate)(e.target.value)}
+            aria-label="Prescribed to"
+            className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2
+              text-white text-sm outline-none"
+          />
+        </div>
+        <Button
+          onClick={exportCsv}
+          size="sm"
+          disabled={!entries.length || exporting}
+          className="w-full sm:w-auto sm:ml-auto bg-slate-700 text-slate-100 hover:bg-slate-600 disabled:opacity-40"
+        >
+          {exporting ? (
+            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+          ) : (
+            <Download className="w-4 h-4 mr-2" />
+          )}
+          Export CSV
+        </Button>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center py-16">
+          <Loader2 className="w-6 h-6 animate-spin text-teal-400" />
+        </div>
+      ) : (
+        <Card className="bg-slate-800 border-slate-700">
+          <CardHeader className="py-3 px-4 border-b border-slate-700">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-white text-sm">
+                Schedule H Register
+              </CardTitle>
+              <Badge className="bg-teal-900 text-teal-400">
+                {data?.pagination.total ?? 0} entries
+              </Badge>
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            {entries.length === 0 ? (
+              <p className="text-slate-400 text-sm text-center py-12">
+                No prescriptions recorded for this filter.
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-700 text-slate-400 text-xs">
+                      {/* When it was written, not when it was filled — the
+                          column an inspection reads down. */}
+                      <th className="text-left px-4 py-3">Prescribed</th>
+                      <th className="text-left px-4 py-3">Prescriber</th>
+                      <th className="text-left px-4 py-3">Reg. No</th>
+                      <th className="text-left px-4 py-3">Patient</th>
+                      <th className="text-left px-4 py-3">Dispensed</th>
+                      <th className="text-left px-4 py-3">Invoice</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {entries.map((e) => (
+                      <tr
+                        key={e.id}
+                        className="border-b border-slate-700/50 text-slate-300 align-top"
+                      >
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          {shortDate(e.prescribedOn)}
+                        </td>
+                        <td className="px-4 py-3 text-white">
+                          {e.prescriberName}
+                        </td>
+                        <td className="px-4 py-3 tabular-nums">
+                          {e.prescriberRegNo}
+                        </td>
+                        <td className="px-4 py-3">{e.patientName}</td>
+                        <td className="px-4 py-3 text-slate-500">
+                          {e.invoice.items
+                            .map((i) => `${i.medicineName} ×${i.quantity}`)
+                            .join(", ")}
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <span className="text-white">
+                            {e.invoice.invoiceNumber}
+                          </span>
+                          <span className="block text-xs text-slate-500">
+                            {shortDate(e.invoice.date)}
+                            {e.invoice.status === "CANCELLED" ? " · voided" : ""}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-3">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setPage((p) => p - 1)}
+            disabled={page === 1}
+            className="border-slate-600 text-slate-300 hover:bg-slate-700 h-8 w-8 p-0"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </Button>
+          <span className="text-slate-400 text-sm">
+            Page {page} of {totalPages}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setPage((p) => p + 1)}
+            disabled={page === totalPages}
+            className="border-slate-600 text-slate-300 hover:bg-slate-700 h-8 w-8 p-0"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Reports Page ─────────────────────────────────
 
 // ─── Top sellers (FR-RPT-07) ─────────────────────────────
@@ -1972,6 +2217,17 @@ export default function Reports() {
     ...(canViewMargin
       ? [{ value: "margin", label: "Profit & Margin", icon: BarChart3 }]
       : []),
+    // Beside GST rather than beside the trading reports: both are documents an
+    // inspector asks for, and both are hidden from a cashier for it.
+    ...(canViewGst
+      ? [
+          {
+            value: "prescriptions",
+            label: "Prescriptions",
+            icon: Stethoscope,
+          },
+        ]
+      : []),
     { value: "trend", label: "Sales Trend", icon: TrendingUp },
     { value: "alerts", label: "Stock Alerts", icon: AlertTriangle },
   ];
@@ -2012,6 +2268,11 @@ export default function Reports() {
         {canViewMargin && (
           <TabsContent value="margin">
             <MarginReport />
+          </TabsContent>
+        )}
+        {canViewGst && (
+          <TabsContent value="prescriptions">
+            <PrescriptionRegister />
           </TabsContent>
         )}
         <TabsContent value="trend">

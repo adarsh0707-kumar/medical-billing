@@ -33,6 +33,12 @@ The printed GST invoice is untouched: it paints with `text-black` on default pap
 
 ### Fixed
 
+#### A printed invoice left a third of a page blank before its totals
+
+Reported from a real bill: a three-line invoice printed five empty ruled rows between the last medicine and the totals block, which reads as though the till failed to print the rest of the order.
+
+The table padded its body out to eight rows whatever it held, so the box kept one height. The reasoning was that the totals should not ride up under the header — but for a short bill riding up is exactly what it should do. The padding is gone; the table now ends where the items end, everything below follows it up the page, and a longer bill grows on its own.
+
 #### Every tick on three chart axes read ₹0k
 
 Reported against the September margin chart: the axis showed **₹0k** at every gridline while the bars above them had obvious height. The three sales charts — the margin report, the sales trend and the dashboard — each carried their own copy of `` (v) => `₹${(v / 1000).toFixed(0)}k` ``, and `245 / 1000` is `0.245`, which `.toFixed(0)` renders as `"0"`. Any period whose takings ran to hundreds rather than thousands showed an axis of zeroes.
@@ -46,6 +52,22 @@ The same formatter also mangled negatives, which the margin report genuinely pro
 Six tests, the first of which is the reported case.
 
 ### Added
+
+#### The Schedule H register can be produced (FR-MED-12)
+
+`GET /api/reports/prescriptions` and its CSV export, a **Prescriptions** tab on the Reports page, the prescriber's particulars on the invoice detail dialog, and a prescription band on the printed invoice.
+
+**The register has been recorded since 2026-08-24 and could not be read.** `Prescription` was created that day with indexes on `prescriberRegNo` and `prescribedOn`, and a comment in the schema naming the query an inspection asks — and nothing asked it. Rule 65(11) permits a register in lieu of retaining the paper on the condition that the pharmacy can *produce* the particulars; for eight days producing them meant somebody with a `psql` prompt, which is not that.
+
+This is the fourth time this repository has shipped a capability nothing could reach, after `POST /api/auth/logout`, the void endpoint, and the two report endpoints in the entry below. The FR-MED-12 row now carries both dates rather than one ✅.
+
+- **The date filter reads `prescribedOn`, not the date of supply.** Those differ whenever a customer fills a prescription later than it was written, which is most of them, and an inspection asks about the former. The invoice's own date is on every row for anyone who wants the latter.
+- **One search box across prescriber, registration number and patient.** An inspector arrives holding one of the three and should not have to know which field it was filed under.
+- **ADMIN and PHARMACIST**, matching the GST return rather than the trading reports: every row names a patient and what they were dispensed, which is the most sensitive join in this database, and a pharmacist needs it because dispensing Schedule H is their job. The tab is filtered out for a cashier rather than rendered disabled, so the page never fires a request the server would refuse.
+- **Scoped through `invoice.shopId`.** `Prescription` carries no `shopId` of its own, so the tenant boundary is a relation filter in the same `where` rather than a check afterwards — and it is tested against a real second shop rather than asserted in a comment.
+- The export starts from the first row whatever page is on screen, because a compliance document is not a page of a table. It still takes `MAX_LIMIT`: a range holding more than 100 entries exports its first 100, which the API reference states plainly rather than leaving to be discovered.
+
+21 backend tests and 8 frontend.
 
 #### The margin and top-seller reports are reachable from the app (FR-RPT-07, FR-RPT-08)
 

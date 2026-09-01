@@ -28,7 +28,7 @@ Ten routers are mounted. **Since 2.0.0 the paths are grouped by resource**, so t
 | `/api/customers` | customer CRUD · erasure                                                            |
 | `/api/medicines` | medicine CRUD ·`search` (the POS lookup)                                          |
 | `/api/suppliers` | supplier CRUD                                                                       |
-| `/api/reports`   | daily-summary · monthly · yearly · top-sellers · margin · gst · trend · expiring · low-stock, each with`/export`. All open to every role except **margin** and **gst**, which are ADMIN(+PHARMACIST) only |
+| `/api/reports`   | daily-summary · monthly · yearly · top-sellers · margin · gst · prescriptions · trend · expiring · low-stock, each with`/export`. All open to every role except **margin** (ADMIN) and **gst** and **prescriptions** (ADMIN, PHARMACIST) |
 | `/api/inventory` | categories · manufacturers · batches                                              |
 | `/api/billing`   | invoices · void · credit notes                                                     |
 | `/api/dashboard` | `stats` — every dashboard panel in one request                                    |
@@ -1105,6 +1105,44 @@ Four things worth knowing before reading the figures:
 
 CSV of the daily breakdown: `Date, Revenue, Cost, Profit`, one row per day including the quiet ones. Money is the stored 2 dp string, so a credit note's month exports as `-245.00` rather than a float. Filename `margin-report-2026-03.csv`.
 
+### `GET /api/reports/prescriptions?page=&limit=&search=&startDate=&endDate=` — ADMIN, PHARMACIST (FR-MED-12)
+
+Added 2026-09-01. The Schedule H register: every prescription recorded against a sale, with what was dispensed against it. Rule 65(11) obliges the pharmacy to be able to *produce* these particulars; from 2026-08-24 to 2026-09-01 it recorded them and had no way to produce them, so answering an inspection meant a `psql` prompt. `Prescription` had carried indexes on `prescriberRegNo` and `prescribedOn` for exactly this query the whole time.
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "clx...",
+      "prescriberName": "Dr Priya Nair", "prescriberRegNo": "KMC/99887",
+      "prescribedOn": "2026-03-10T00:00:00.000Z",
+      "patientName": "Ravi Kumar", "notes": null,
+      "invoice": {
+        "id": "clx...", "invoiceNumber": "INV260312-0004",
+        "date": "2026-03-12T09:30:00.000Z", "status": "ACTIVE", "totalAmount": 274.40,
+        "items": [{ "medicineName": "Alprazolam 0.5mg", "quantity": 10 }]
+      }
+    }
+  ],
+  "pagination": { "total": 1, "page": 1, "limit": 20, "pages": 1 }
+}
+```
+
+**`startDate`/`endDate` filter `prescribedOn` — when the practitioner wrote it, not the date of supply.** Those are different dates whenever a customer fills a prescription later than it was written, which is most of them, and the one an inspection asks about is the former. The invoice's own date is on every row for anyone who wants the latter. Like the invoice list, a lone bound is ignored: both or neither.
+
+`search` matches the prescriber's name, their registration number **or** the patient, case-insensitively, in one box — an inspector arrives holding one of the three and should not have to know which field it was filed under. An empty string means no filter.
+
+`page` and `limit` are the shared validated pair, so `?limit=999999` is a `400` (threat T-10).
+
+**ADMIN and PHARMACIST**, matching the GST return rather than the trading reports. Every row names a patient and what they were dispensed, which is the most sensitive join in this database (T-9) — and a pharmacist needs it, because dispensing Schedule H is their job. The rows are scoped through `invoice.shopId`: `Prescription` carries no `shopId` of its own, so the tenant boundary is a relation filter in the same `where`, not a check afterwards.
+
+### `GET /api/reports/prescriptions/export?search=&startDate=&endDate=` — ADMIN, PHARMACIST
+
+CSV of the register: `Prescribed On, Prescriber, Reg. No, Patient, Invoice No, Supplied On, Medicines, Status, Notes`. `Medicines` is the invoice's lines joined as `Name x10; Other x2`, so one row is one prescription. Filename `prescription-register.csv` — the only export not named after a period, because this one is defined by its filter rather than by a month.
+
+It ignores the page the screen is on and starts from the first row: a compliance document is not a page of a table. It does **not** ignore `MAX_LIMIT` — a register with more than 100 entries in the chosen range exports its first 100 and says nothing about the rest, which is a real limitation shared with every other export here and is answered today by narrowing the date range.
+
 ---
 
 ## 9c. The shop — `/api/shop`
@@ -1204,6 +1242,7 @@ One endpoint per report. Each takes **the same query parameters, the same valida
 | `GET /api/reports/top-sellers/export?month=&year=&limit=` | `top-sellers`       | any role          |
 | `GET /api/reports/margin/export?month=&year=`        | `margin`                 | **ADMIN**         |
 | `GET /api/reports/gst/export?month=&year=`    | `gst-report`             | ADMIN, PHARMACIST |
+| `GET /api/reports/prescriptions/export?search=&startDate=&endDate=` | `prescriptions` | ADMIN, PHARMACIST |
 | `GET /api/reports/expiring/export?days=`            | `batches/expiring`       | any role          |
 | `GET /api/reports/low-stock/export?threshold=`      | `batches/low-stock`      | any role          |
 

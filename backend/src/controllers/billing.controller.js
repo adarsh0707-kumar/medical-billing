@@ -1,5 +1,6 @@
 const prisma = require("../config/db");
 const { toCsv, sendCsv } = require("../utils/csv");
+const { MAX_LIMIT } = require("../validators/common.validator");
 const { Prisma } = require("@prisma/client");
 const {
   generateInvoiceNumber,
@@ -695,6 +696,13 @@ const getOne = async (req, res, next) => {
         items: { include: PRINTABLE_ITEM_INCLUDE },
         customer: true,
         user: { select: { name: true } },
+        // The Schedule H register entry for this sale (FR-MED-12). Recorded
+        // since 2026-08-24 and, until 2026-09-01, never read back by anything —
+        // so a pharmacist could enter a prescriber and then had no way to see
+        // who it was. The model's own comment names the query an inspection
+        // asks and there are indexes sitting there to serve it; this is the
+        // first half of finally asking it.
+        prescription: true,
       },
     });
     if (!invoice)
@@ -998,6 +1006,83 @@ const marginReportData = async ({ month, year }, shopId) => {
   };
 };
 
+// ─── The Schedule H prescription register (FR-MED-12) ────
+//
+// Rule 65(11) obliges a pharmacy to be able to *produce* the particulars of a
+// Schedule H supply. Since 2026-08-24 it recorded them and could not produce
+// them: `Prescription` carries indexes on `prescriberRegNo` and `prescribedOn`,
+// and its own comment says "show me everything dispensed against this
+// prescriber" is the query an inspection asks — and nothing asked it. Producing
+// the register meant somebody with a psql prompt.
+//
+// ADMIN and PHARMACIST, matching the GST report rather than the trading ones.
+// Every row names a patient and what they were dispensed, which is the most
+// sensitive join in this database (threat T-9) — and a pharmacist needs it,
+// because dispensing Schedule H is their job.
+const prescriptionRegisterData = async (query, shopId) => {
+  const { page, limit, search, startDate, endDate } = query;
+  const skip = (page - 1) * limit;
+
+  const where = {
+    // Scoped through the invoice, because `Prescription` carries no `shopId` of
+    // its own — it hangs off exactly one invoice, and that invoice has the
+    // tenant. Filtering on the relation keeps the boundary in the same `where`
+    // rather than in a check afterwards.
+    invoice: { shopId },
+    ...(search && {
+      OR: [
+        { prescriberName: { contains: search, mode: "insensitive" } },
+        { prescriberRegNo: { contains: search, mode: "insensitive" } },
+        { patientName: { contains: search, mode: "insensitive" } },
+      ],
+    }),
+    // On `prescribedOn`, the date the practitioner wrote it — not the date of
+    // supply. They are different dates and an inspector asks about the former;
+    // the invoice date is on the row for anyone who wants the latter.
+    ...(startDate && endDate && { prescribedOn: { gte: startDate, lte: endDate } }),
+  };
+
+  const [entries, total] = await Promise.all([
+    prisma.prescription.findMany({
+      where,
+      skip,
+      take: limit,
+      orderBy: { prescribedOn: "desc" },
+      include: {
+        invoice: {
+          select: {
+            id: true,
+            invoiceNumber: true,
+            date: true,
+            status: true,
+            totalAmount: true,
+            items: { select: { medicineName: true, quantity: true } },
+          },
+        },
+      },
+    }),
+    prisma.prescription.count({ where }),
+  ]);
+
+  return { entries, total, page, limit };
+};
+
+const getPrescriptionRegister = async (req, res, next) => {
+  try {
+    const { entries, total, page, limit } = await prescriptionRegisterData(
+      req.validatedQuery,
+      req.user.shopId,
+    );
+    res.json({
+      success: true,
+      data: entries,
+      pagination: { total, page, limit, pages: Math.ceil(total / limit) },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
 // ─── Top-selling medicines (FR-RPT-07) ───────────────────
 //
 // What moved most in a month. Open to every role, like the other period reports
@@ -1265,6 +1350,50 @@ const exportTopSellers = async (req, res, next) => {
   }
 };
 
+// What an inspector asks to see, in the order they ask for it: when it was
+// written, who wrote it, their registration, the patient, and what was actually
+// handed over against it.
+const PRESCRIPTION_COLUMNS = [
+  { header: "Prescribed On", kind: "date", get: (r) => r.prescribedOn },
+  { header: "Prescriber", get: (r) => r.prescriberName },
+  { header: "Reg. No", get: (r) => r.prescriberRegNo },
+  { header: "Patient", get: (r) => r.patientName },
+  { header: "Invoice No", get: (r) => r.invoice.invoiceNumber },
+  { header: "Supplied On", kind: "date", get: (r) => r.invoice.date },
+  {
+    header: "Medicines",
+    get: (r) =>
+      r.invoice.items.map((i) => `${i.medicineName} x${i.quantity}`).join("; "),
+  },
+  { header: "Status", get: (r) => r.invoice.status },
+  { header: "Notes", get: (r) => r.notes ?? "" },
+];
+
+const exportPrescriptionRegister = async (req, res, next) => {
+  try {
+    // The export ignores whatever page the screen is on and starts from the
+    // first row, because a compliance document is not a page of a table.
+    //
+    // It does *not* ignore the ceiling: MAX_LIMIT still applies, so a register
+    // with more than 100 entries in the chosen range exports its first 100 and
+    // says nothing about the rest. That is a real limitation — narrowing the
+    // date range is the answer today. Lifting it means streaming the CSV
+    // rather than building it in memory, which is the same unfinished work
+    // every other export here has.
+    const { entries } = await prescriptionRegisterData(
+      { ...req.validatedQuery, page: 1, limit: MAX_LIMIT },
+      req.user.shopId,
+    );
+    sendCsv(
+      res,
+      "prescription-register.csv",
+      toCsv(PRESCRIPTION_COLUMNS, entries),
+    );
+  } catch (err) {
+    next(err);
+  }
+};
+
 const exportMarginReport = async (req, res, next) => {
   try {
     const { month, year, days } = await marginReportData(
@@ -1305,6 +1434,8 @@ module.exports = {
   exportMarginReport,
   getTopSellers,
   exportTopSellers,
+  getPrescriptionRegister,
+  exportPrescriptionRegister,
   getYearlyReport,
   exportYearlyReport,
   voidInvoice,

@@ -1,6 +1,6 @@
 # Testing Strategy
 
-**Measured 2026-08-31: 701 backend tests across 28 files, 165 frontend unit tests across 20 files, and a 7-flow browser smoke — all three layers on CI, all passing.**
+**Measured 2026-09-01: 722 backend tests across 29 files, 173 frontend unit tests across 21 files, and a 7-flow browser smoke — all three layers on CI, all passing.**
 
 > Counts here are taken by **running the suites**, not by adding up the tables below. Three documents once carried four different numbers because the tables were maintained by hand and two suites were never added to them.
 >
@@ -50,7 +50,7 @@ Two decisions worth knowing:
 
 ### What exists
 
-**Backend — 701 across 28 files, all passing.** The count is what a run reports, not what passes — recording it the other way would be the drift this section exists to prevent, and for a while the two genuinely differed.
+**Backend — 722 across 29 files, all passing.** The count is what a run reports, not what passes — recording it the other way would be the drift this section exists to prevent, and for a while the two genuinely differed.
 
 Two failures worth remembering, both fixed 2026-08-27:
 
@@ -80,6 +80,7 @@ Two failures worth remembering, both fixed 2026-08-27:
 | `tests/billing/customer-erasure.test.js`      |    11 | Anonymisation in place, the audit-trail sweep, invoices left reconciling   |
 | `tests/reports/csv-export.test.js`            |    11 | The four export endpoints: filenames, headers, money as stored             |
 | `tests/reports/top-sellers.test.js`           |    19 | The ranking: a renamed medicine staying one row under its current name (BR-12), a partial return coming off the units in the month the credit note was issued, a fully returned medicine dropping off, the capped `limit`, and shop scoping |
+| `tests/reports/prescription-register.test.js` |    21 | The Schedule H register: the date filter reading `prescribedOn` and not the date of supply, search across prescriber / registration number / patient, tenancy through `invoice.shopId` where the row has none of its own, the role split, and the export starting from the first row whatever page is on screen |
 | `tests/reports/margin.test.js`                |    20 | The margin report: revenue excluding GST against batch cost, the day rows reconciling to the headline, a credit note landing in the month it was issued while its sale stays in its own, a zero-cost batch counted rather than passing as free, the ADMIN-only contrast with `/monthly`, and shop scoping |
 | `tests/audit/audit-retention.test.js`         |     8 | The 24-month sweep: both sides of the window boundary, the dry run changing nothing, that it writes no audit rows of its own, and that an erasure still completes when the sweep has already taken its rows |
 | `tests/audit/audit-log.test.js`               |     9 | Actor and before/after on every audited write, what is deliberately not audited, and — since the 2026-08-31 migration off `$use` — that an audit row rolls back with the transaction it describes |
@@ -88,7 +89,7 @@ Two failures worth remembering, both fixed 2026-08-27:
 | `tests/billing/invoice-concurrency.test.js`   |     5 | Last-unit races, oversell bursts, gapless serials                          |
 | `tests/api/shop.test.js`                      |     8 | `GET`/`PUT /api/shop`: the caller's own shop only, the ADMIN gate on `PUT`, and read access for every role because printing a bill is a cashier's job (FR-SHOP-07). **Added with multi-tenancy and missing from this table until 2026-08-31** |
 
-**Frontend — 165 across 20 files, all passing.** Measured 2026-08-31 on Node 22.
+**Frontend — 173 across 21 files, all passing.** Measured 2026-09-01 on Node 22.
 The 125 recorded here before that dated from 2026-08-25 and had been overtaken by
 three files the table listed but the total never counted.
 
@@ -115,6 +116,7 @@ three files the table listed but the total never counted.
 | `src/pages/__tests__/cart-math.test.ts`        |    41 | The §4 fixtures in integer paise, mirroring the server ([G-17](./08-gap-analysis.md#g-17)) |
 | `src/lib/__tests__/amount-in-words.test.ts`    |    14 | The rupees-and-paise words on the printed invoice, in lakhs and crores, computed in paise throughout (FR-BILL-20) |
 | `src/pages/__tests__/Reports.margin.test.tsx` |    15 | The Top Sellers and Profit & Margin tabs (FR-RPT-07, FR-RPT-08): that a tab exists and opening it calls the endpoint — the assertion that would have caught both shipping with no screen — the ADMIN-only gate on margin being narrower than the GST tab's, that a cashier's page never fires a request it would get a 403 from, and the upper-bound warning when a batch had no cost price |
+| `src/pages/__tests__/Reports.prescriptions.test.tsx` |     8 | The Schedule H register tab (FR-MED-12), the fourth endpoint here built before anything called it: that the tab exists and opening it asks the server, that the search box and both date bounds reach the request — and that a lone bound does not, since the server would ignore it while the screen said otherwise — and that a cashier is never offered a tab that would 403 |
 | `src/pages/__tests__/Reports.void.test.tsx`    |    11 | The void and partial-return dialog: role gating, client-side bounds, the refetch ([FR-BILL-17](./01-product-requirements.md)) |
 | `src/pages/__tests__/Billing.guards.test.tsx`  |     9 | POS stock guards, driven through the rendered page                |
 | `src/pages/__tests__/Signup.test.tsx`          |     8 | The signup page: what it sends, what it refuses, and that it creates a shop rather than joining one (FR-AUTH-12) |

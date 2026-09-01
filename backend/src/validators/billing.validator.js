@@ -64,6 +64,21 @@ const customerSchema = z.object({
 
 // ─── Query schemas ─────────────────────────────────────
 
+// The Schedule H register (FR-MED-12). Same page/limit/search shape as the
+// invoice list, but the dates filter `prescribedOn` — when the practitioner
+// wrote it — rather than the date of supply. They are different dates, and the
+// one an inspection asks about is the former.
+const prescriptionRegisterQuerySchema = z.object({
+  page,
+  limit,
+  // Matches prescriber name, registration number or patient in one box: an
+  // inspector arrives with one of the three and should not have to know which
+  // field it is.
+  search: searchTerm,
+  startDate: z.coerce.date({ error: "startDate must be a date" }).optional(),
+  endDate: z.coerce.date({ error: "endDate must be a date" }).optional(),
+});
+
 const invoiceListQuerySchema = z.object({
   page,
   limit,
@@ -177,6 +192,7 @@ module.exports = {
   createInvoiceSchema,
   customerSchema,
   invoiceListQuerySchema,
+  prescriptionRegisterQuerySchema,
   dailySummaryQuerySchema,
   gstReportQuerySchema,
   monthlyReportQuerySchema,

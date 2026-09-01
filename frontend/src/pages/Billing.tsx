@@ -255,6 +255,16 @@ function PrintInvoice({
     totalAmount: number;
     paymentMode: string;
     notes?: string | null;
+    // Present only on a sale that needed one. Rule 65(11) obliges the pharmacy
+    // to hold these particulars; printing them on the customer's own copy is
+    // what lets the prescription and the bill be reconciled without the
+    // database, which is the state an inspection tends to arrive in.
+    prescription?: {
+      prescriberName: string;
+      prescriberRegNo: string;
+      prescribedOn: string;
+      patientName: string;
+    } | null;
   };
 
   // Falls back to the product name if the shop hasn't filled in its own yet —
@@ -314,6 +324,29 @@ function PrintInvoice({
             </span>
           </div>
         </div>
+
+        {/* ── Prescription particulars, on a Schedule H sale only (FR-MED-12). */}
+        {inv.prescription && (
+          <div className="grid grid-cols-2 border-t border-black">
+            <div className="p-1 px-2 border-r border-black">
+              <span className="font-semibold">Prescriber : </span>
+              {inv.prescription.prescriberName} (Reg. No.{" "}
+              {inv.prescription.prescriberRegNo})
+            </div>
+            <div className="p-1 px-2 flex justify-between">
+              <span>
+                <span className="font-semibold">Patient : </span>
+                {inv.prescription.patientName}
+              </span>
+              <span>
+                <span className="font-semibold">Rx Dated : </span>
+                {new Date(inv.prescription.prescribedOn).toLocaleDateString(
+                  "en-GB",
+                )}
+              </span>
+            </div>
+          </div>
+        )}
 
         {/* ── Lines. The column set a distributor's GST invoice carries, minus
              the two this system has no field for — see the note below. */}
@@ -398,17 +431,16 @@ function PrintInvoice({
                 </tr>
               );
             })}
-            {/* Keeps the box a consistent height on a short bill, so the
-                totals block does not ride up under the header. */}
-            {Array.from({ length: Math.max(0, 8 - inv.items.length) }).map(
-              (_, i) => (
-                <tr key={`pad-${i}`}>
-                  <td colSpan={13} className="px-1">
-                    &nbsp;
-                  </td>
-                </tr>
-              ),
-            )}
+            {/* No padding rows. This used to pad the body out to eight, so the
+                box kept one height whatever it held — the reasoning being that
+                the totals block should not ride up under the header.
+
+                In practice that is what a three-line bill wants: it printed a
+                third of a page of empty ruled rows before the totals, which
+                reads as though the till failed to print the rest of the order.
+                The table now ends where the items end and everything below
+                follows it up the page, growing on its own when there are more
+                lines. */}
           </tbody>
         </table>
 
