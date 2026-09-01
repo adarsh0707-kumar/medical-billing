@@ -1,6 +1,6 @@
 # Testing Strategy
 
-**Measured 2026-08-31: 701 backend tests across 28 files, 159 frontend unit tests across 19 files, and a 7-flow browser smoke — all three layers on CI, all passing.**
+**Measured 2026-08-31: 701 backend tests across 28 files, 165 frontend unit tests across 20 files, and a 7-flow browser smoke — all three layers on CI, all passing.**
 
 > Counts here are taken by **running the suites**, not by adding up the tables below. Three documents once carried four different numbers because the tables were maintained by hand and two suites were never added to them.
 >
@@ -88,7 +88,7 @@ Two failures worth remembering, both fixed 2026-08-27:
 | `tests/billing/invoice-concurrency.test.js`   |     5 | Last-unit races, oversell bursts, gapless serials                          |
 | `tests/api/shop.test.js`                      |     8 | `GET`/`PUT /api/shop`: the caller's own shop only, the ADMIN gate on `PUT`, and read access for every role because printing a bill is a cashier's job (FR-SHOP-07). **Added with multi-tenancy and missing from this table until 2026-08-31** |
 
-**Frontend — 159 across 19 files, all passing.** Measured 2026-08-31 on Node 22.
+**Frontend — 165 across 20 files, all passing.** Measured 2026-08-31 on Node 22.
 The 125 recorded here before that dated from 2026-08-25 and had been overtaken by
 three files the table listed but the total never counted.
 
@@ -127,6 +127,7 @@ three files the table listed but the total never counted.
 | `src/components/__tests__/Sidebar.test.tsx`    |     5 | The role filter on navigation                                     |
 | `src/pages/__tests__/Settings.users.test.tsx`  |     4 | User management, admin-only                                       |
 | `src/pages/__tests__/Customers.test.tsx`       |     4 | Customer list, search and the history restriction                 |
+| `src/lib/__tests__/currency.test.ts`          |     6 | The chart axis formatter, and the sub-₹1,000 case that made every tick on three charts read `₹0k` while the bars had height — plus the negatives a margin chart can produce |
 | `src/lib/__tests__/download.test.ts`           |     4 | Blob download and the `Content-Disposition` filename              |
 | `src/components/__tests__/ProtectedRoute.test.tsx` | 3 | Redirect when unauthenticated                                     |
 | `src/pages/__tests__/Suppliers.test.tsx`       |     2 | Supplier list and form                                            |

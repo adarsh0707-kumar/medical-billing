@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+#### Every tick on three chart axes read ₹0k
+
+Reported against the September margin chart: the axis showed **₹0k** at every gridline while the bars above them had obvious height. The three sales charts — the margin report, the sales trend and the dashboard — each carried their own copy of `` (v) => `₹${(v / 1000).toFixed(0)}k` ``, and `245 / 1000` is `0.245`, which `.toFixed(0)` renders as `"0"`. Any period whose takings ran to hundreds rather than thousands showed an axis of zeroes.
+
+It survived because the fixtures and the busier months all reach thousands, so nothing in the suite or in a casual look at a live chart exercised the case. A single shop's quiet month is exactly where it bites.
+
+The same formatter also mangled negatives, which the margin report genuinely produces — a month whose only activity is credit notes against earlier sales runs at a loss, and `-245` rendered as `₹-0k`.
+
+**One function now, in `lib/currency.ts`, not three fixed copies.** The three were identical, so the defect was identical in all three and fixing the reported one would have left two — the shape `utils/trend.js` exists to close on the server. Below ₹1,000 it prints exact rupees; above, it steps through **k, L and cr**, following the lakh/crore grouping `amount-in-words.ts` already uses on the printed invoice, because an axis reading `₹1.2M` next to "one lakh twenty thousand" would be the same number in two counting systems.
+
+Six tests, the first of which is the reported case.
+
 ### Added
 
 #### The margin and top-seller reports are reachable from the app (FR-RPT-07, FR-RPT-08)
@@ -22,7 +36,7 @@ Two tabs on the Reports page: **Top Sellers** (period, a Top 10/20/50 selector, 
 - **A month that sold nothing shows `—`, not `0%`**, carrying the server's `null` through rather than formatting it into a claim about a period that traded.
 - Neither tab re-sorts, re-derives or re-formats a figure the server sent. The ranking, the margin and the money are the API's, so the screen and the CSV of the same period cannot disagree ([G-21](./docs/08-gap-analysis.md#g-21)).
 
-Fifteen tests, the first of which is the one that would have caught the original omission: a tab exists, and opening it calls the endpoint. Frontend suite now **159 across 19 files**.
+Fifteen tests, the first of which is the one that would have caught the original omission: a tab exists, and opening it calls the endpoint.
 
 #### Self-service password reset, and the stack's first outbound dependency (FR-AUTH-11)
 

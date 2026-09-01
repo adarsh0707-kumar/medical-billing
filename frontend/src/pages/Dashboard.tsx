@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { ScrollableChart } from "@/components/layout/ScrollableChart";
 import api from "@/lib/api";
+import { formatAxisINR } from "@/lib/currency";
 import { toast } from "sonner";
 import { useAuthStore } from "@/store/auth.store";
 
@@ -397,7 +398,7 @@ export default function Dashboard() {
                   />
                   <YAxis
                     tick={{ fill: "#64748b", fontSize: 11 }}
-                    tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`}
+                    tickFormatter={formatAxisINR}
                   />
                   <Tooltip
                     formatter={(val) => [formatINR(Number(val)), "Sales"]}

@@ -41,6 +41,7 @@ import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { TabSwitcher, type TabItem } from "@/components/layout/TabSwitcher";
 import { Separator } from "@/components/ui/separator";
 import api from "@/lib/api";
+import { formatAxisINR } from "@/lib/currency";
 import { downloadCsv } from "@/lib/download";
 import { toast } from "sonner";
 import InvoiceDetailDialog from "@/components/InvoiceDetailDialog";
@@ -1485,7 +1486,7 @@ function SalesTrend() {
                 <XAxis dataKey="date" tick={{ fill: "#94a3b8", fontSize: 12 }} />
                 <YAxis
                   tick={{ fill: "#94a3b8", fontSize: 12 }}
-                  tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`}
+                  tickFormatter={formatAxisINR}
                 />
                 <Tooltip
                   formatter={(val) => [formatINR(Number(val ?? 0)), "Revenue"]}
@@ -1911,7 +1912,7 @@ function MarginReport() {
                       <YAxis
                         stroke="#94a3b8"
                         fontSize={12}
-                        tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`}
+                        tickFormatter={formatAxisINR}
                       />
                       <Tooltip
                         contentStyle={{

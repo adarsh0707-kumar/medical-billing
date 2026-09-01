@@ -262,7 +262,7 @@ The lint rules are the ones where a violation is a defect rather than a preferen
 
 ```bash
 cd frontend
-npm test          # 159 component and unit tests, seconds — needs Node 22
+npm test          # 165 component and unit tests, seconds — needs Node 22
 npm run test:e2e  # 7 browser flows — needs `docker compose up -d` first
 ```
 
