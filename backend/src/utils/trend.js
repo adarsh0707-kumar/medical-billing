@@ -212,6 +212,70 @@ const bucketedMargin = async (
   return [...merged.values()].sort((a, b) => a.bucket.localeCompare(b.bucket));
 };
 
+/**
+ * What sold most over a window (FR-RPT-07).
+ *
+ * ─── Grouped by medicine id, never by the name on the line ───────────────────
+ *
+ * `InvoiceItem.medicineName` is a **snapshot taken at sale time** (BR-12), kept
+ * so a later rename cannot rewrite what a customer was handed. Grouping by it
+ * would therefore split one medicine into two rows the day after somebody fixes
+ * a spelling — and the two halves would each rank lower than the whole, so a
+ * shop's best seller could quietly drop off its own top-ten. Grouping by
+ * `Batch.medicineId` and reading the name from `Medicine` gives one row under
+ * the name the medicine has now, which is the one an operator is looking for.
+ *
+ * ─── Returns, and the asymmetry that is easy to miss ─────────────────────────
+ *
+ * A credit note's lines carry a **positive `quantity` and an already-negated
+ * `totalPrice`** (see `voidInvoice`). So the money nets itself out of a plain
+ * `SUM` and the units do not — the quantity needs the sign taken from the
+ * invoice's type, and only the quantity. Summing both the same way is wrong
+ * whichever way you pick.
+ *
+ * **Not `returnedQty`**, which is a different question and a different answer.
+ * That column is the cumulative concurrency guard on the sale's own line, so it
+ * reflects returns made *at any time since* — subtracting it here would make a
+ * report of March change every time somebody returns a March purchase, which is
+ * precisely the after-the-fact rewriting of a closed period that BR-14 and the
+ * whole void design exist to prevent. Signing by type puts the sale in the month
+ * it was raised and the reversal in the month it was issued, which is what the
+ * margin report does and what the GST return does.
+ *
+ * ─── Two smaller decisions ───────────────────────────────────────────────────
+ *
+ * Rows netting to zero or less are dropped: a medicine sold and then entirely
+ * returned is not a top seller, and a list of best sellers reading "0 units" is
+ * noise rather than information.
+ *
+ * Soft-deleted medicines are **not** excluded. A product withdrawn in April was
+ * still what sold in March, and hiding it would leave March's list quietly
+ * short.
+ */
+const topSellingMedicines = ({ start, end, shopId, limit }, client = prisma) =>
+  client.$queryRaw`
+    SELECT m."id"   AS "medicineId",
+           m."name" AS "name",
+           m."unit" AS "unit",
+           SUM(
+             ii."quantity"
+             * (CASE WHEN i."type" = 'CREDIT_NOTE' THEN -1 ELSE 1 END)
+           )::int                          AS quantity,
+           COALESCE(SUM(ii."totalPrice"), 0) AS value
+    FROM "InvoiceItem" ii
+    JOIN "Invoice"  i ON i."id" = ii."invoiceId"
+    JOIN "Batch"    b ON b."id" = ii."batchId"
+    JOIN "Medicine" m ON m."id" = b."medicineId"
+    WHERE i."shopId" = ${shopId}
+      AND i."date" >= ${start} AND i."date" <= ${end}
+    GROUP BY m."id", m."name", m."unit"
+    HAVING SUM(
+             ii."quantity"
+             * (CASE WHEN i."type" = 'CREDIT_NOTE' THEN -1 ELSE 1 END)
+           ) > 0
+    ORDER BY quantity DESC, value DESC, m."name" ASC
+    LIMIT ${limit}`;
+
 const localDayKey = (d) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
@@ -258,6 +322,7 @@ module.exports = {
   dailyTrend,
   bucketedSales,
   bucketedMargin,
+  topSellingMedicines,
   fillWindow,
   localDayKey,
   trendForDays,

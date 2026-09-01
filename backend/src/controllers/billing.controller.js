@@ -10,6 +10,7 @@ const {
   trendForDays,
   bucketedSales,
   bucketedMargin,
+  topSellingMedicines,
 } = require("../utils/trend");
 
 // Thrown from inside the invoice transaction when a batch can no longer cover
@@ -997,6 +998,42 @@ const marginReportData = async ({ month, year }, shopId) => {
   };
 };
 
+// ─── Top-selling medicines (FR-RPT-07) ───────────────────
+//
+// What moved most in a month. Open to every role, like the other period reports
+// and unlike the margin report beside it: this says what the shop sold, which is
+// its trading record, and nothing about what any of it cost.
+//
+// No zero-fill here, deliberately, and it is the one place this departs from the
+// period reports' shape. Those fill every bucket because a missing day shifts a
+// chart and reads as a trend; this is a ranked list, and a row for a medicine
+// that sold nothing is not a gap in a series — it is an entry that should not be
+// on a list of best sellers.
+const topSellersData = async ({ month, year, limit }, shopId) => {
+  const { start, end } = monthBounds(month, year);
+
+  const rows = await topSellingMedicines({ start, end, shopId, limit });
+
+  return {
+    month,
+    year,
+    label: `${MONTH_NAMES[month - 1]} ${year}`,
+    start,
+    end,
+    limit,
+    medicines: rows,
+  };
+};
+
+const getTopSellers = async (req, res, next) => {
+  try {
+    const data = await topSellersData(req.validatedQuery, req.user.shopId);
+    res.json({ success: true, data });
+  } catch (err) {
+    next(err);
+  }
+};
+
 const getMarginReport = async (req, res, next) => {
   try {
     const data = await marginReportData(req.validatedQuery, req.user.shopId);
@@ -1202,6 +1239,32 @@ const MARGIN_COLUMNS = [
   { header: "Profit", kind: "money", get: (r) => r.profit },
 ];
 
+// `Value` is money and leaves as the stored 2 dp string; `Units` is a count and
+// must not, or a spreadsheet reads "12.00 units".
+const TOP_SELLER_COLUMNS = [
+  { header: "Medicine", get: (r) => r.name },
+  { header: "Unit", get: (r) => r.unit },
+  { header: "Units Sold", get: (r) => r.quantity },
+  { header: "Value", kind: "money", get: (r) => r.value },
+];
+
+const exportTopSellers = async (req, res, next) => {
+  try {
+    const { month, year, medicines } = await topSellersData(
+      req.validatedQuery,
+      req.user.shopId,
+    );
+    const period = `${year}-${String(month).padStart(2, "0")}`;
+    sendCsv(
+      res,
+      `top-sellers-${period}.csv`,
+      toCsv(TOP_SELLER_COLUMNS, medicines),
+    );
+  } catch (err) {
+    next(err);
+  }
+};
+
 const exportMarginReport = async (req, res, next) => {
   try {
     const { month, year, days } = await marginReportData(
@@ -1240,6 +1303,8 @@ module.exports = {
   exportMonthlyReport,
   getMarginReport,
   exportMarginReport,
+  getTopSellers,
+  exportTopSellers,
   getYearlyReport,
   exportYearlyReport,
   voidInvoice,

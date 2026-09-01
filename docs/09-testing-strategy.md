@@ -1,6 +1,6 @@
 # Testing Strategy
 
-**Measured 2026-08-31: 662 backend tests across 26 files, 144 frontend unit tests across 18 files, and a 7-flow browser smoke — all three layers on CI, all passing.**
+**Measured 2026-08-31: 681 backend tests across 27 files, 144 frontend unit tests across 18 files, and a 7-flow browser smoke — all three layers on CI, all passing.**
 
 > Counts here are taken by **running the suites**, not by adding up the tables below. Three documents once carried four different numbers because the tables were maintained by hand and two suites were never added to them.
 >
@@ -50,7 +50,7 @@ Two decisions worth knowing:
 
 ### What exists
 
-**Backend — 662 across 26 files, all passing.** The count is what a run reports, not what passes — recording it the other way would be the drift this section exists to prevent, and for a while the two genuinely differed.
+**Backend — 681 across 27 files, all passing.** The count is what a run reports, not what passes — recording it the other way would be the drift this section exists to prevent, and for a while the two genuinely differed.
 
 Two failures worth remembering, both fixed 2026-08-27:
 
@@ -79,6 +79,7 @@ Two failures worth remembering, both fixed 2026-08-27:
 | `tests/users/password-reset.test.js`          |    13 | The generated temporary password, its single use, and the sessions it ends |
 | `tests/billing/customer-erasure.test.js`      |    11 | Anonymisation in place, the audit-trail sweep, invoices left reconciling   |
 | `tests/reports/csv-export.test.js`            |    11 | The four export endpoints: filenames, headers, money as stored             |
+| `tests/reports/top-sellers.test.js`           |    19 | The ranking: a renamed medicine staying one row under its current name (BR-12), a partial return coming off the units in the month the credit note was issued, a fully returned medicine dropping off, the capped `limit`, and shop scoping |
 | `tests/reports/margin.test.js`                |    20 | The margin report: revenue excluding GST against batch cost, the day rows reconciling to the headline, a credit note landing in the month it was issued while its sale stays in its own, a zero-cost batch counted rather than passing as free, the ADMIN-only contrast with `/monthly`, and shop scoping |
 | `tests/audit/audit-retention.test.js`         |     8 | The 24-month sweep: both sides of the window boundary, the dry run changing nothing, that it writes no audit rows of its own, and that an erasure still completes when the sweep has already taken its rows |
 | `tests/audit/audit-log.test.js`               |     9 | Actor and before/after on every audited write, what is deliberately not audited, and — since the 2026-08-31 migration off `$use` — that an audit row rolls back with the transaction it describes |

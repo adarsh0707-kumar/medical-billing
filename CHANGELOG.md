@@ -11,6 +11,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Top-selling medicines (FR-RPT-07)
+
+`GET /api/reports/top-sellers?month=&year=&limit=`, plus `/export`. Ranked by units sold, with the value of what sold. Claimed in the old `backend/README.md` and never built, which is how it came to be catalogued as documentation drift (D-1) rather than as a feature.
+
+**Grouped by `Batch.medicineId`, never by `InvoiceItem.medicineName`.** That column is a snapshot taken at sale time so a later rename cannot rewrite what a customer was handed (BR-12) — group by it and one medicine becomes two rows the day somebody fixes a spelling, with each half ranking lower than the whole, so a shop's best seller can drop off its own top-ten. The name shown is the medicine's current one. A test renames a medicine mid-month and asserts one row under the new name, while the invoice line still carries the old one.
+
+**Returns come off the units, in the month the credit note was issued** — the sale's own month is left as it was (BR-14), matching the GST and margin reports. This counts credit-note lines rather than subtracting `InvoiceItem.returnedQty`, and the distinction matters: that column is the cumulative concurrency guard on the sale's line, so subtracting it would make a report of March change every time somebody returns a March purchase, quietly rewriting a closed period.
+
+**Watch the asymmetry if you touch the aggregation.** A credit note's lines carry a *positive* `quantity` and an *already-negated* `totalPrice`, so the money nets itself out of a plain `SUM` and the units do not. Only the quantity takes its sign from the invoice type; summing both the same way is wrong whichever way you pick.
+
+Two smaller calls, both stated in the code: a medicine whose net units fall to zero or below does not appear — a list of best sellers reading "0 units" is noise, and something sold then entirely returned did not sell — while soft-deleted medicines are *not* excluded, because a product withdrawn in April was still what sold in March.
+
+`limit` is the shared validated one: optional, defaults to 20, capped at 100, and a `400` on `0`, a negative or a typo, so a new query surface does not reintroduce threat T-10. Open to every role, like the other period reports and unlike the margin report beside it — this says what the shop sold, not what any of it cost.
+
+Nineteen tests, including the rename, the partial return, the full return, the period attribution and the shop scoping.
+
 #### Profit and margin report (FR-RPT-08)
 
 `GET /api/reports/margin?month=&year=`, plus `/export`. A month's revenue against what the stock cost, broken down by day and zero-filled, built on the period reports' shape rather than a new one — `summaryForPeriod` unchanged, so the trading figures at the top of this report are produced by the *same function* as the monthly report's and cannot drift from them. No schema change: the data has been there since 1.0.0.

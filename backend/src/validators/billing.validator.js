@@ -116,6 +116,12 @@ const monthlyReportQuerySchema = z.object({
     .max(2100, "year must be between 2000 and 2100"),
 });
 
+// Top sellers (FR-RPT-07): the same month as the period reports, plus how many
+// rows to return. `limit` is the shared one from common.validator — validated,
+// defaulted and capped at MAX_LIMIT like every other query surface, so
+// `?limit=999999` is a 400 here too rather than an unbounded scan (threat T-10).
+const topSellersQuerySchema = monthlyReportQuerySchema.extend({ limit });
+
 const yearlyReportQuerySchema = z.object({
   year: z.coerce
     .number({ error: "year is required and must be a number" })
@@ -174,6 +180,7 @@ module.exports = {
   dailySummaryQuerySchema,
   gstReportQuerySchema,
   monthlyReportQuerySchema,
+  topSellersQuerySchema,
   yearlyReportQuerySchema,
   trendQuerySchema,
   voidInvoiceSchema,

@@ -28,7 +28,7 @@ Ten routers are mounted. **Since 2.0.0 the paths are grouped by resource**, so t
 | `/api/customers` | customer CRUD · erasure                                                            |
 | `/api/medicines` | medicine CRUD ·`search` (the POS lookup)                                          |
 | `/api/suppliers` | supplier CRUD                                                                       |
-| `/api/reports`   | daily-summary · monthly · yearly · margin · gst · trend · expiring · low-stock, each with`/export`. All open to every role except **margin** and **gst**, which are ADMIN(+PHARMACIST) only |
+| `/api/reports`   | daily-summary · monthly · yearly · top-sellers · margin · gst · trend · expiring · low-stock, each with`/export`. All open to every role except **margin** and **gst**, which are ADMIN(+PHARMACIST) only |
 | `/api/inventory` | categories · manufacturers · batches                                              |
 | `/api/billing`   | invoices · void · credit notes                                                     |
 | `/api/dashboard` | `stats` — every dashboard panel in one request                                    |
@@ -1011,6 +1011,32 @@ CSV of the **breakdown**, not the documents — `Period, Invoices, Credit Notes,
 
 Filenames are `monthly-report-2026-08.csv` and `yearly-report-2026.csv`.
 
+### `GET /api/reports/top-sellers?month=&year=&limit=` — any authenticated role (FR-RPT-07)
+
+Added 2026-08-31. What moved most in a month, ranked by units sold. `month` and `year` as above; `limit` is the shared paginated one — optional, defaults to **20**, capped at **100**, and a `400` if it is `0`, negative or unparseable.
+
+```json
+{
+  "month": 3, "year": 2026, "label": "March 2026",
+  "start": "…", "end": "…", "limit": 20,
+  "medicines": [
+    { "medicineId": "…", "name": "Paracetamol 500mg", "unit": "tablet", "quantity": 10, "value": 274.40 }
+  ]
+}
+```
+
+**`name` is the medicine's current name, and rows are grouped by its id — never by `InvoiceItem.medicineName`.** That column is a snapshot taken at sale time so a rename cannot rewrite what a customer was handed (BR-12); grouping by it would split one medicine into two rows the day somebody fixes a spelling, and each half would rank lower than the whole, so a shop's best seller could drop off its own top-ten.
+
+**Returns come off the units**, in the month the credit note was issued — the sale's own month is left as it was (BR-14), the same rule the GST and margin reports follow. This counts credit-note lines rather than subtracting `InvoiceItem.returnedQty`: that column is cumulative, so subtracting it would make a report of March change every time somebody returns a March purchase.
+
+A medicine whose net units fall to zero or below **does not appear**. A list of best sellers reading "0 units" is noise, and a medicine sold then entirely returned did not sell. Soft-deleted medicines are *not* excluded — a product withdrawn in April was still what sold in March.
+
+`value` sums the stored line totals, so it **includes GST** — it is what those units were billed at. That is deliberately not the margin report's `revenue`, which strips tax because it is measuring what the shop keeps.
+
+### `GET /api/reports/top-sellers/export?month=&year=&limit=` — any authenticated role
+
+CSV of the ranking: `Medicine, Unit, Units Sold, Value`. `Value` is the stored 2 dp string; `Units Sold` stays a plain count, or a spreadsheet reads `10.00` units. Filename `top-sellers-2026-03.csv`.
+
 ### `GET /api/reports/margin?month=&year=` — **ADMIN only** (FR-RPT-08)
 
 Added 2026-08-31. The same month as `/monthly`, priced against what the stock cost. Parameters and bounds are identical, and `summary` is produced by the *same function*, so the two reports cannot disagree about a month.
@@ -1141,6 +1167,7 @@ One endpoint per report. Each takes **the same query parameters, the same valida
 | `GET /api/reports/daily-summary/export?date=`        | `daily-summary`          | any role          |
 | `GET /api/reports/monthly/export?month=&year=`       | `monthly`                | any role          |
 | `GET /api/reports/yearly/export?year=`               | `yearly`                 | any role          |
+| `GET /api/reports/top-sellers/export?month=&year=&limit=` | `top-sellers`       | any role          |
 | `GET /api/reports/margin/export?month=&year=`        | `margin`                 | **ADMIN**         |
 | `GET /api/reports/gst/export?month=&year=`    | `gst-report`             | ADMIN, PHARMACIST |
 | `GET /api/reports/expiring/export?days=`            | `batches/expiring`       | any role          |

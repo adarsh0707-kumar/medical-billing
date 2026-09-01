@@ -7,6 +7,7 @@ const {
   dailySummaryQuerySchema,
   gstReportQuerySchema,
   monthlyReportQuerySchema,
+  topSellersQuerySchema,
   yearlyReportQuerySchema,
   trendQuerySchema,
 } = require("../validators/billing.validator");
@@ -78,6 +79,20 @@ router.get(
   "/yearly/export",
   validateQuery(yearlyReportQuerySchema),
   billingCtrl.exportYearlyReport,
+);
+
+// What moved most in a month. Open to every role for the same reason as the
+// period reports — it says what the shop sold, not what any of it cost, which
+// is what keeps it on this side of the line from `/margin` below.
+router.get(
+  "/top-sellers",
+  validateQuery(topSellersQuerySchema),
+  billingCtrl.getTopSellers,
+);
+router.get(
+  "/top-sellers/export",
+  validateQuery(topSellersQuerySchema),
+  billingCtrl.exportTopSellers,
 );
 
 // ─── Margin (FR-RPT-08) ───────────────────────────────
