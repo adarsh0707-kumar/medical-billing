@@ -370,6 +370,20 @@ Then open `https://localhost`. The seeded admin can sign in and do exactly one t
 
 `/health/ready` is readiness — can it actually serve? It runs `SELECT 1` and returns **503** with the reason when the database is unreachable. That is what a load balancer needs in order to route around an instance.
 
+It also names the build answering:
+
+```json
+{ "success": true, "message": "…", "timestamp": "…", "version": "2.0.0", "commit": "3904fcd" }
+```
+
+`commit` comes from `RENDER_GIT_COMMIT` (set by the platform) or `GIT_COMMIT` anywhere else, and reads `unknown` in development where the question does not arise.
+
+**Why it is there.** On 2026-09-01 four features were live in the browser and missing from the API: the frontend host had redeployed on push and the API host had not. Every symptom was a `404`, which is indistinguishable from a route nobody wrote — `GET /api/medicines/units` answered `{"message":"Medicine not found"}`, because the request fell through to `/:id`. Establishing that production was merely *behind* took probing an unrelated public endpoint and arguing from its absence. One `curl /health` answers it now:
+
+```bash
+curl -s https://<api-host>/health | jq -r .commit   # against `git rev-parse --short HEAD`
+```
+
 ### Customer retention
 
 Customer details are erased after 36 months without a purchase; invoices are untouched and keep 8 years as books of account ([03 §8](./03-data-model.md#8-data-lifecycle--retention)).

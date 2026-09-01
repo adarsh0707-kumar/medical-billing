@@ -355,7 +355,7 @@ The last two fetched one row purely to read a count out of `pagination.total` â€
 | CORS                   | Explicit origin allowlist +`credentials: true`. In production the allowlist is exactly `CORS_ORIGINS`; the development origins are not appended                                                  | `app.js`                        |
 | Compression            | gzip on all responses                                                                                                                                                                                | `app.js`                        |
 | Security headers       | helmet defaults on API responses; the SPA's CSP and HSTS come from nginx in production                                                                                                               | `app.js`, `nginx.prod.conf`   |
-| Health                 | `/health` is liveness and touches nothing; `/health/ready` runs `SELECT 1` and answers 503 when the database is unreachable                                                                    | `app.js`                        |
+| Health                 | `/health` is liveness and touches nothing, and reports the `version` and short `commit` of the running build so "is production current?" is one request rather than an inference; `/health/ready` runs `SELECT 1` and answers 503 when the database is unreachable | `app.js`                        |
 | Caching                | *None.* The Redis service was removed in Phase 8 without ever acquiring a consumer ([G-03](./08-gap-analysis.md#g-03))                                                                              | â€”                                |
 
 ### Response envelope

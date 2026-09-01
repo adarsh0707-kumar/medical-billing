@@ -178,11 +178,31 @@ const createApp = ({
   // Liveness: is this process up? Deliberately cheap and dependency-free, so a
   // database outage does not cause an orchestrator to kill an otherwise healthy
   // process and turn a recoverable incident into a restart loop.
+  //
+  // It also reports **which build is answering**, and that half is not
+  // decoration. On 2026-09-01 four features were live in the browser and
+  // missing from the API — the frontend host had redeployed and the API host
+  // had not — and there was no way to tell from outside: every symptom was a
+  // 404, which is indistinguishable from a route that was never written. It
+  // took probing an unrelated public endpoint to establish that production was
+  // simply behind.
+  //
+  // `RENDER_GIT_COMMIT` is set by the platform; `GIT_COMMIT` is the escape
+  // hatch for anywhere else, and both are absent in development, where the
+  // question does not arise. A short SHA is not a secret — it names a commit
+  // in a repository, it does not grant access to one.
+  const build = {
+    version: require("../package.json").version,
+    commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || "")
+      .slice(0, 7) || "unknown",
+  };
+
   app.get("/health", (req, res) => {
     res.json({
       success: true,
       message: "Medical Billing API is running!",
       timestamp: new Date().toISOString(),
+      ...build,
     });
   });
 

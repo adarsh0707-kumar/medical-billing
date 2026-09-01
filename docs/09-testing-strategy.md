@@ -1,6 +1,6 @@
 # Testing Strategy
 
-**Measured 2026-09-01: 731 backend tests across 29 files, 181 frontend unit tests across 22 files, and a 7-flow browser smoke — all three layers on CI, all passing.**
+**Measured 2026-09-01: 736 backend tests across 30 files, 181 frontend unit tests across 22 files, and a 7-flow browser smoke — all three layers on CI, all passing.**
 
 > Counts here are taken by **running the suites**, not by adding up the tables below. Three documents once carried four different numbers because the tables were maintained by hand and two suites were never added to them.
 >
@@ -50,7 +50,7 @@ Two decisions worth knowing:
 
 ### What exists
 
-**Backend — 731 across 29 files, all passing.** The count is what a run reports, not what passes — recording it the other way would be the drift this section exists to prevent, and for a while the two genuinely differed.
+**Backend — 736 across 30 files, all passing.** The count is what a run reports, not what passes — recording it the other way would be the drift this section exists to prevent, and for a while the two genuinely differed.
 
 Two failures worth remembering, both fixed 2026-08-27:
 
@@ -62,6 +62,7 @@ Two failures worth remembering, both fixed 2026-08-27:
 | `tests/auth/rbac.test.js`                     |   142 | The full role matrix, plus anonymous rejection on every route              |
 | `tests/billing/invoice-create.test.js`        |    48 | GST fixtures, invariants, rejections, atomicity, Schedule H and expiry     |
 | `tests/api/logging.test.js`                   |     5 | The path in the human-readable log line, which a mounted router strips off `req.url` |
+| `tests/api/health.test.js`                    |     5 | That `/health` stays a cheap 200 and names the build answering — version, and the commit from either platform variable, shortened, or the word `unknown` rather than an empty string |
 | `tests/auth/signup.test.js`                   |    25 | Signup: the shop and its first administrator, an eight-way concurrent burst, what it refuses, and **tenant isolation** asserted across the resource controllers, the user list and the dashboard. *(Description corrected 2026-08-31 — it said "the endpoint closing itself", which stopped being true when signup reopened on 2026-08-29.)* |
 | `tests/api/dashboard.test.js`                 |    26 | Every panel of `GET /api/dashboard/stats`: counting under a void, count-vs-items, the expiry and low-stock windows, and the trend's day bucketing |
 | `tests/api/query-validation.test.js`          |    46 | Every query surface: bounds, coercion, and that a filter actually filters ([G-19](./08-gap-analysis.md#g-19)) |
