@@ -369,6 +369,25 @@ This is the only raw SQL in the codebase; the atomicity guarantee is the reason.
 
 > **`patientName` is not reached by customer erasure.** The register is a statutory record the pharmacy is required to be able to produce, and a right to erasure does not override an obligation to retain — the same reasoning that keeps the invoice. An erased customer's name therefore disappears from `Customer` and from the audit trail, and survives in the register of any Schedule H medicine they were dispensed. See §8.
 
+### 3.11a `PasswordResetToken` — a pending self-service reset
+
+Added 2026-08-31 (FR-AUTH-11), migration `20260901104630_add_password_reset_tokens`.
+
+| Column        | Type      | Notes                                                                                       |
+| ------------- | --------- | ------------------------------------------------------------------------------------------- |
+| `id`        | String    | PK, cuid                                                                                    |
+| `userId`    | String    | FK →`User`, `ON DELETE CASCADE`, indexed                                                |
+| `tokenHash` | String    | **unique.** SHA-256 of the token that was emailed — the token itself is never stored      |
+| `expiresAt` | DateTime  | Indexed. 30 minutes from issue                                                              |
+| `usedAt`    | DateTime? | Null while live. Set when spent, when superseded, or when the account resets                |
+| `createdAt` | DateTime  | auto                                                                                        |
+
+**The token is never in the table.** `tokenHash` is a digest of the value that went out by email, so a backup, a dump or an operator with a `psql` prompt cannot mint a reset from what they can see. **SHA-256 rather than bcrypt, deliberately**: the input is 32 bytes of `randomBytes`, not a human-chosen password, so there is no dictionary to run against it — a slow hash would buy nothing and make every lookup slow.
+
+**Single use is `usedAt`, not deletion.** A row that records having been spent distinguishes "this link was already used" from "this link never existed". Only the first tells an operator that somebody clicked twice rather than that somebody is guessing — even though, deliberately, the *caller* is told the same thing either way.
+
+**Rows are spent, not only expired**, in three places: when the link is used, when a newer request supersedes it, and when any reset completes for that account. The last two matter because the mailbox holding the older link may be the reason for the reset.
+
 ### 3.12 `AuditLog` — who changed what
 
 | Column         | Type      | Notes                                                                                                  |
@@ -567,9 +586,10 @@ These must hold at all times. Any new write path must preserve them.
 | `20260824113643_add_partial_returns`     | 2026-08-24 | Adds`InvoiceItem.returnedQty` and **drops** the unique index on `Invoice.reversesId`. A sale may now have several credit notes, so the single-shot guarantee moves from that index to a cumulative per-line counter applied with a conditional update (FR-BILL-17) |
 | `20260828120000_add_shops_multi_tenant`  | 2026-08-28 | Adds the`Shop` table and a `shopId` on User, Category, Manufacturer, Medicine, Batch, Customer, Supplier, Invoice, InvoiceCounter and AuditLog, with an index on each. Re-keys `Category` and `Manufacturer` to `@@unique([shopId, name])`, `Customer` to `@@unique([shopId, phone])`, `Invoice` to `@@unique([shopId, invoiceNumber])`, and `InvoiceCounter` to `@@id([shopId, day])`. See §3.0 |
 | `20260830190000_drop_stale_global_unique_indexes` | 2026-08-30 | **Hand-written.** Drops`Category_name_key`, `Manufacturer_name_key`, `Customer_phone_key` and `Invoice_invoiceNumber_key`, which the multi-tenant migration meant to remove and did not — it used `ALTER TABLE ... DROP CONSTRAINT IF EXISTS`, and Prisma writes `@unique` as a bare `CREATE UNIQUE INDEX`, so all four missed silently. See the note below |
+| `20260901104630_add_password_reset_tokens` | 2026-09-01 | Adds `PasswordResetToken` — the state behind self-service password reset (FR-AUTH-11). See §3.11a |
 | `20260831123451_add_pack_mrp_and_drug_licence` | 2026-08-31 | Adds three nullable columns the printed invoice needs and had nowhere to read: `Medicine.packSize`, `Batch.mrp` and `Shop.drugLicenceNo`. All nullable and none defaulted — see §3.4, §3.5 and §3.0 for why `mrp` in particular is not derived from `sellingPrice` |
 
-All 19 are applied — confirmed against `_prisma_migrations` on 2026-08-31. Two of them contain SQL that exists **only** in migration history and cannot be reproduced from `schema.prisma`; see the note in §4 before rebuilding a database with `db push`.
+All 20 are applied — confirmed against `_prisma_migrations` on 2026-09-01. Two of them contain SQL that exists **only** in migration history and cannot be reproduced from `schema.prisma`; see the note in §4 before rebuilding a database with `db push`.
 
 Workflow:
 

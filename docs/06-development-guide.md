@@ -104,6 +104,8 @@ npm run dev                      # Vite on :5173
 | `LOGIN_RATE_LIMIT_MAX` | | `10` | **Failed** logins per 15 minutes on `/api/auth/login`; successes are not counted |
 | `CUSTOMER_RETENTION_MONTHS` | | `36` | Inactivity window used by `npm run purge:customers` |
 | `AUDIT_RETENTION_MONTHS` | | `24` | Age at which `npm run purge:audit` deletes an audit row |
+| `SMTP_HOST` `SMTP_PORT` `SMTP_USER` `SMTP_PASS` `SMTP_FROM` | **prod** | — | The mail server password-reset links are sent through (FR-AUTH-11). **Required in production** — the API refuses to start without them, because a missing value means resets are accepted and silently never delivered. Unset in development: `sendMail` logs and returns false |
+| `APP_URL` | **prod** | — | Public origin of the SPA, no trailing slash. Reset links are `${APP_URL}/reset-password?token=…` |
 
 **The CORS allowlist has two branches, and they share nothing.** Under
 `NODE_ENV=production` it is exactly `CORS_ORIGINS`, because "restrict CORS to

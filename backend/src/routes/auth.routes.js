@@ -8,6 +8,8 @@ const {
   changePassword,
   logout,
   refresh,
+  forgotPassword,
+  resetPassword,
 } = require("../controllers/auth.controller");
 const { protect, authorize } = require("../middlewares/auth.middleware");
 const requirePasswordChange = require("../middlewares/password-change.middleware");
@@ -16,6 +18,8 @@ const {
   signupSchema,
   createUserSchema,
   changePasswordSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
 } = require("../validators/user.validator");
 
 router.post(
@@ -44,6 +48,18 @@ router.post("/login", login); // public
 // because CORS would otherwise reject a foreign origin first and turn a 403
 // into a 500. See the comment there.
 router.post("/refresh", refresh); // public — authenticates via the cookie
+// ─── Self-service password reset (FR-AUTH-11) ─────────
+// Both public, and both have to be: the caller cannot sign in, which is the
+// whole problem. The rate limiting that stands in for authentication here is
+// mounted in `app.js` — see the note there about why it is not the login
+// limiter, which would count nothing on an endpoint that always succeeds.
+router.post(
+  "/forgot-password",
+  validate(forgotPasswordSchema),
+  forgotPassword,
+);
+router.post("/reset-password", validate(resetPasswordSchema), resetPassword);
+
 router.get("/me", protect, getMe); // any logged in user
 router.put(
   "/change-password",

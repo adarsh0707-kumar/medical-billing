@@ -144,6 +144,36 @@ const createApp = ({
   // burn a fresh instance's CPU, and one honest operator needs one request.
   app.use("/api/auth/signup", loginLimiter);
 
+  // Password reset gets the same budget and a **different limiter**, because
+  // reusing `loginLimiter` here would have been a control that counted nothing.
+  //
+  // That one is built with `skipSuccessfulRequests`, which is right for login —
+  // only failures are worth counting. But `POST /api/auth/forgot-password`
+  // answers `200` to everything by design, known address or not, so every
+  // request would have been skipped and the budget never spent. The mounting
+  // would have looked correct in the route table and in review.
+  //
+  // What needs bounding here is the *volume*: each request is a database lookup
+  // and, on a hit, an email to somebody who did not ask for it. Ten per window
+  // is one honest person recovering an account, and far too few to walk a list
+  // of addresses or to use the shop's mail server to send someone else a
+  // hundred messages.
+  //
+  // `reset-password` shares it. Spending a token is a guess at 32 random bytes
+  // and is not going to be found by brute force, but the same ceiling costs a
+  // real user nothing.
+  const passwordResetLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: loginRateLimitMax,
+    message: {
+      success: false,
+      message:
+        "Too many password reset requests. Please try again in 15 minutes.",
+    },
+  });
+  app.use("/api/auth/forgot-password", passwordResetLimiter);
+  app.use("/api/auth/reset-password", passwordResetLimiter);
+
   // ─── Health Check ──────────────────────────────────────
   // Liveness: is this process up? Deliberately cheap and dependency-free, so a
   // database outage does not cause an orchestrator to kill an otherwise healthy

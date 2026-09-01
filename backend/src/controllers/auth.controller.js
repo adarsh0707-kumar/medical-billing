@@ -8,8 +8,29 @@ const {
 } = require("../utils/jwt.utils");
 
 const { passwordProblem } = require("../validators/password");
+// Called as `mailer.sendMail(...)`, not destructured, and that is load-bearing.
+// Destructuring binds the function at require time, so a test that replaces the
+// export patches a reference this file never reads — which is precisely how the
+// login-timing guards spent weeks asserting nothing (docs/09 §1a). Reaching
+// through the module object keeps the seam a test can actually hold.
+const mailer = require("../config/mailer");
+const crypto = require("node:crypto");
 
 const REFRESH_COOKIE = "refresh_token";
+
+// Thirty minutes. A reset link is a bearer credential sitting in a mailbox —
+// the one place a password is most likely to be read by somebody else — so it
+// should be worth stealing for as short a time as possible. Long enough that a
+// distracted user still gets in; short enough that a link found in an inbox
+// months later is inert.
+const RESET_TOKEN_TTL_MINUTES = 30;
+
+// The token goes out in the email; only this goes in the table. SHA-256 rather
+// than bcrypt because the input is 32 random bytes, not a chosen password:
+// there is no dictionary to run against it, so a slow hash would buy nothing
+// and cost a lookup on every reset.
+const hashResetToken = (token) =>
+  crypto.createHash("sha256").update(token).digest("hex");
 
 // A decoy for the login miss path, so an unknown email costs the same bcrypt
 // work as a known one (docs/07 P2-12).
@@ -420,6 +441,186 @@ const changePassword = async (req, res, next) => {
 // mustChangePassword must still be able to end their session; trapping them in
 // a state they can only leave by choosing a new password would be a worse
 // outcome than the one the flag exists to prevent.
+// ─── Self-service password reset (FR-AUTH-11) ────────────
+//
+// Two endpoints, both public: one to ask for a link, one to spend it. The
+// account this exists for is the shopkeeper who signed up themselves since
+// 2026-08-29 and has no administrator to ask — an admin-initiated reset
+// (`POST /api/users/:id/reset-password`) covers staff and always did.
+
+/**
+ * `POST /api/auth/forgot-password`
+ *
+ * **Answers the same thing to everyone**, which is the constraint that shapes
+ * the rest of it. A different status, body or obvious delay for a known address
+ * turns this into a way to test whether somebody banks here — and pharmacy
+ * custom is health-adjacent, which is threat T-9's whole premise.
+ *
+ * So: the response is fixed before any branch, the send happens *after* it, and
+ * a send failure changes nothing the caller sees (`config/mailer.js` argues
+ * that trade at length).
+ */
+const forgotPassword = async (req, res, next) => {
+  try {
+    const { email } = req.body;
+
+    // Said the same way on both paths, and deliberately not "we've sent you an
+    // email" — which would be a lie on the unknown-address path, and the kind
+    // of lie a user can catch.
+    const answer = {
+      success: true,
+      message:
+        "If that address has an account, a reset link is on its way. It is valid for 30 minutes. If it does not arrive, check the address and ask your administrator.",
+    };
+
+    const user = await prisma.user.findUnique({
+      where: { email },
+      select: { id: true, email: true, name: true, isActive: true },
+    });
+
+    // A deactivated account gets the same answer and no email. Letting it reset
+    // would hand a suspended user a way back in; saying so would confirm the
+    // account exists.
+    if (!user || !user.isActive) {
+      return res.json(answer);
+    }
+
+    const token = crypto.randomBytes(32).toString("hex");
+    const expiresAt = new Date(Date.now() + RESET_TOKEN_TTL_MINUTES * 60_000);
+
+    // Any earlier pending reset is spent first. Asking twice should leave one
+    // working link rather than several, so a token read from an older email —
+    // the one still sitting in the mailbox that may be the reason for the
+    // reset — stops working the moment a new one is issued.
+    await prisma.$transaction([
+      prisma.passwordResetToken.updateMany({
+        where: { userId: user.id, usedAt: null },
+        data: { usedAt: new Date() },
+      }),
+      prisma.passwordResetToken.create({
+        data: { userId: user.id, tokenHash: hashResetToken(token), expiresAt },
+      }),
+    ]);
+
+    // Answer first, send after. The caller's wait then does not include a
+    // network round trip to somebody else's mail server — which is both the
+    // timing half of "answers identically" and the reason a slow SMTP host
+    // cannot hold a request open.
+    res.json(answer);
+
+    const link = `${(process.env.APP_URL || "").replace(/\/$/, "")}/reset-password?token=${token}`;
+    // `void` because the response has already gone: nothing can be done with
+    // the outcome here, and `sendMail` never rejects — it logs (mailer.js).
+    void mailer.sendMail({
+      to: user.email,
+      subject: "Reset your Medical Billing password",
+      text:
+        `Hello ${user.name},\n\n` +
+        `Someone asked to reset the password for this account. If that was you, open the link below within ${RESET_TOKEN_TTL_MINUTES} minutes:\n\n` +
+        `${link}\n\n` +
+        "Opening it will sign you out everywhere else, which is what you want if somebody else has your password.\n\n" +
+        "If it was not you, you can ignore this — nothing has changed and the link will expire on its own.\n",
+      requestId: req.id,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * `POST /api/auth/reset-password`
+ *
+ * Spends the token. Every refusal answers the same way for the same reason as
+ * above — expired, already used and never existed are one message, because
+ * telling them apart tells a guesser whether they are close.
+ */
+const resetPassword = async (req, res, next) => {
+  try {
+    const { token, newPassword } = req.body;
+
+    const deny = () =>
+      res.status(400).json({
+        success: false,
+        message:
+          "That reset link is invalid or has expired. Request a new one.",
+      });
+
+    const row = await prisma.passwordResetToken.findUnique({
+      where: { tokenHash: hashResetToken(token) },
+      include: {
+        user: { select: { id: true, name: true, email: true, isActive: true } },
+      },
+    });
+
+    if (!row || row.usedAt || row.expiresAt <= new Date()) return deny();
+    if (!row.user?.isActive) return deny();
+
+    // The same contextual rules a chosen password faces anywhere else: the
+    // schema has checked everything that needs only the password, and this
+    // needs the account, which the token is what identifies.
+    const contextProblem = passwordProblem(newPassword, {
+      name: row.user.name,
+      email: row.user.email,
+    });
+    if (contextProblem) {
+      return res.status(400).json({
+        success: false,
+        message: "Validation failed",
+        errors: [{ field: "newPassword", message: contextProblem }],
+      });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 12);
+
+    await prisma.$transaction([
+      // Conditional on still being unused: two clicks on the same link, or two
+      // tabs submitting at once, must apply once. `updateMany` with the
+      // condition in the same `where` is the guard — the same shape as the
+      // stock decrement (G-09), and for the same reason.
+      prisma.passwordResetToken.updateMany({
+        where: { id: row.id, usedAt: null },
+        data: { usedAt: new Date() },
+      }),
+      prisma.user.update({
+        where: { id: row.user.id },
+        data: {
+          password: hashedPassword,
+          // A reset is how somebody responds to losing control of an account,
+          // so it ends every other session rather than merely changing what
+          // the next login needs — the same reasoning as `changePassword`.
+          tokenVersion: { increment: 1 },
+          // Whoever completes this has chosen their own password, so there is
+          // nothing left to force.
+          mustChangePassword: false,
+        },
+      }),
+      prisma.refreshToken.updateMany({
+        where: { userId: row.user.id, revokedAt: null },
+        data: { revokedAt: new Date() },
+      }),
+      // Any other pending reset for this account dies with it. Someone who has
+      // just recovered an account should not have a second live link addressed
+      // to a mailbox that may be the thing that was compromised.
+      prisma.passwordResetToken.updateMany({
+        where: { userId: row.user.id, usedAt: null },
+        data: { usedAt: new Date() },
+      }),
+    ]);
+
+    // No session is issued. Unlike `changePassword`, nothing here proved the
+    // caller is the account holder beyond possession of a mailbox, and signing
+    // them straight in would make a stolen email a complete account takeover
+    // in one step rather than one that still needs the new password typed.
+    res.json({
+      success: true,
+      message:
+        "Password reset. You have been signed out everywhere — sign in with your new password.",
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
 const logout = async (req, res, next) => {
   try {
     await prisma.$transaction([
@@ -566,6 +767,8 @@ const refresh = async (req, res, next) => {
 };
 
 module.exports = {
+  forgotPassword,
+  resetPassword,
   signup,
   register,
   login,

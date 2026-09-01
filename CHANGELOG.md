@@ -9,6 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+#### Self-service password reset, and the stack's first outbound dependency (FR-AUTH-11)
+
+`POST /api/auth/forgot-password` and `POST /api/auth/reset-password`, both public because the caller cannot sign in — which is the whole problem. Migration `20260901104630_add_password_reset_tokens`.
+
+**Why the outbound dependency is not a reversal.** `docs/07` §10 P1-6 turned down HaveIBeenPwned as this stack's first egress, partly because **it would have had to fail open**: when the lookup could not run the password still changed, and the protection quietly evaporated while every screen reported it enforced. Mail is not inside a control. It is the *delivery* of something the user asked for, so a failure weakens nothing — no token is honoured, no password changes, no session ends. That entry also said to revisit once self-service signup landed; it did on 2026-08-29, and it changed the stakes rather than the argument: **a shopkeeper who opened their own shop has no administrator to ask**, so an emailed reset is the only way back into the account.
+
+**What happens when the mail server is unreachable** — decided rather than discovered, because "reset silently did nothing" is the failure that will actually occur:
+
+- **Misconfiguration cannot survive a boot.** `SMTP_HOST/PORT/USER/PASS/FROM` and `APP_URL` are required in production; `src/index.js` refuses to start without them, as it does for `JWT_SECRET`. Nobody requests a reset on a good day, so this is the case that would otherwise sit undiscovered for weeks.
+- **A send failure does not change the response**, because it cannot: the endpoint answers identically for a known and an unknown address, and a `503` for one against a `200` for the other is an oracle for which addresses have accounts. The failure is logged at `error` with the request id and the recipient — never the link.
+- **The residual is written down** in SECURITY.md rather than left for somebody to learn from a user who never got their email: a reset that could not be sent looks exactly like one that was.
+
+**The token** is 32 random bytes, stored **only as a SHA-256** — a dump of the table cannot be turned into a reset. SHA-256 and not bcrypt deliberately: the input is random, not chosen, so there is no dictionary to slow down. Single use is recorded as `usedAt` rather than a delete, so "already used" and "never existed" stay distinguishable *in the table* even though the caller is told the same thing either way. Asking again spends the older link, and completing a reset spends every other pending one — the mailbox holding them may be the reason for the reset.
+
+**Completing a reset bumps `tokenVersion` and revokes every refresh token**, the same two halves as a password change, and **issues no session**: possession of a mailbox is not what knowing the current password is, and handing back a token would make a compromised inbox a one-step takeover.
+
+**The rate limiter is a new one, not the login limiter**, and that is the part most likely to have been got wrong quietly. `loginLimiter` is built with `skipSuccessfulRequests` — right for login, where only failures are worth counting. But this endpoint answers `200` to everything by design, so every request would have been skipped and the budget never spent, while the mounting looked correct in the route table and in review.
+
+Twenty tests. One of them found that the first version of the mail spy was patching an object the controller never read — the same ESM/CJS split that left the login-timing guards inert for weeks (docs/09 §1a) — so the controller now calls `mailer.sendMail(...)` through the module object and the test reaches it with `createRequire`. Until that was fixed, `expect(sent).not.toHaveBeenCalled()` was passing vacuously.
+
+**FR-NOTIF-06 is no longer blocked.** Email alerts now need a consumer of `config/mailer.js`, not a dependency; what remains is the product question of which alerts are worth sending. SMS remains a separate provider.
+
 ### Documentation
 
 #### FR-BILL-18 is superseded, not planned

@@ -111,7 +111,25 @@ const changePasswordSchema = z.object({
   newPassword: password,
 });
 
+// Self-service reset (FR-AUTH-11). The request takes an address and nothing
+// else: no `.strict()` escape hatch, because anything extra here would be a
+// field somebody hoped the endpoint honoured.
+const forgotPasswordSchema = z.object({ email }).strict();
+
+const resetPasswordSchema = z
+  .object({
+    token: z.string().min(1, "Reset token is required"),
+    // The same shared rules every other password path uses. The account-context
+    // check — not your own name or address — needs the user the token
+    // identifies, so it runs in the controller, exactly as `changePassword`
+    // does for the same reason.
+    newPassword: password,
+  })
+  .strict();
+
 module.exports = {
+  forgotPasswordSchema,
+  resetPasswordSchema,
   signupSchema,
   createUserSchema,
   updateUserSchema,

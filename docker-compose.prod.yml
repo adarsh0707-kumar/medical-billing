@@ -46,6 +46,21 @@ services:
       # The browser is same-origin through nginx, so CORS applies only to callers
       # reaching the API directly. In production the allowlist is exactly this.
       CORS_ORIGINS: "${CORS_ORIGINS:?must be set - the origin(s) allowed to call the API directly}"
+      # Mail (FR-AUTH-11). Required, like JWT_SECRET and for the same reason:
+      # the failure is silent. Without these the API still accepts password
+      # resets and answers them normally, and cannot say otherwise without
+      # revealing which addresses have accounts — so a shopkeeper who signed up
+      # themselves would have no way back into their own shop. `src/index.js`
+      # refuses to start without them too; this is the earlier of the two
+      # errors, and the one that names the file to edit.
+      SMTP_HOST: "${SMTP_HOST:?must be set - the mail server password resets are sent through}"
+      SMTP_PORT: "${SMTP_PORT:?must be set - 465 for implicit TLS, 587 for STARTTLS}"
+      SMTP_USER: "${SMTP_USER:?must be set}"
+      SMTP_PASS: "${SMTP_PASS:?must be set}"
+      SMTP_FROM: "${SMTP_FROM:?must be set - the From: address on reset emails}"
+      # The public origin of the SPA, so a reset link points somewhere that can
+      # complete it.
+      APP_URL: "${APP_URL:?must be set - the origin reset links point at}"
       LOG_LEVEL: "${LOG_LEVEL:-info}"
     depends_on:
       postgres:

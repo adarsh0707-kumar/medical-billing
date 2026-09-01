@@ -80,6 +80,7 @@ model User {
   shop      Shop     @relation(fields: [shopId], references: [id])
   invoices  Invoice[]
   refreshTokens RefreshToken[]
+  passwordResetTokens PasswordResetToken[]
 
   @@index([shopId])
 }
@@ -137,6 +138,36 @@ model AuditLog {
 /// what makes a stolen refresh token detectable — replaying an already-revoked
 /// row is something a legitimate client never does, so it means two parties hold
 /// the same credential, and the answer is to end every session for that user.
+/// A pending self-service password reset (FR-AUTH-11).
+///
+/// The token itself is never stored. `tokenHash` is a SHA-256 of the random
+/// value that went out by email, so a reader of this table — a backup, a dump,
+/// an operator with a psql prompt — cannot mint a reset from what they can see.
+/// bcrypt is not used here and that is deliberate: the value is 32 bytes of
+/// `randomBytes`, not a human-chosen password, so there is nothing to brute
+/// force and a slow hash would only make the lookup slow.
+///
+/// Single use is `usedAt`, not deletion: a row that records having been spent is
+/// the difference between "this link was already used" and "this link never
+/// existed", and only the first of those tells an operator that somebody clicked
+/// twice rather than that somebody is guessing.
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  /// SHA-256 of the emailed token. Unique so a lookup is an index hit and a
+  /// collision is a constraint error rather than an ambiguous match.
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  /// The sweep that clears spent and expired rows reads by date.
+  @@index([expiresAt])
+}
+
 model RefreshToken {
   id        String    @id @default(cuid())
   userId    String

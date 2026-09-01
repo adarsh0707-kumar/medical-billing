@@ -22,7 +22,7 @@ Ten routers are mounted. **Since 2.0.0 the paths are grouped by resource**, so t
 
 | Prefix             | Resources                                                                           |
 | ------------------ | ----------------------------------------------------------------------------------- |
-| `/api/auth`      | signup · login · refresh · logout · register · me · change-password       |
+| `/api/auth`      | signup · login · refresh · logout · register · me · change-password · forgot-password · reset-password |
 | `/api/shop`      | the caller's own shop's business details                                            |
 | `/api/users`     | user CRUD · own profile                                                            |
 | `/api/customers` | customer CRUD · erasure                                                            |
@@ -71,7 +71,7 @@ The report names drop the qualifier the path now supplies: `gst-report` under `/
 
 ## 3. Authentication
 
-Every endpoint except `POST /api/auth/login`, `POST /api/auth/signup`, `POST /api/auth/refresh` and `GET /health` requires:
+Every endpoint except `POST /api/auth/login`, `POST /api/auth/signup`, `POST /api/auth/refresh`, `POST /api/auth/forgot-password`, `POST /api/auth/reset-password` and `GET /health` requires:
 
 ```http
 Authorization: Bearer <jwt>
@@ -355,6 +355,40 @@ Returns the freshly-loaded user attached by `protect` — no additional query.
 > There are deliberately **no character-class requirements**. [NIST SP 800-63B](https://pages.nist.gov/800-63-3/sp800-63b.html) advises against them because they push people towards predictable shapes like `Password1!` that cracking dictionaries already hold; a long passphrase with no digits at all is a good password here and is accepted. There is **no breach-corpus lookup** either — see [07 §10](./07-security.md#10-hardening-backlog) for why that trade was declined.
 >
 > A failure is a `400` carrying a field-level error on `password` / `newPassword`.
+
+### `POST /api/auth/forgot-password` — public (FR-AUTH-11)
+
+Added 2026-08-31. Body: `{ "email": "…" }`, strict — an unrecognised key is a `400`.
+
+**Always `200`, with the same body, for every address.**
+
+```json
+{ "success": true, "message": "If that address has an account, a reset link is on its way. It is valid for 30 minutes. If it does not arrive, check the address and ask your administrator." }
+```
+
+That is the contract, not a convenience: a different status, shape or wording for a known address turns this into a way to ask whether somebody uses a particular pharmacy, and pharmacy custom is health-adjacent (threat T-9). The same answer is returned for an address with no account, for a **deactivated** account, and **when the mail server is unreachable** — that last one is a deliberate trade, argued in `config/mailer.js` and recorded in [07 §10 P1-6](./07-security.md#10-hardening-backlog): a `503` here against a `200` there would be exactly the oracle the rest of the design avoids. A failed send is reported in the log at `error`, and nowhere else.
+
+The email is sent **after** the response, so the caller's wait never includes a round trip to somebody else's mail server.
+
+Rate limited at **10 requests per 15 minutes per client** — a dedicated limiter, not the login one, which skips successful requests and would therefore have counted nothing on an endpoint that always succeeds.
+
+**400** only for a malformed address or an unknown key.
+
+### `POST /api/auth/reset-password` — public (FR-AUTH-11)
+
+Body: `{ "token": "…", "newPassword": "…" }`, strict. The token is the one from the emailed link, valid for **30 minutes** and **single use**.
+
+**200** — password set. Every other session for that account ends: `tokenVersion` is bumped and every refresh token revoked, the same two halves as a password change. `mustChangePassword` is cleared.
+
+**No session is issued.** Unlike `PUT /api/auth/change-password`, nothing here proved the caller is the account holder beyond possession of a mailbox — handing back a token would make a compromised inbox a one-step account takeover instead of one that still needs the new password typed. The client signs in normally afterwards.
+
+**400** — one message for every refusal:
+
+```json
+{ "success": false, "message": "That reset link is invalid or has expired. Request a new one." }
+```
+
+Expired, already spent, superseded by a newer request, belonging to a deactivated account, and never having existed are deliberately indistinguishable: telling them apart tells a guesser whether they are close. A password failing the [strength rules](./07-security.md) is the one case that answers differently, with the usual field-level `errors[]` — and it leaves the token unspent, so a rejected attempt does not cost the user their only link.
 
 ### `POST /api/auth/refresh` — public (the cookie is the credential)
 

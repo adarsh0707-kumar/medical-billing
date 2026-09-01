@@ -45,6 +45,51 @@ if (!process.env.JWT_SECRET?.trim()) {
   process.exit(1);
 }
 
+// SMTP, on the same principle and for the same reason (FR-AUTH-11).
+//
+// Self-service password reset is the only way back into an account for a
+// shopkeeper who signed up themselves and has no administrator to ask. If the
+// mail variables are unset, every reset request is accepted, answered
+// cheerfully and delivers nothing — and because the endpoint must answer
+// identically whether or not the address has an account, it cannot tell the
+// caller that either. Nobody requests a password reset on a good day, so the
+// misconfiguration would sit undiscovered until the day it mattered most.
+//
+// Production only. Development and the test suite run without a mail server on
+// purpose; `sendMail` logs and returns false there, which is what lets the
+// suite assert the failure path without one.
+if (process.env.NODE_ENV === "production") {
+  const { missingMailConfig } = require("./config/mailer");
+  // APP_URL rides with them rather than living in the mailer: sending does not
+  // need it, but a *reset* does. Without it the link is built against an empty
+  // origin and arrives as a relative path — an email that looks right and goes
+  // nowhere, which is worse than one that never came.
+  const missing = [
+    ...missingMailConfig(),
+    ...(process.env.APP_URL?.trim() ? [] : ["APP_URL"]),
+  ];
+  if (missing.length) {
+    console.error(
+      `❌ ${missing.join(", ")} ${missing.length === 1 ? "is" : "are"} not set. Refusing to start.\n` +
+        "\n" +
+        "   Without SMTP the API still accepts password-reset requests and\n" +
+        "   answers them normally — it just never sends the email, and it\n" +
+        "   cannot say so without revealing which addresses have accounts.\n" +
+        "   A shopkeeper who signed up themselves would have no way back in.\n" +
+        "\n" +
+        "   Set them in .env.prod:\n" +
+        "     SMTP_HOST=smtp.example.com\n" +
+        "     SMTP_PORT=587\n" +
+        "     SMTP_USER=…\n" +
+        "     SMTP_PASS=…\n" +
+        '     SMTP_FROM="Pharmacy <noreply@example.com>"\n' +
+        "\n" +
+        "   See SECURITY.md and docs/06 for what each one is.",
+    );
+    process.exit(1);
+  }
+}
+
 const PORT = process.env.PORT || 5000;
 
 createApp().listen(PORT, () => {
