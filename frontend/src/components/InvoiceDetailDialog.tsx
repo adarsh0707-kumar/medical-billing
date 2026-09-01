@@ -438,7 +438,7 @@ function InvoiceDetailBody({
               variant="ghost"
               onClick={onClose}
               disabled={submitting}
-              className="text-slate-300 hover:text-white hover:bg-slate-700"
+              className="text-slate-300 hover:text-slate-100 hover:bg-slate-700"
             >
               Cancel
             </Button>

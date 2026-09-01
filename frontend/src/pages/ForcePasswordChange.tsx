@@ -140,7 +140,7 @@ export default function ForcePasswordChange() {
             <Button
               type="submit"
               disabled={saving}
-              className="w-full bg-teal-600 hover:bg-teal-500 text-white font-medium h-11"
+              className="w-full bg-teal-600 hover:bg-teal-500 text-black font-medium h-11"
             >
               {saving ? (
                 <>

@@ -288,19 +288,19 @@ function MedicinesTab() {
             setPage(1);
           }}
         >
-          <SelectTrigger className="w-44 bg-slate-700 border-slate-600 text-white h-9">
+          <SelectTrigger className="w-44 bg-slate-700 border-slate-600 text-slate-100 h-9">
             <Filter className="w-3.5 h-3.5 mr-2 text-slate-400" />
             <SelectValue placeholder="Category" />
           </SelectTrigger>
           <SelectContent className="bg-slate-800 border-slate-700">
-            <SelectItem value="all" className="text-white focus:bg-slate-700">
+            <SelectItem value="all" className="text-slate-100 focus:bg-slate-700">
               All Categories
             </SelectItem>
             {categories.map((c) => (
               <SelectItem
                 key={c.id}
                 value={c.id}
-                className="text-white focus:bg-slate-700"
+                className="text-slate-100 focus:bg-slate-700"
               >
                 {c.name}
               </SelectItem>
@@ -310,7 +310,7 @@ function MedicinesTab() {
         <Badge className="bg-slate-700 text-slate-300">{total} medicines</Badge>
         <Button
           onClick={openAdd}
-          className="bg-teal-600 hover:bg-teal-500 text-white h-9 ml-auto"
+          className="bg-teal-600 hover:bg-teal-500 text-black h-9 ml-auto"
         >
           <Plus className="w-4 h-4 mr-1" /> Add Medicine
         </Button>
@@ -348,7 +348,7 @@ function MedicinesTab() {
                   <tr>
                     <td
                       colSpan={8}
-                      className="py-16 text-center text-slate-600"
+                      className="py-16 text-center text-slate-500"
                     >
                       <Package className="w-10 h-10 mx-auto mb-2 opacity-20" />
                       No medicines found
@@ -499,7 +499,7 @@ function MedicinesTab() {
                   value={form.categoryId}
                   onValueChange={(v) => setForm({ ...form, categoryId: v })}
                 >
-                  <SelectTrigger className="bg-slate-700 border-slate-600 text-white h-9">
+                  <SelectTrigger className="bg-slate-700 border-slate-600 text-slate-100 h-9">
                     <SelectValue placeholder="Select category" />
                   </SelectTrigger>
                   <SelectContent className="bg-slate-800 border-slate-700">
@@ -507,7 +507,7 @@ function MedicinesTab() {
                       <SelectItem
                         key={c.id}
                         value={c.id}
-                        className="text-white focus:bg-slate-700"
+                        className="text-slate-100 focus:bg-slate-700"
                       >
                         {c.name}
                       </SelectItem>
@@ -520,7 +520,7 @@ function MedicinesTab() {
                   value={form.manufacturerId}
                   onValueChange={(v) => setForm({ ...form, manufacturerId: v })}
                 >
-                  <SelectTrigger className="bg-slate-700 border-slate-600 text-white h-9">
+                  <SelectTrigger className="bg-slate-700 border-slate-600 text-slate-100 h-9">
                     <SelectValue placeholder="Select manufacturer" />
                   </SelectTrigger>
                   <SelectContent className="bg-slate-800 border-slate-700">
@@ -528,7 +528,7 @@ function MedicinesTab() {
                       <SelectItem
                         key={m.id}
                         value={m.id}
-                        className="text-white focus:bg-slate-700"
+                        className="text-slate-100 focus:bg-slate-700"
                       >
                         {m.name}
                       </SelectItem>
@@ -543,7 +543,7 @@ function MedicinesTab() {
                   value={form.unit}
                   onValueChange={(v) => setForm({ ...form, unit: v })}
                 >
-                  <SelectTrigger className="bg-slate-700 border-slate-600 text-white h-9">
+                  <SelectTrigger className="bg-slate-700 border-slate-600 text-slate-100 h-9">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent className="bg-slate-800 border-slate-700">
@@ -551,7 +551,7 @@ function MedicinesTab() {
                       <SelectItem
                         key={u}
                         value={u}
-                        className="text-white focus:bg-slate-700 capitalize"
+                        className="text-slate-100 focus:bg-slate-700 capitalize"
                       >
                         {u}
                       </SelectItem>
@@ -566,7 +566,7 @@ function MedicinesTab() {
                     setForm({ ...form, gstPercent: Number(v) })
                   }
                 >
-                  <SelectTrigger className="bg-slate-700 border-slate-600 text-white h-9">
+                  <SelectTrigger className="bg-slate-700 border-slate-600 text-slate-100 h-9">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent className="bg-slate-800 border-slate-700">
@@ -574,7 +574,7 @@ function MedicinesTab() {
                       <SelectItem
                         key={r}
                         value={String(r)}
-                        className="text-white focus:bg-slate-700"
+                        className="text-slate-100 focus:bg-slate-700"
                       >
                         {r}%
                       </SelectItem>
@@ -632,7 +632,7 @@ function MedicinesTab() {
               <Button
                 type="submit"
                 disabled={submitting}
-                className="bg-teal-600 hover:bg-teal-500 text-white"
+                className="bg-teal-600 hover:bg-teal-500 text-black"
               >
                 {submitting ? (
                   <Loader2 className="w-4 h-4 animate-spin mr-2" />
@@ -800,7 +800,7 @@ function BatchesTab() {
         </Badge>
         <Button
           onClick={() => setShowForm(true)}
-          className="bg-teal-600 hover:bg-teal-500 text-white h-9 ml-auto"
+          className="bg-teal-600 hover:bg-teal-500 text-black h-9 ml-auto"
         >
           <Plus className="w-4 h-4 mr-1" /> Add Stock
         </Button>
@@ -838,7 +838,7 @@ function BatchesTab() {
                   <tr>
                     <td
                       colSpan={8}
-                      className="py-16 text-center text-slate-600"
+                      className="py-16 text-center text-slate-500"
                     >
                       <Layers className="w-10 h-10 mx-auto mb-2 opacity-20" />
                       No batches found
@@ -1016,7 +1016,7 @@ function BatchesTab() {
                 value={form.supplierId}
                 onValueChange={(v) => setForm({ ...form, supplierId: v })}
               >
-                <SelectTrigger className="bg-slate-700 border-slate-600 text-white h-9">
+                <SelectTrigger className="bg-slate-700 border-slate-600 text-slate-100 h-9">
                   <SelectValue placeholder="Select supplier" />
                 </SelectTrigger>
                 <SelectContent className="bg-slate-800 border-slate-700">
@@ -1024,7 +1024,7 @@ function BatchesTab() {
                     <SelectItem
                       key={s.id}
                       value={s.id}
-                      className="text-white focus:bg-slate-700"
+                      className="text-slate-100 focus:bg-slate-700"
                     >
                       {s.name}
                     </SelectItem>
@@ -1144,7 +1144,7 @@ function BatchesTab() {
                   !form.sellingPrice ||
                   !form.quantity
                 }
-                className="bg-teal-600 hover:bg-teal-500 text-white"
+                className="bg-teal-600 hover:bg-teal-500 text-black"
               >
                 {submitting ? (
                   <Loader2 className="w-4 h-4 animate-spin mr-2" />
@@ -1266,7 +1266,7 @@ function CategoriesTab() {
             <Button
               type="submit"
               disabled={submittingCat}
-              className="bg-teal-600 hover:bg-teal-500 text-white h-9 shrink-0"
+              className="bg-teal-600 hover:bg-teal-500 text-black h-9 shrink-0"
             >
               {submittingCat ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -1319,7 +1319,7 @@ function CategoriesTab() {
             <Button
               type="submit"
               disabled={submittingMfr}
-              className="bg-blue-600 hover:bg-blue-500 text-white h-9 shrink-0"
+              className="bg-blue-600 hover:bg-blue-500 text-black h-9 shrink-0"
             >
               {submittingMfr ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -1434,7 +1434,7 @@ function SuppliersTab() {
         </Badge>
         <Button
           onClick={openAdd}
-          className="bg-teal-600 hover:bg-teal-500 text-white h-9"
+          className="bg-teal-600 hover:bg-teal-500 text-black h-9"
         >
           <Plus className="w-4 h-4 mr-1" /> Add Supplier
         </Button>
@@ -1446,7 +1446,7 @@ function SuppliersTab() {
             <Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading...
           </div>
         ) : suppliers.length === 0 ? (
-          <div className="col-span-3 flex flex-col items-center justify-center py-16 text-slate-600">
+          <div className="col-span-3 flex flex-col items-center justify-center py-16 text-slate-500">
             <Truck className="w-10 h-10 mb-2 opacity-20" />
             <p>No suppliers yet</p>
           </div>
@@ -1570,7 +1570,7 @@ function SuppliersTab() {
               <Button
                 type="submit"
                 disabled={submitting}
-                className="bg-teal-600 hover:bg-teal-500 text-white"
+                className="bg-teal-600 hover:bg-teal-500 text-black"
               >
                 {submitting ? (
                   <Loader2 className="w-4 h-4 animate-spin mr-2" />

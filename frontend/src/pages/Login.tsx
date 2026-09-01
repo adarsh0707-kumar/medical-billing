@@ -93,7 +93,7 @@ export default function Login() {
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="admin@medstore.com"
                   required
-                  className="bg-slate-700 border-slate-600 text-white placeholder:text-slate-500 focus:border-teal-500"
+                  className="bg-slate-700 border-slate-600 text-slate-100 placeholder:text-slate-500 focus:border-teal-500"
                 />
               </div>
 
@@ -110,7 +110,7 @@ export default function Login() {
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
                     required
-                    className="bg-slate-700 border-slate-600 text-white placeholder:text-slate-500 focus:border-teal-500 pr-10"
+                    className="bg-slate-700 border-slate-600 text-slate-100 placeholder:text-slate-500 focus:border-teal-500 pr-10"
                   />
                   <button
                     type="button"
@@ -129,7 +129,7 @@ export default function Login() {
               <Button
                 type="submit"
                 disabled={loading}
-                className="w-full bg-teal-600 hover:bg-teal-500 text-white font-medium h-11 mt-2"
+                className="w-full bg-teal-600 hover:bg-teal-500 text-black font-medium h-11 mt-2"
               >
                 {loading ? (
                   <>
@@ -173,7 +173,7 @@ export default function Login() {
           </CardContent>
         </Card>
 
-        <p className="text-center text-slate-600 text-xs mt-6">
+        <p className="text-center text-slate-500 text-xs mt-6">
           © 2026 MedBill Pro. All rights reserved.
         </p>
       </div>

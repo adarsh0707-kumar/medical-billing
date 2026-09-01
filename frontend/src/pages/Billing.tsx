@@ -153,7 +153,7 @@ function AddCustomerDialog({ onAdd }: { onAdd: (c: Customer) => void }) {
               onChange={(e) => setForm({ ...form, name: e.target.value })}
               required
               placeholder="Customer name"
-              className="bg-slate-700 border-slate-600 text-white"
+              className="bg-slate-700 border-slate-600 text-slate-100"
             />
           </div>
           <div className="space-y-1.5">
@@ -162,7 +162,7 @@ function AddCustomerDialog({ onAdd }: { onAdd: (c: Customer) => void }) {
               value={form.phone}
               onChange={(e) => setForm({ ...form, phone: e.target.value })}
               placeholder="Phone number"
-              className="bg-slate-700 border-slate-600 text-white"
+              className="bg-slate-700 border-slate-600 text-slate-100"
             />
           </div>
           <div className="space-y-1.5">
@@ -171,7 +171,7 @@ function AddCustomerDialog({ onAdd }: { onAdd: (c: Customer) => void }) {
               value={form.address}
               onChange={(e) => setForm({ ...form, address: e.target.value })}
               placeholder="Address"
-              className="bg-slate-700 border-slate-600 text-white"
+              className="bg-slate-700 border-slate-600 text-slate-100"
             />
           </div>
           <Button
@@ -850,7 +850,7 @@ export default function Billing() {
                   }
                 }}
                 placeholder="Search medicine by name... (type 2+ chars)"
-                className="pl-9 bg-slate-700 border-slate-600 text-white placeholder:text-slate-500 focus:border-teal-500 h-11"
+                className="pl-9 bg-slate-700 border-slate-600 text-slate-100 placeholder:text-slate-500 focus:border-teal-500 h-11"
                 autoFocus
               />
             </div>
@@ -953,7 +953,7 @@ export default function Billing() {
                 <Receipt className="w-4 h-4 text-teal-400" />
                 Cart
                 {cart.length > 0 && (
-                  <Badge className="bg-teal-600 text-white text-xs">
+                  <Badge className="bg-teal-600 text-black text-xs">
                     {cart.length}
                   </Badge>
                 )}
@@ -973,7 +973,7 @@ export default function Billing() {
 
           <CardContent className="p-0 lg:flex-1 lg:overflow-y-auto">
             {cart.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full text-slate-600 py-16">
+              <div className="flex flex-col items-center justify-center h-full text-slate-500 py-16">
                 <Receipt className="w-12 h-12 mb-3 opacity-20" />
                 <p className="text-sm">Search and add medicines to cart</p>
               </div>
@@ -1001,7 +1001,7 @@ export default function Billing() {
                         <button
                           aria-label="Remove item"
                           onClick={() => removeItem(idx)}
-                          className="text-slate-600 hover:text-red-400 transition-colors shrink-0 mt-0.5"
+                          className="text-slate-500 hover:text-red-400 transition-colors shrink-0 mt-0.5"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -1013,7 +1013,7 @@ export default function Billing() {
                           <button
                             aria-label="Decrease quantity"
                             onClick={() => updateQty(idx, item.quantity - 1)}
-                            className="w-7 h-7 rounded-md bg-slate-700 text-white hover:bg-slate-600 flex items-center justify-center text-sm font-bold"
+                            className="w-7 h-7 rounded-md bg-slate-700 text-slate-100 hover:bg-slate-600 flex items-center justify-center text-sm font-bold"
                           >
                             −
                           </button>
@@ -1023,12 +1023,12 @@ export default function Billing() {
                             onChange={(e) =>
                               updateQty(idx, Number(e.target.value))
                             }
-                            className="w-12 h-7 text-center bg-slate-700 border border-slate-600 rounded-md text-white text-sm"
+                            className="w-12 h-7 text-center bg-slate-700 border border-slate-600 rounded-md text-slate-100 text-sm"
                           />
                           <button
                             aria-label="Increase quantity"
                             onClick={() => updateQty(idx, item.quantity + 1)}
-                            className="w-7 h-7 rounded-md bg-slate-700 text-white hover:bg-slate-600 flex items-center justify-center text-sm font-bold"
+                            className="w-7 h-7 rounded-md bg-slate-700 text-slate-100 hover:bg-slate-600 flex items-center justify-center text-sm font-bold"
                           >
                             +
                           </button>
@@ -1052,7 +1052,7 @@ export default function Billing() {
                                 ),
                               )
                             }
-                            className="w-20 h-7 text-center bg-slate-700 border border-slate-600 rounded-md text-white text-sm"
+                            className="w-20 h-7 text-center bg-slate-700 border border-slate-600 rounded-md text-slate-100 text-sm"
                           />
                         </div>
 
@@ -1064,7 +1064,7 @@ export default function Billing() {
                             onChange={(e) =>
                               updateDiscount(idx, Number(e.target.value))
                             }
-                            className="w-14 h-7 text-center bg-slate-700 border border-slate-600 rounded-md text-white text-sm"
+                            className="w-14 h-7 text-center bg-slate-700 border border-slate-600 rounded-md text-slate-100 text-sm"
                           />
                           <span className="text-slate-500 text-xs">%off</span>
                         </div>
@@ -1139,7 +1139,7 @@ export default function Billing() {
                       if (e.target.value.length < 2) setCustomerResults([]);
                     }}
                     placeholder="Search customer..."
-                    className="pl-8 h-9 bg-slate-700 border-slate-600 text-white placeholder:text-slate-500 text-sm"
+                    className="pl-8 h-9 bg-slate-700 border-slate-600 text-slate-100 placeholder:text-slate-500 text-sm"
                   />
                 </div>
                 {customerResults.length > 0 && (
@@ -1212,7 +1212,7 @@ export default function Billing() {
                     onChange={(e) =>
                       setExtraDiscount(Math.max(0, Number(e.target.value)))
                     }
-                    className="w-20 h-7 text-right bg-slate-700 border border-slate-600 rounded text-white text-sm px-2"
+                    className="w-20 h-7 text-right bg-slate-700 border border-slate-600 rounded text-slate-100 text-sm px-2"
                   />
                 </div>
               </div>
@@ -1264,7 +1264,7 @@ export default function Billing() {
                         prescriberName: e.target.value,
                       }))
                     }
-                    className="bg-slate-700 border-slate-600 text-white h-9 text-sm col-span-2"
+                    className="bg-slate-700 border-slate-600 text-slate-100 h-9 text-sm col-span-2"
                   />
                   <Input
                     placeholder="Registration no."
@@ -1275,7 +1275,7 @@ export default function Billing() {
                         prescriberRegNo: e.target.value,
                       }))
                     }
-                    className="bg-slate-700 border-slate-600 text-white h-9 text-sm"
+                    className="bg-slate-700 border-slate-600 text-slate-100 h-9 text-sm"
                   />
                   <Input
                     type="date"
@@ -1287,7 +1287,7 @@ export default function Billing() {
                         prescribedOn: e.target.value,
                       }))
                     }
-                    className="bg-slate-700 border-slate-600 text-white h-9 text-sm"
+                    className="bg-slate-700 border-slate-600 text-slate-100 h-9 text-sm"
                   />
                   <Input
                     placeholder="Patient's name"
@@ -1298,7 +1298,7 @@ export default function Billing() {
                         patientName: e.target.value,
                       }))
                     }
-                    className="bg-slate-700 border-slate-600 text-white h-9 text-sm col-span-2"
+                    className="bg-slate-700 border-slate-600 text-slate-100 h-9 text-sm col-span-2"
                   />
                 </div>
               </div>
@@ -1320,7 +1320,7 @@ export default function Billing() {
                   )
                 }
               >
-                <SelectTrigger className="bg-slate-700 border-slate-600 text-white h-9">
+                <SelectTrigger className="bg-slate-700 border-slate-600 text-slate-100 h-9">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="bg-slate-800 border-slate-700">
@@ -1328,7 +1328,7 @@ export default function Billing() {
                     <SelectItem
                       key={mode}
                       value={mode}
-                      className="text-white hover:bg-slate-700 focus:bg-slate-700"
+                      className="text-slate-100 hover:bg-slate-700 focus:bg-slate-700"
                     >
                       {mode}
                     </SelectItem>
@@ -1342,7 +1342,7 @@ export default function Billing() {
               <Button
                 onClick={handleSubmit}
                 disabled={submitting || cart.length === 0 || grandTotal < 0}
-                className="w-full bg-teal-600 hover:bg-teal-500 text-white font-bold h-11"
+                className="w-full bg-teal-600 hover:bg-teal-500 text-black font-bold h-11"
               >
                 {submitting ? (
                   <>

@@ -126,7 +126,7 @@ export default function Topbar({ collapsed, onToggle, title }: TopbarProps) {
             {unreadCount > 0 && (
               <span
                 className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-red-500
-                text-white text-xs flex items-center justify-center font-bold border-2 border-slate-900"
+                text-black text-xs flex items-center justify-center font-bold border-2 border-slate-900"
               >
                 {unreadCount > 9 ? "9+" : unreadCount}
               </span>
@@ -146,7 +146,7 @@ export default function Topbar({ collapsed, onToggle, title }: TopbarProps) {
                     Notifications
                   </h3>
                   {unreadCount > 0 && (
-                    <Badge className="bg-red-500 text-white text-xs px-1.5 py-0">
+                    <Badge className="bg-red-500 text-black text-xs px-1.5 py-0">
                       {unreadCount} new
                     </Badge>
                   )}
@@ -166,7 +166,7 @@ export default function Topbar({ collapsed, onToggle, title }: TopbarProps) {
                   <button
                     onClick={() => setShowNotif(false)}
                     aria-label="Close notifications"
-                    className="text-slate-500 hover:text-white p-1 rounded-md
+                    className="text-slate-500 hover:text-slate-100 p-1 rounded-md
                       hover:bg-slate-700 transition-colors"
                   >
                     <X className="w-4 h-4" />
@@ -177,7 +177,7 @@ export default function Topbar({ collapsed, onToggle, title }: TopbarProps) {
               {/* Notification List */}
               <div className="max-h-96 overflow-y-auto divide-y divide-slate-700/50">
                 {notifications.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-12 text-slate-600">
+                  <div className="flex flex-col items-center justify-center py-12 text-slate-500">
                     <Bell className="w-10 h-10 mb-2 opacity-20" />
                     <p className="text-sm">No notifications</p>
                     <p className="text-xs mt-1">You're all caught up!</p>
@@ -216,7 +216,7 @@ export default function Topbar({ collapsed, onToggle, title }: TopbarProps) {
                         <p className="text-slate-400 text-xs mt-0.5 line-clamp-2">
                           {n.message}
                         </p>
-                        <p className="text-slate-600 text-xs mt-1">
+                        <p className="text-slate-500 text-xs mt-1">
                           {timeAgo(n.createdAt)}
                         </p>
                       </div>
@@ -228,7 +228,7 @@ export default function Topbar({ collapsed, onToggle, title }: TopbarProps) {
               {/* Footer */}
               {notifications.length > 0 && (
                 <div className="px-4 py-2 border-t border-slate-700 bg-slate-800/50">
-                  <p className="text-slate-600 text-xs text-center">
+                  <p className="text-slate-500 text-xs text-center">
                     Alerts refresh every 5 minutes
                   </p>
                 </div>
@@ -241,7 +241,7 @@ export default function Topbar({ collapsed, onToggle, title }: TopbarProps) {
         <div className="flex items-center gap-2.5">
           <div
             className="w-8 h-8 rounded-full bg-teal-600 flex items-center
-            justify-center text-white text-sm font-bold"
+            justify-center text-black text-sm font-bold"
           >
             {user?.name?.charAt(0).toUpperCase()}
           </div>

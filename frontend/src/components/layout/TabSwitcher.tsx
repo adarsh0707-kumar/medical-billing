@@ -72,7 +72,7 @@ export function TabSwitcher({
           <TabsTrigger
             key={v}
             value={v}
-            className="data-[state=active]:bg-teal-600 data-[state=active]:text-white text-slate-400"
+            className="data-[state=active]:bg-teal-600 data-[state=active]:text-black text-slate-400"
           >
             <Icon className="w-4 h-4 mr-2" /> {label}
           </TabsTrigger>

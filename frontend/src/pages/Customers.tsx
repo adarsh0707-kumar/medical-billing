@@ -136,7 +136,7 @@ function CustomerDetailDialog({
           <div className="space-y-4">
             {/* Profile */}
             <div className="flex items-center gap-4 p-4 bg-slate-700/50 rounded-xl">
-              <div className="w-14 h-14 rounded-full bg-teal-600 flex items-center justify-center text-white text-2xl font-bold">
+              <div className="w-14 h-14 rounded-full bg-teal-600 flex items-center justify-center text-black text-2xl font-bold">
                 {customer.name.charAt(0).toUpperCase()}
               </div>
               <div>
@@ -390,7 +390,7 @@ export default function Customers() {
         </div>
         <Button
           onClick={openAdd}
-          className="bg-teal-600 hover:bg-teal-500 text-white"
+          className="bg-teal-600 hover:bg-teal-500 text-black"
         >
           <Plus className="w-4 h-4 mr-1" /> Add Customer
         </Button>
@@ -421,13 +421,13 @@ export default function Customers() {
           <Loader2 className="w-6 h-6 animate-spin mr-2" /> Loading customers...
         </div>
       ) : customers.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-20 text-slate-600">
+        <div className="flex flex-col items-center justify-center py-20 text-slate-500">
           <Users className="w-12 h-12 mb-3 opacity-20" />
           <p>No customers found</p>
           <Button
             onClick={openAdd}
             size="sm"
-            className="mt-3 bg-teal-600 hover:bg-teal-500 text-white"
+            className="mt-3 bg-teal-600 hover:bg-teal-500 text-black"
           >
             Add First Customer
           </Button>
@@ -582,25 +582,25 @@ export default function Customers() {
                     setForm({ ...form, gender: v as GenderChoice })
                   }
                 >
-                  <SelectTrigger className="bg-slate-700 border-slate-600 text-white h-9">
+                  <SelectTrigger className="bg-slate-700 border-slate-600 text-slate-100 h-9">
                     <SelectValue placeholder="Select" />
                   </SelectTrigger>
                   <SelectContent className="bg-slate-800 border-slate-700">
                     <SelectItem
                       value="MALE"
-                      className="text-white focus:bg-slate-700"
+                      className="text-slate-100 focus:bg-slate-700"
                     >
                       Male
                     </SelectItem>
                     <SelectItem
                       value="FEMALE"
-                      className="text-white focus:bg-slate-700"
+                      className="text-slate-100 focus:bg-slate-700"
                     >
                       Female
                     </SelectItem>
                     <SelectItem
                       value="OTHER"
-                      className="text-white focus:bg-slate-700"
+                      className="text-slate-100 focus:bg-slate-700"
                     >
                       Other
                     </SelectItem>
@@ -651,7 +651,7 @@ export default function Customers() {
               <Button
                 type="submit"
                 disabled={submitting}
-                className="bg-teal-600 hover:bg-teal-500 text-white"
+                className="bg-teal-600 hover:bg-teal-500 text-black"
               >
                 {submitting ? (
                   <Loader2 className="w-4 h-4 animate-spin mr-2" />

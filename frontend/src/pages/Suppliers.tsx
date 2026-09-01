@@ -127,7 +127,7 @@ export default function Suppliers() {
           <h2 className="text-2xl font-bold text-white">Suppliers</h2>
           <p className="text-slate-400 mt-1 text-sm">Manage your medicine suppliers and vendors</p>
         </div>
-        <Button onClick={openAdd} className="bg-teal-600 hover:bg-teal-500 text-white">
+        <Button onClick={openAdd} className="bg-teal-600 hover:bg-teal-500 text-black">
           <Plus className="w-4 h-4 mr-1" /> Add Supplier
         </Button>
       </div>
@@ -151,11 +151,11 @@ export default function Suppliers() {
           <Loader2 className="w-6 h-6 animate-spin mr-2" /> Loading suppliers...
         </div>
       ) : filtered.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-20 text-slate-600">
+        <div className="flex flex-col items-center justify-center py-20 text-slate-500">
           <Truck className="w-12 h-12 mb-3 opacity-20" />
           <p>No suppliers found</p>
           <Button onClick={openAdd} size="sm"
-            className="mt-3 bg-teal-600 hover:bg-teal-500 text-white">
+            className="mt-3 bg-teal-600 hover:bg-teal-500 text-black">
             Add First Supplier
           </Button>
         </div>
@@ -230,7 +230,7 @@ export default function Suppliers() {
 
                 {/* Footer */}
                 <div className="mt-3 pt-3 border-t border-slate-700 flex items-center justify-between">
-                  <p className="text-slate-600 text-xs">
+                  <p className="text-slate-500 text-xs">
                     Added {new Date(s.createdAt).toLocaleDateString('en-IN', {
                       day: '2-digit', month: 'short', year: 'numeric'
                     })}
@@ -288,7 +288,7 @@ export default function Suppliers() {
               <Button type="button" variant="outline" onClick={() => setShowForm(false)}
                 className="border-slate-600 text-slate-300 hover:bg-slate-700">Cancel</Button>
               <Button type="submit" disabled={submitting}
-                className="bg-teal-600 hover:bg-teal-500 text-white">
+                className="bg-teal-600 hover:bg-teal-500 text-black">
                 {submitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
                 {editing ? 'Update' : 'Add Supplier'}
               </Button>

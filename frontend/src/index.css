@@ -48,6 +48,90 @@
     --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/* ─── Theme: True Black & Gold ───────────────────────────────────────────────
+ *
+ * The whole visual identity of this app is set here, by redefining what a
+ * handful of Tailwind colour names mean. Nothing else needs to change.
+ *
+ * ── Why a palette remap and not semantic classes ──
+ *
+ * The screens hardcode `bg-slate-800`, `text-white`, `text-teal-400` and the
+ * like about 1,100 times across 21 files. shadcn's token layer
+ * (`--background`, `--card`, `--foreground`) exists below this but is used by
+ * almost nothing outside `components/ui/`. So there were two ways to retheme:
+ * rewrite 21 screens to semantic classes, or redefine the four colour families
+ * those screens already name. This is the second. It is one file, it touches no
+ * component logic, no test asserts on a colour, and reverting is deleting this
+ * block.
+ *
+ * ── The one thing that will surprise a reader ──
+ *
+ * **`text-white` is gold, not white.** In this codebase `text-white` marks
+ * headings and money figures — the things a shopkeeper's eye should land on —
+ * and `text-slate-300/400/500` carry body, label and muted text. So mapping
+ * `white` to gold puts the accent exactly where it was asked for without
+ * touching a screen.
+ *
+ * **The slate ramp is gold too**, four steps dimmer, so the screen reads yellow
+ * throughout rather than gold-on-grey. See the note on that block: the reason
+ * it stays readable is that the four levels differ in brightness, not hue.
+ *
+ * The exception is text sitting *on* a saturated chip or button, which would be
+ * gold on gold. Those 30 sites were changed to `text-black` in the components;
+ * if you add another, do the same.
+ *
+ * ── The ramp ──
+ *
+ * Pure #000 is the ground, as asked. Cards lift to #0F0F0F and inputs to
+ * #1F1F1F so surfaces separate without borders having to do all the work. The
+ * greys are warm — a touch of yellow in the neutrals — so they sit under gold
+ * rather than fighting it; a neutral grey next to gold reads as slightly blue.
+ *
+ * Large gold text on pure black haloes a little on OLED. That is the known cost
+ * of #000 and is why `Ink & Amber` (#0A0A0B) exists as the alternative: if this
+ * proves tiring over a shift, change `--color-slate-900` and `--color-slate-950`
+ * to #0A0A0B and nothing else.
+ */
+@theme {
+  /* Grounds and surfaces, darkest first. */
+  --color-slate-950: #000000;
+  --color-slate-900: #000000;  /* page background */
+  --color-slate-800: #0f0f0f;  /* cards, panels */
+  --color-slate-700: #1f1f1f;  /* inputs, secondary buttons, borders */
+  --color-slate-600: #2e2e2e;  /* hover, heavier borders */
+
+  /* Text — a gold ramp, not greys.
+   *
+   * The whole screen reads yellow, which is what was asked for. What keeps it
+   * legible is that hierarchy is carried by **brightness within one hue**
+   * rather than by colour: heading, body, label and hint are four steps down
+   * the same gold, so a table still separates into columns and a form still
+   * separates labels from values. Four different yellows at the same
+   * brightness would flatten into one wall of text — that is the failure mode
+   * this ramp avoids.
+   *
+   * Measured against the #0f0f0f card ground, not estimated. The hint step is
+   * the one with any room in it — 5.5:1 against WCAG AA's 4.5 floor for small
+   * text — which is why it stops there rather than fading further. */
+  --color-slate-500: #9a8850;  /* hints, timestamps      —  5.5:1 */
+  --color-slate-400: #c4a961;  /* labels, secondary text —  8.4:1 */
+  --color-slate-300: #e8d08a;  /* body text              — 12.6:1 */
+  --color-slate-200: #f0dea8;
+  --color-slate-100: #f5e6bc;  /* input values          — brightest non-accent */
+
+  /* Headings and money figures. See the note above — this is deliberate. */
+  --color-white: #f5c518;
+
+  /* The accent, which was teal. Buttons use 600 with black text, so it is
+     darkened enough for that to read. */
+  --color-teal-300: #ffe27a;
+  --color-teal-400: #ffd84d;
+  --color-teal-500: #f5c518;
+  --color-teal-600: #d9a800;
+  --color-teal-700: #a37e00;
+  --color-teal-900: #2e2405;  /* badge grounds, paired with teal-400 text */
+}
+
 @media print {
   body * {
     visibility: hidden;
@@ -100,25 +184,40 @@
     --sidebar-ring: oklch(0.708 0 0);
 }
 
+/* Aligned to the palette above.
+ *
+ * These are shadcn's tokens, and until now they were dead weight: the screens
+ * paint themselves with `slate-*`, so nothing here was visible — except where a
+ * `components/ui/*` primitive uses them, which is exactly where it went wrong.
+ * `<html>` carried no `dark` class, so `useTheme()` in `sonner.tsx` resolved to
+ * light and **every toast rendered dark-on-white against a black app**. Toasts
+ * fire on every create, update and delete (FR-NOTIF-05), so it was the most
+ * visible surface in the product still running on the old defaults. Dropdowns
+ * and selects had the same problem, more quietly.
+ *
+ * `index.html` now sets `class="dark"` and these carry the theme, so a primitive
+ * that reaches for a token gets the same black and gold as everything else.
+ * `--foreground` is body text, not gold: it backs paragraphs and toast copy,
+ * where the accent would be wrong. */
 .dark {
-    --background: oklch(0.145 0 0);
-    --foreground: oklch(0.985 0 0);
-    --card: oklch(0.205 0 0);
-    --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.205 0 0);
-    --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.922 0 0);
-    --primary-foreground: oklch(0.205 0 0);
-    --secondary: oklch(0.269 0 0);
-    --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.269 0 0);
-    --muted-foreground: oklch(0.708 0 0);
-    --accent: oklch(0.269 0 0);
-    --accent-foreground: oklch(0.985 0 0);
-    --destructive: oklch(0.704 0.191 22.216);
-    --border: oklch(1 0 0 / 10%);
-    --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.556 0 0);
+    --background: #000000;
+    --foreground: #ede8dc;
+    --card: #0f0f0f;
+    --card-foreground: #ede8dc;
+    --popover: #0f0f0f;
+    --popover-foreground: #ede8dc;
+    --primary: #f5c518;
+    --primary-foreground: #000000;
+    --secondary: #1f1f1f;
+    --secondary-foreground: #ede8dc;
+    --muted: #1f1f1f;
+    --muted-foreground: #a9a296;
+    --accent: #1f1f1f;
+    --accent-foreground: #f5c518;
+    --destructive: #f87171;
+    --border: #2a2a2a;
+    --input: #2a2a2a;
+    --ring: #f5c518;
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
     --chart-3: oklch(0.439 0 0);
@@ -172,7 +271,11 @@ input.bg-slate-700:-webkit-autofill:focus,
 input.bg-slate-700:-webkit-autofill:active {
   -webkit-box-shadow: 0 0 0 1000px var(--color-slate-700) inset;
   box-shadow: 0 0 0 1000px var(--color-slate-700) inset;
-  -webkit-text-fill-color: #fff;
-  caret-color: #fff;
+  /* The body colour the inputs themselves use (`text-slate-100`), not the gold.
+     An autofilled field has to look identical to a typed one, and after the
+     theme change `#fff` would have been the one value on the screen that was
+     actually white. */
+  -webkit-text-fill-color: var(--color-slate-100);
+  caret-color: var(--color-slate-100);
   transition: background-color 9999s ease-in-out 0s;
 }

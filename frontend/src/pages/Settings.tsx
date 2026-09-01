@@ -151,7 +151,7 @@ function ProfileTab() {
             <Button
               type="submit"
               disabled={saving}
-              className="w-full bg-teal-600 hover:bg-teal-500 text-white"
+              className="w-full bg-teal-600 hover:bg-teal-500 text-black"
             >
               {saving ? (
                 <Loader2 className="w-4 h-4 animate-spin mr-2" />
@@ -294,7 +294,7 @@ function ShopTab() {
             <Button
               type="submit"
               disabled={saving}
-              className="w-full bg-teal-600 hover:bg-teal-500 text-white"
+              className="w-full bg-teal-600 hover:bg-teal-500 text-black"
             >
               {saving ? (
                 <Loader2 className="w-4 h-4 animate-spin mr-2" />
@@ -560,7 +560,7 @@ function PasswordTab() {
             <Button
               type="submit"
               disabled={saving}
-              className="w-full bg-teal-600 hover:bg-teal-500 text-white"
+              className="w-full bg-teal-600 hover:bg-teal-500 text-black"
             >
               {saving ? (
                 <Loader2 className="w-4 h-4 animate-spin mr-2" />
@@ -727,7 +727,7 @@ function UsersTab() {
         <p className="text-slate-400 text-sm">{users.length} total users</p>
         <Button
           onClick={openAdd}
-          className="bg-teal-600 hover:bg-teal-500 text-white h-9"
+          className="bg-teal-600 hover:bg-teal-500 text-black h-9"
         >
           <Plus className="w-4 h-4 mr-1" /> Add User
         </Button>
@@ -804,7 +804,7 @@ function UsersTab() {
                           u.isActive ? "Deactivate user" : "Activate user"
                         }
                         className="text-xs px-2 py-1 rounded-md text-slate-400
-                          hover:bg-slate-700 hover:text-white transition-colors"
+                          hover:bg-slate-700 hover:text-slate-100 transition-colors"
                       >
                         {u.isActive ? "Deactivate" : "Activate"}
                       </button>
@@ -966,7 +966,7 @@ function UsersTab() {
                   setForm({ ...form, role: v as typeof form.role })
                 }
               >
-                <SelectTrigger className="bg-slate-700 border-slate-600 text-white h-9">
+                <SelectTrigger className="bg-slate-700 border-slate-600 text-slate-100 h-9">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="bg-slate-800 border-slate-700">
@@ -990,7 +990,7 @@ function UsersTab() {
                     <SelectItem
                       key={r.value}
                       value={r.value}
-                      className="text-white focus:bg-slate-700"
+                      className="text-slate-100 focus:bg-slate-700"
                     >
                       <span className={r.color}>{r.label}</span>
                     </SelectItem>
@@ -1025,7 +1025,7 @@ function UsersTab() {
               <Button
                 type="submit"
                 disabled={submitting}
-                className="bg-teal-600 hover:bg-teal-500 text-white"
+                className="bg-teal-600 hover:bg-teal-500 text-black"
               >
                 {submitting ? (
                   <Loader2 className="w-4 h-4 animate-spin mr-2" />

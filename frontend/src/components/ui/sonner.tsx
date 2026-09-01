@@ -3,11 +3,18 @@ import { Toaster as Sonner, type ToasterProps } from "sonner"
 import { CircleCheckIcon, InfoIcon, TriangleAlertIcon, OctagonXIcon, Loader2Icon } from "lucide-react"
 
 const Toaster = ({ ...props }: ToasterProps) => {
-  const { theme = "system" } = useTheme()
+  // Kept for the shadcn shape, but not trusted for the value: nothing in this
+  // app mounts a next-themes provider, so `useTheme()` returns "system" and
+  // Sonner resolves it from the viewer's OS. On a light desktop that rendered
+  // white toasts over a black application — and with `richColors` on, pink and
+  // green ones. The app has exactly one appearance, so the toaster is told
+  // which it is rather than asked.
+  const { theme } = useTheme()
+  void theme
 
   return (
     <Sonner
-      theme={theme as ToasterProps["theme"]}
+      theme="dark"
       className="toaster group"
       icons={{
         success: (

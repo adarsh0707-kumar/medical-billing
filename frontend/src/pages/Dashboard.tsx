@@ -258,7 +258,7 @@ export default function Dashboard() {
         </div>
         <Button
           onClick={() => navigate("/billing")}
-          className="bg-teal-600 hover:bg-teal-500 text-white gap-2"
+          className="bg-teal-600 hover:bg-teal-500 text-black gap-2"
         >
           <ShoppingCart className="w-4 h-4" />
           New Bill
@@ -387,24 +387,24 @@ export default function Dashboard() {
                       x2="0"
                       y2="1"
                     >
-                      <stop offset="5%" stopColor="#14b8a6" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="#14b8a6" stopOpacity={0} />
+                      <stop offset="5%" stopColor="#f5c518" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="#f5c518" stopOpacity={0} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#0f0f0f" />
                   <XAxis
                     dataKey="date"
-                    tick={{ fill: "#64748b", fontSize: 11 }}
+                    tick={{ fill: "#8c8577", fontSize: 11 }}
                   />
                   <YAxis
-                    tick={{ fill: "#64748b", fontSize: 11 }}
+                    tick={{ fill: "#8c8577", fontSize: 11 }}
                     tickFormatter={formatAxisINR}
                   />
                   <Tooltip
                     formatter={(val) => [formatINR(Number(val)), "Sales"]}
                     contentStyle={{
-                      background: "#0f172a",
-                      border: "1px solid #1e293b",
+                      background: "#000000",
+                      border: "1px solid #0f0f0f",
                       color: "#fff",
                       borderRadius: "8px",
                       fontSize: "12px",
@@ -413,7 +413,7 @@ export default function Dashboard() {
                   <Area
                     type="monotone"
                     dataKey="sales"
-                    stroke="#14b8a6"
+                    stroke="#f5c518"
                     strokeWidth={2}
                     fill="url(#salesGradient)"
                   />
@@ -464,7 +464,7 @@ export default function Dashboard() {
               </p>
               {summary?.byPaymentMode.length === 0 ||
               !summary?.byPaymentMode ? (
-                <p className="text-slate-600 text-sm text-center py-3">
+                <p className="text-slate-500 text-sm text-center py-3">
                   No transactions today
                 </p>
               ) : (
@@ -512,13 +512,13 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent className="p-0">
             {recentInvoices.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-12 text-slate-600">
+              <div className="flex flex-col items-center justify-center py-12 text-slate-500">
                 <Receipt className="w-10 h-10 mb-2 opacity-20" />
                 <p className="text-sm">No invoices yet</p>
                 <Button
                   size="sm"
                   onClick={() => navigate("/billing")}
-                  className="mt-3 bg-teal-600 hover:bg-teal-500 text-white text-xs h-8"
+                  className="mt-3 bg-teal-600 hover:bg-teal-500 text-black text-xs h-8"
                 >
                   Create First Invoice
                 </Button>
@@ -573,7 +573,7 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent className="p-0">
             {expiringCount === 0 ? (
-              <div className="flex flex-col items-center justify-center py-12 text-slate-600">
+              <div className="flex flex-col items-center justify-center py-12 text-slate-500">
                 <CheckCircle2 className="w-10 h-10 mb-2 opacity-20" />
                 <p className="text-sm">All stock is fresh!</p>
               </div>

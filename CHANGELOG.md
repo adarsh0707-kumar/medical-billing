@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+#### A black and gold theme
+
+The application is now pure black with gold accents, in place of the slate-and-teal it shipped with.
+
+**Done as a palette remap, not a rewrite.** The screens name `bg-slate-800`, `text-white` and `text-teal-400` about 1,100 times across 21 files, and shadcn's token layer underneath them was used by almost nothing outside `components/ui/`. So rather than convert 21 screens to semantic classes, one `@theme` block in `index.css` redefines what those colour names mean. It touches no component logic, no test asserts on a colour, and reverting is deleting the block.
+
+**The part that will surprise a reader: `text-white` is gold.** In this codebase that class marks headings and money figures — the things an owner's eye should land on — while `text-slate-300/400/500` carry body, label and muted text. Mapping `white` to gold therefore puts the accent exactly where it belongs without touching a screen. Two consequences had to be handled by hand: 30 sites where text sits *on* a saturated chip or button, which would have been gold on gold and are now `text-black`; and 47 inputs and secondary buttons, whose contents are body copy rather than headings and are now `text-slate-100` — otherwise every medicine name and phone number a user typed would have been gold.
+
+Pure `#000` is the ground, as asked. Cards lift to `#0f0f0f` and inputs to `#1f1f1f` so surfaces separate without borders doing all the work. Large gold text on pure black haloes slightly on OLED; that is the known cost of `#000`, and the two lines to change for a near-black ground are named in the CSS.
+
+**The text ramp is gold as well, not grey**, so the screen reads yellow throughout rather than gold-on-grey. What keeps it legible is that the four levels — heading, body, label, hint — differ in *brightness within one hue*: four yellows at the same brightness would flatten into one wall of text, and a table would stop separating into columns. Measured against the card ground rather than estimated: 11.8:1 for headings, 12.6 for body, 8.4 for labels and 5.5 for hints, against WCAG AA's 4.5 floor. Desaturating `--color-slate-300/400/500` back toward warm grey returns the accents-only look without touching anything else.
+
+**Three things surfaced only by looking at the running app**, none of which a test would have caught:
+
+- **Every toast rendered twice.** `<Toaster />` was mounted in both `main.tsx` and `App.tsx`, so each message appeared at bottom-right *and* top-right. Two of them fit on screen at once, which is how it went unnoticed — it read as a design choice rather than as the same message twice. There is now exactly one, in `App.tsx`.
+- **Toasts, dropdowns and selects were rendering in light mode.** `<html>` carried no `dark` class and nothing mounts a `next-themes` provider, so `useTheme()` resolved from the viewer's OS — white toasts over a black application on any light desktop. The class is now set, the `.dark` tokens carry this palette, and the toaster is told which theme it is rather than asked.
+- **The unpriced-lines warning was amber**, which is now the accent hue. It read as another highlighted panel rather than as something wrong, so it moved to orange.
+
+The printed GST invoice is untouched: it paints with `text-black` on default paper and never used `bg-white`, which under this remap would have printed gold.
+
 ### Fixed
 
 #### Every tick on three chart axes read ₹0k

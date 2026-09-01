@@ -106,7 +106,7 @@ const formatINR = (val: number) =>
     maximumFractionDigits: 2,
   }).format(val);
 
-const COLORS = ["#14b8a6", "#6366f1", "#f59e0b", "#ef4444", "#8b5cf6"];
+const COLORS = ["#f5c518", "#6366f1", "#f59e0b", "#ef4444", "#8b5cf6"];
 
 const MONTHS = [
   "January",
@@ -253,7 +253,7 @@ function PeriodRegister({
             <Loader2 className="w-5 h-5 animate-spin text-teal-400" />
           </div>
         ) : invoices.length === 0 ? (
-          <div className="flex items-center justify-center h-40 text-slate-600">
+          <div className="flex items-center justify-center h-40 text-slate-500">
             <p className="text-sm">No invoices in this period</p>
           </div>
         ) : (
@@ -495,7 +495,7 @@ function PeriodReport({ granularity }: { granularity: "monthly" | "yearly" }) {
             </CardHeader>
             <CardContent className="pt-4">
               {!hasSales ? (
-                <div className="flex items-center justify-center h-40 text-slate-600">
+                <div className="flex items-center justify-center h-40 text-slate-500">
                   <p className="text-sm">
                     No sales in {data?.label ?? "this period"}
                   </p>
@@ -509,25 +509,25 @@ function PeriodReport({ granularity }: { granularity: "monthly" | "yearly" }) {
                       data={chartData}
                       margin={{ top: 8, right: 12, left: 4, bottom: 4 }}
                     >
-                      <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                      <CartesianGrid strokeDasharray="3 3" stroke="#242424" />
                       <XAxis
                         dataKey="name"
-                        tick={{ fill: "#94a3b8", fontSize: 12 }}
+                        tick={{ fill: "#a9a296", fontSize: 12 }}
                       />
-                      <YAxis tick={{ fill: "#94a3b8", fontSize: 12 }} />
+                      <YAxis tick={{ fill: "#a9a296", fontSize: 12 }} />
                       <Tooltip
-                        cursor={{ fill: "#33415555" }}
+                        cursor={{ fill: "#24242455" }}
                         formatter={(val) => formatINR(Number(val ?? 0))}
                         labelFormatter={(l) =>
                           isMonthly ? `Day ${l}` : String(l)
                         }
                         contentStyle={{
-                          background: "#1e293b",
-                          border: "1px solid #334155",
+                          background: "#0f0f0f",
+                          border: "1px solid #242424",
                           color: "#fff",
                         }}
                       />
-                      <Bar dataKey="sales" fill="#14b8a6" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="sales" fill="#f5c518" radius={[4, 4, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </ScrollableChart>
@@ -648,7 +648,7 @@ function DailyReport() {
         <Button
           onClick={() => refetch()}
           size="sm"
-          className="w-full sm:w-auto bg-teal-600 hover:bg-teal-500 text-white"
+          className="w-full sm:w-auto bg-teal-600 hover:bg-teal-500 text-black"
         >
           {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Refresh"}
         </Button>
@@ -708,7 +708,7 @@ function DailyReport() {
           </CardHeader>
           <CardContent className="pt-4 pb-6">
             {paymentData.length === 0 ? (
-              <div className="flex items-center justify-center h-40 text-slate-600">
+              <div className="flex items-center justify-center h-40 text-slate-500">
                 <p className="text-sm">No data for selected date</p>
               </div>
             ) : (
@@ -740,8 +740,8 @@ function DailyReport() {
                   <Tooltip
                     formatter={(val) => formatINR(Number(val ?? 0))}
                     contentStyle={{
-                      background: "#1e293b",
-                      border: "1px solid #334155",
+                      background: "#0f0f0f",
+                      border: "1px solid #242424",
                       color: "#fff",
                     }}
                   />
@@ -768,7 +768,7 @@ function DailyReport() {
           </CardHeader>
           <CardContent className="p-0">
             {invoices.length === 0 ? (
-              <div className="flex items-center justify-center h-40 text-slate-600">
+              <div className="flex items-center justify-center h-40 text-slate-500">
                 <p className="text-sm">No invoices for selected date</p>
               </div>
             ) : (
@@ -951,7 +951,7 @@ function GstReport() {
   if (!canViewGst) {
     return (
       <div className="flex flex-col items-center justify-center gap-2 py-16 text-center">
-        <FileText className="w-8 h-8 text-slate-600" />
+        <FileText className="w-8 h-8 text-slate-500" />
         <p className="text-slate-400 text-sm">
           GST reports are available to administrators and pharmacists.
         </p>
@@ -1084,7 +1084,7 @@ function GstReport() {
                   <tr>
                     <td
                       colSpan={8}
-                      className="text-center py-12 text-slate-600"
+                      className="text-center py-12 text-slate-500"
                     >
                       No invoices found for {MONTHS[month - 1]} {year}
                     </td>
@@ -1258,7 +1258,7 @@ function StockAlerts() {
                 <select
                   value={days}
                   onChange={(e) => setDays(Number(e.target.value))}
-                  className="bg-slate-700 border border-slate-600 text-white text-xs rounded px-2 py-1 outline-none"
+                  className="bg-slate-700 border border-slate-600 text-slate-100 text-xs rounded px-2 py-1 outline-none"
                 >
                   <option value={15}>15 days</option>
                   <option value={30}>30 days</option>
@@ -1285,7 +1285,7 @@ function StockAlerts() {
           </CardHeader>
           <CardContent className="p-0 max-h-96 overflow-y-auto">
             {expiring.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-12 text-slate-600">
+              <div className="flex flex-col items-center justify-center py-12 text-slate-500">
                 <Package className="w-8 h-8 mb-2 opacity-30" />
                 <p className="text-sm">No expiring stock</p>
               </div>
@@ -1359,7 +1359,7 @@ function StockAlerts() {
           </CardHeader>
           <CardContent className="p-0 max-h-96 overflow-y-auto">
             {lowStock.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-12 text-slate-600">
+              <div className="flex flex-col items-center justify-center py-12 text-slate-500">
                 <Package className="w-8 h-8 mb-2 opacity-30" />
                 <p className="text-sm">All stock levels are healthy</p>
               </div>
@@ -1482,10 +1482,10 @@ function SalesTrend() {
                 data={trendData}
                 margin={{ top: 5, right: 10, left: 10, bottom: 5 }}
               >
-                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                <XAxis dataKey="date" tick={{ fill: "#94a3b8", fontSize: 12 }} />
+                <CartesianGrid strokeDasharray="3 3" stroke="#242424" />
+                <XAxis dataKey="date" tick={{ fill: "#a9a296", fontSize: 12 }} />
                 <YAxis
-                  tick={{ fill: "#94a3b8", fontSize: 12 }}
+                  tick={{ fill: "#a9a296", fontSize: 12 }}
                   tickFormatter={formatAxisINR}
                 />
                 <Tooltip
@@ -1496,15 +1496,15 @@ function SalesTrend() {
                   // an actual ~₹2k revenue bar on a day that had none. A
                   // faint, theme-matched fill reads as a hover highlight
                   // instead of a second, contradictory bar.
-                  cursor={{ fill: "#334155", opacity: 0.35 }}
+                  cursor={{ fill: "#242424", opacity: 0.35 }}
                   contentStyle={{
-                    background: "#1e293b",
-                    border: "1px solid #334155",
+                    background: "#0f0f0f",
+                    border: "1px solid #242424",
                     color: "#fff",
                     borderRadius: "8px",
                   }}
                 />
-                <Bar dataKey="sales" fill="#14b8a6" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="sales" fill="#f5c518" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </ScrollableChart>
@@ -1525,13 +1525,13 @@ function SalesTrend() {
                 data={trendData}
                 margin={{ top: 5, right: 10, left: 10, bottom: 5 }}
               >
-                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                <XAxis dataKey="date" tick={{ fill: "#94a3b8", fontSize: 12 }} />
-                <YAxis tick={{ fill: "#94a3b8", fontSize: 12 }} />
+                <CartesianGrid strokeDasharray="3 3" stroke="#242424" />
+                <XAxis dataKey="date" tick={{ fill: "#a9a296", fontSize: 12 }} />
+                <YAxis tick={{ fill: "#a9a296", fontSize: 12 }} />
                 <Tooltip
                   contentStyle={{
-                    background: "#1e293b",
-                    border: "1px solid #334155",
+                    background: "#0f0f0f",
+                    border: "1px solid #242424",
                     color: "#fff",
                     borderRadius: "8px",
                   }}
@@ -1876,12 +1876,18 @@ function MarginReport() {
 
           {/* Only when there is something to warn about. A zero here is the
               normal case and a permanent banner reading "0 lines" would train
-              the reader to stop seeing it. */}
+              the reader to stop seeing it.
+
+              Orange, not amber. Amber was the obvious choice for a warning
+              until gold became the accent this whole theme is built on — an
+              amber banner now reads as another highlighted panel rather than as
+              something wrong. Orange is the nearest hue that still says
+              "attention" while the gold says "this is the number". */}
           {(margin?.unpricedLines ?? 0) > 0 && (
-            <Card className="bg-amber-950/40 border-amber-800">
+            <Card className="bg-orange-950/40 border-orange-800">
               <CardContent className="py-3 px-4 flex items-start gap-3">
-                <AlertTriangle className="w-4 h-4 text-amber-400 mt-0.5 shrink-0" />
-                <p className="text-amber-200 text-sm">
+                <AlertTriangle className="w-4 h-4 text-orange-400 mt-0.5 shrink-0" />
+                <p className="text-orange-200 text-sm">
                   <strong>{margin?.unpricedLines}</strong>{" "}
                   {margin?.unpricedLines === 1 ? "line" : "lines"} sold from a
                   batch with no recorded cost price, counted as costing nothing.
@@ -1907,17 +1913,17 @@ function MarginReport() {
                 <ScrollableChart className="min-w-[46rem]">
                   <ResponsiveContainer width="100%" height={260}>
                     <BarChart data={chartData}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                      <XAxis dataKey="name" stroke="#94a3b8" fontSize={12} />
+                      <CartesianGrid strokeDasharray="3 3" stroke="#242424" />
+                      <XAxis dataKey="name" stroke="#a9a296" fontSize={12} />
                       <YAxis
-                        stroke="#94a3b8"
+                        stroke="#a9a296"
                         fontSize={12}
                         tickFormatter={formatAxisINR}
                       />
                       <Tooltip
                         contentStyle={{
-                          background: "#1e293b",
-                          border: "1px solid #334155",
+                          background: "#0f0f0f",
+                          border: "1px solid #242424",
                           borderRadius: 8,
                           color: "#fff",
                         }}
