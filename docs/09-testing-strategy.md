@@ -1,6 +1,6 @@
 # Testing Strategy
 
-**Measured 2026-09-01: 722 backend tests across 29 files, 173 frontend unit tests across 21 files, and a 7-flow browser smoke — all three layers on CI, all passing.**
+**Measured 2026-09-01: 731 backend tests across 29 files, 181 frontend unit tests across 22 files, and a 7-flow browser smoke — all three layers on CI, all passing.**
 
 > Counts here are taken by **running the suites**, not by adding up the tables below. Three documents once carried four different numbers because the tables were maintained by hand and two suites were never added to them.
 >
@@ -50,7 +50,7 @@ Two decisions worth knowing:
 
 ### What exists
 
-**Backend — 722 across 29 files, all passing.** The count is what a run reports, not what passes — recording it the other way would be the drift this section exists to prevent, and for a while the two genuinely differed.
+**Backend — 731 across 29 files, all passing.** The count is what a run reports, not what passes — recording it the other way would be the drift this section exists to prevent, and for a while the two genuinely differed.
 
 Two failures worth remembering, both fixed 2026-08-27:
 
@@ -71,7 +71,7 @@ Two failures worth remembering, both fixed 2026-08-27:
 | `tests/users/users.test.js`                   |    28 | User CRUD, validation, profile safety                                      |
 | `tests/billing/reports.test.js`               |    36 | Daily, trend and GST reports, date boundaries, paid-only filtering — **plus the monthly and yearly reports** added 2026-08-30: day/month boundaries, reconciliation with an unpaid invoice in the period, the zero-fill, both CSV shapes and the role split |
 | `tests/billing/invoice-void.test.js`          |    22 | Stock restoration, credit notes, partial returns, **twelve** concurrent returns, period rule |
-| `tests/inventory/medicines.test.js`           |    19 | Stock totals, POS search, soft delete, validation                          |
+| `tests/inventory/medicines.test.js`           |    28 | Stock totals, POS search, soft delete, validation, and the unit vocabulary: a unit outside the original nine accepted and stored lower-cased, `GET /units` reporting each in use once, dropping a retired medicine's unit, and not reporting another shop's |
 | `tests/reports/csv.test.js`                   |    16 | Escaping, the formula-injection guard, the BOM and CRLF                    |
 | `tests/inventory/masters.test.js`             |    15 | Masters CRUD, delete conflicts, suppliers                                  |
 | `tests/auth/password-change-required.test.js` |    13 | The forced-password-change gate and its two deliberate exemptions          |
@@ -89,7 +89,7 @@ Two failures worth remembering, both fixed 2026-08-27:
 | `tests/billing/invoice-concurrency.test.js`   |     5 | Last-unit races, oversell bursts, gapless serials                          |
 | `tests/api/shop.test.js`                      |     8 | `GET`/`PUT /api/shop`: the caller's own shop only, the ADMIN gate on `PUT`, and read access for every role because printing a bill is a cashier's job (FR-SHOP-07). **Added with multi-tenancy and missing from this table until 2026-08-31** |
 
-**Frontend — 173 across 21 files, all passing.** Measured 2026-09-01 on Node 22.
+**Frontend — 181 across 22 files, all passing.** Measured 2026-09-01 on Node 22.
 The 125 recorded here before that dated from 2026-08-25 and had been overtaken by
 three files the table listed but the total never counted.
 
@@ -117,6 +117,7 @@ three files the table listed but the total never counted.
 | `src/lib/__tests__/amount-in-words.test.ts`    |    14 | The rupees-and-paise words on the printed invoice, in lakhs and crores, computed in paise throughout (FR-BILL-20) |
 | `src/pages/__tests__/Reports.margin.test.tsx` |    15 | The Top Sellers and Profit & Margin tabs (FR-RPT-07, FR-RPT-08): that a tab exists and opening it calls the endpoint — the assertion that would have caught both shipping with no screen — the ADMIN-only gate on margin being narrower than the GST tab's, that a cashier's page never fires a request it would get a 403 from, and the upper-bound warning when a batch had no cost price |
 | `src/pages/__tests__/Reports.prescriptions.test.tsx` |     8 | The Schedule H register tab (FR-MED-12), the fourth endpoint here built before anything called it: that the tab exists and opening it asks the server, that the search box and both date bounds reach the request — and that a lone bound does not, since the server would ignore it while the screen said otherwise — and that a cashier is never offered a tab that would 403 |
+| `src/pages/__tests__/Inventory.units.test.tsx` |     4 | The unit field after it stopped being an enum: that the select offers the units the shop already uses and not only the built-in nine, that a hand-typed one leaves the browser lower-cased, that cancelling restores the previous unit rather than clearing a required field, and that a blank one is refused here rather than sent |
 | `src/pages/__tests__/Reports.void.test.tsx`    |    11 | The void and partial-return dialog: role gating, client-side bounds, the refetch ([FR-BILL-17](./01-product-requirements.md)) |
 | `src/pages/__tests__/Billing.guards.test.tsx`  |     9 | POS stock guards, driven through the rendered page                |
 | `src/pages/__tests__/Signup.test.tsx`          |     8 | The signup page: what it sends, what it refuses, and that it creates a shop rather than joining one (FR-AUTH-12) |
@@ -132,7 +133,7 @@ three files the table listed but the total never counted.
 | `src/lib/__tests__/currency.test.ts`          |     6 | The chart axis formatter, and the sub-₹1,000 case that made every tick on three charts read `₹0k` while the bars had height — plus the negatives a margin chart can produce |
 | `src/lib/__tests__/download.test.ts`           |     4 | Blob download and the `Content-Disposition` filename              |
 | `src/components/__tests__/ProtectedRoute.test.tsx` | 3 | Redirect when unauthenticated                                     |
-| `src/pages/__tests__/Suppliers.test.tsx`       |     2 | Supplier list and form                                            |
+| `src/pages/__tests__/Suppliers.test.tsx`       |     5 | Supplier list and form, plus deleting: the confirm, the request, the re-read, and the server's own 409 sentence reaching the operator rather than a generic failure |
 | `src/hooks/__tests__/query-cancellation.test.tsx` |  2 | In-flight queries cancel on unmount                               |
 
 **Browser — 7 flows**, `e2e/smoke.spec.ts`. Chromium runs all seven; Firefox runs

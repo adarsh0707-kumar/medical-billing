@@ -610,11 +610,27 @@ Full record including category, manufacturer and **all** batches (each with its 
 | `name`                           | required, ≥ 2 chars                                                              |
 | `genericName`, `hsnCode`       | optional strings                                                                  |
 | `categoryId`, `manufacturerId` | required, must exist                                                              |
-| `unit`                           | one of`tablet, capsule, syrup, injection, cream, drops, powder, inhaler, other` |
+| `unit`                           | required. 1–20 chars, must start with a letter, then letters, digits, spaces, `.` `-` `/`. **Lower-cased and trimmed on the way in.** Nine values were enumerated here until 2026-09-01 — see below |
 | `gstPercent`                     | number, one of`0, 5, 12, 18`                                                    |
 | `isScheduledH`                   | boolean, default`false`                                                         |
 
 **201** with the created medicine including its category and manufacturer. Unknown fields are silently stripped by Zod.
+
+> **`unit` stopped being an enum on 2026-09-01.** It permitted exactly nine values — tablet, capsule, syrup, injection, cream, drops, powder, inhaler, other — so a shop selling vials, sachets, strips or tubes had to file them under `other`, and `other` is then what the customer read in the **PACK** column of their invoice. The list was never going to be complete, and a closed enum makes every omission a `400` the operator cannot act on.
+>
+> The server stopped policing membership and kept policing shape: short, starting with a letter, and printable. It is **lower-cased** on the way in so `Tablet` and `tablet` cannot become two entries in the vocabulary below.
+
+#### `GET /api/medicines/units` — any authenticated role
+
+Added 2026-09-01. Every dispensing unit this shop actually uses, distinct and sorted:
+
+```json
+{ "success": true, "data": ["capsule", "sachet", "tablet", "vial"] }
+```
+
+This is what makes "add a unit" persist rather than being a one-off: the medicine form offers a fixed list of suggestions **plus** whatever comes back here, so a unit typed once is offered to the next medicine. Retired medicines (`isActive: false`) are excluded, so a unit whose only product was withdrawn stops being suggested.
+
+There is no `Unit` table behind it. A unit is one short string on a medicine, and a master table would be a migration, a CRUD screen and a referential-integrity question in exchange for nothing the catalogue does not already know.
 
 #### `PUT /api/medicines/:id` — ADMIN, PHARMACIST
 

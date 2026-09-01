@@ -33,6 +33,24 @@ The printed GST invoice is untouched: it paints with `text-black` on default pap
 
 ### Fixed
 
+#### The collapsed sidebar had a scrollbar lying across it
+
+Reported from a screenshot: a horizontal scrollbar sat over the bottom of the 64px rail, pushing Logout below it.
+
+Setting only `overflow-y` to `auto` leaves the other axis computing to `auto` as well — and the rail's hover labels are positioned at `left-full`, outside the rail. So the nav scrolled sideways to reveal labels that were never meant to be inside it.
+
+The axis is clipped now, which means an absolutely-positioned label can no longer escape: the collapsed rail uses the browser's own `title` tooltip instead. Fewer moving parts, and it cannot come back.
+
+#### Tab strips ran off the edge of the screen
+
+Reports reached ten tabs and the last two — Sales Trend and Stock Alerts — ran off the right of a laptop screen with nothing on screen to say they existed. That is the same defect the phone dropdown was built to fix, returning at a wider breakpoint as the strip grew.
+
+The desktop strip scrolls now, with arrows on whichever side has something to reach, and the selected tab is scrolled into view when it changes from elsewhere. A strip that fits draws no arrows and looks exactly as it did.
+
+#### Gold text on gold grounds
+
+Eight places the theme change missed, where text that the palette remap turned gold sits on a saturated gold ground: the selected sidebar item, the sidebar logo, the sign-in and sign-up logos, the batch filter's active button, the void dialog's confirm button, the POS's "Default" batch badge, and a cashier's avatar in User Management. All black on gold now, like the thirty sites the retheme did catch. The two avatars beside that last one stay white, because red and blue are not the accent.
+
 #### A printed invoice left a third of a page blank before its totals
 
 Reported from a real bill: a three-line invoice printed five empty ruled rows between the last medicine and the totals block, which reads as though the till failed to print the rest of the order.
@@ -52,6 +70,22 @@ The same formatter also mangled negatives, which the margin report genuinely pro
 Six tests, the first of which is the reported case.
 
 ### Added
+
+#### Units are the shop's own vocabulary, not a list of nine
+
+`unit` on a medicine was a Zod enum of nine values, so a pharmacy selling vials, sachets, strips or tubes had to file them under **other** — and `other` is what the customer then read in the PACK column of their printed invoice. The requirement that named those nine (FR-MED-07) was making the invoice less true, so it is marked superseded rather than met.
+
+The server stopped policing membership and kept policing shape: 1–20 characters, starting with a letter, lower-cased on the way in so `Tablet` and `tablet` cannot become two entries. `GET /api/medicines/units` reports the distinct units a shop actually uses, and the medicine form offers those alongside the original nine — which is what makes a unit typed once stick rather than vanishing after the save. A retired medicine's unit drops off the list.
+
+No `Unit` table: a unit is one short string on a medicine, and a master table would have been a migration, a CRUD screen and a referential-integrity question in exchange for nothing the catalogue does not already know.
+
+#### Delete, where only Edit existed
+
+`DELETE /api/suppliers/:id` has existed since the resource did and nothing called it, so a distributor entered by mistake stayed in the dropdown of every batch form for good. Both supplier screens — the Inventory tab and the Suppliers page — now offer it, behind a confirm.
+
+The failure message is **the server's own sentence**, not a guess. A supplier with stock against it comes back `409` saying exactly that, and a non-admin `403`; the previous convention here was a hard-coded "cannot delete — medicines exist", which is one of those two dressed as the other.
+
+Customers get the same treatment with different wording, because the endpoint does something different: it **erases the personal details and keeps the invoices**, which are tax records. The confirm says so and the icon is a struck-through person rather than a bin — calling it "delete customer" would promise something the server deliberately does not do.
 
 #### The Schedule H register can be produced (FR-MED-12)
 

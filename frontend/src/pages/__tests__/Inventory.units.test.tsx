@@ -97,7 +97,7 @@ describe("Inventory — the unit field", () => {
 
     await user.click(screen.getByRole("combobox", { name: /unit/i }));
     await user.click(await screen.findByRole("option", { name: /add a unit/i }));
-    await user.type(await screen.findByLabelText(/new unit/i), "Sachet");
+    await user.type(await screen.findByLabelText("New unit"), "Sachet");
 
     await user.click(screen.getByRole("button", { name: /^add medicine$/i }));
 
@@ -112,7 +112,7 @@ describe("Inventory — the unit field", () => {
 
     await user.click(screen.getByRole("combobox", { name: /unit/i }));
     await user.click(await screen.findByRole("option", { name: /add a unit/i }));
-    await user.type(await screen.findByLabelText(/new unit/i), "sach");
+    await user.type(await screen.findByLabelText("New unit"), "sach");
     await user.click(screen.getByRole("button", { name: /cancel new unit/i }));
 
     // Not left empty: the form opened on "tablet" and cancelling is not a
@@ -127,7 +127,7 @@ describe("Inventory — the unit field", () => {
 
     await user.click(screen.getByRole("combobox", { name: /unit/i }));
     await user.click(await screen.findByRole("option", { name: /add a unit/i }));
-    await user.type(await screen.findByLabelText(/new unit/i), "   ");
+    await user.type(await screen.findByLabelText("New unit"), "   ");
 
     await user.click(screen.getByRole("button", { name: /^add medicine$/i }));
 

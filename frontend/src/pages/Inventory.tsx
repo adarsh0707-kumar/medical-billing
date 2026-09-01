@@ -1610,7 +1610,12 @@ function SuppliersTab() {
                     <div>
                       <p className="text-white font-medium text-sm">{s.name}</p>
                       {s.contactName && (
-                        <p className="text-slate-500 text-xs">
+                        // `text-slate-400`, matching the Suppliers page and
+                        // the contact lines below it. At -500 this was the
+                        // hint level — one step dimmer than the phone number
+                        // under it, for no reason but that the two cards were
+                        // written at different times.
+                        <p className="text-slate-400 text-xs">
                           {s.contactName}
                         </p>
                       )}

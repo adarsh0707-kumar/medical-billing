@@ -28,7 +28,7 @@ Domain and system vocabulary used across this documentation and in the code.
 
 **Supplier** — The distributor or stockist a batch is purchased from. Carries a GSTIN. Every batch records its supplier, which is what makes a recall traceable back to source.
 
-**Unit** — The dispensing form: tablet, capsule, syrup, injection, cream, drops, powder, inhaler, other. Constrained by the Zod validator, not by the database.
+**Unit** — The dispensing form — tablet, capsule, vial, sachet, whatever the shop dispenses in. Nine values were enumerated in the Zod validator until 2026-09-01; it is now a bounded free-text word (1–20 chars, starts with a letter, stored lower case), still validated by Zod rather than by the database. `GET /api/medicines/units` lists the ones a shop uses. Distinct from **pack size**, the label off the carton.
 
 **Walk-in** — A sale with no customer record attached. `Invoice.customerId` is nullable precisely to support this.
 
