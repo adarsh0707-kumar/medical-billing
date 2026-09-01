@@ -18,17 +18,31 @@ const medicineSchema = z.object({
   // Printed on the invoice as PACK. Free text — it is a label off the
   // carton ("1*15ML"), not a quantity, so no shape is imposed on it.
   packSize: z.string().max(30, "Pack size is too long").optional(),
-  unit: z.enum([
-    "tablet",
-    "capsule",
-    "syrup",
-    "injection",
-    "cream",
-    "drops",
-    "powder",
-    "inhaler",
-    "other",
-  ]),
+  /**
+   * The dispensing unit. Nine values were hard-coded here as an enum, so a
+   * shop that sells vials, sachets, strips or tubes had to file them under
+   * "other" — and "other" on a printed invoice tells a customer nothing.
+   *
+   * A bounded string rather than a longer list: the list was never going to be
+   * complete, and a closed enum makes every omission a 400 the operator cannot
+   * act on. What the server still guarantees is that a unit is short and is
+   * actually a word — long enough for "sachet", too short to be a sentence,
+   * and printable in the invoice's PACK column.
+   *
+   * Lower-cased on the way in, so "Tablet" and "tablet" cannot become two
+   * entries in the units list the form offers back. The nine originals are
+   * already lower case, so nothing existing moves.
+   */
+  unit: z
+    .string()
+    .trim()
+    .min(1, "Unit is required")
+    .max(20, "Unit is too long — 20 characters at most")
+    .regex(
+      /^[a-zA-Z][a-zA-Z0-9 .\-/]*$/,
+      "Unit must start with a letter and use only letters, digits, spaces, . - or /",
+    )
+    .transform((v) => v.toLowerCase()),
   gstPercent: z
     .number()
     .refine((v) => [0, 5, 12, 18].includes(v), "GST must be 0, 5, 12 or 18"),

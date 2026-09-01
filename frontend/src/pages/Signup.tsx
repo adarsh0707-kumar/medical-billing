@@ -83,7 +83,7 @@ export default function Signup() {
       <div className="w-full max-w-md relative z-10">
         <div className="flex flex-col items-center mb-8">
           <div className="bg-teal-500 p-3 rounded-2xl mb-3 shadow-lg shadow-teal-500/30">
-            <Pill className="w-8 h-8 text-white" />
+            <Pill className="w-8 h-8 text-black" />
           </div>
           <h1 className="text-2xl font-bold text-white tracking-tight">
             MedBill Pro

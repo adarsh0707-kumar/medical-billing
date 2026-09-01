@@ -13,6 +13,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Edit2,
+  UserX,
 } from "lucide-react";
 import { toast } from "sonner";
 import api from "@/lib/api";
@@ -334,6 +335,37 @@ export default function Customers() {
     setShowForm(true);
   };
 
+  /**
+   * Erasure, not deletion — and the wording says so, because the two are
+   * different acts and the operator is agreeing to one of them.
+   *
+   * `DELETE /api/customers/:id` blanks the personal details and leaves the
+   * invoices exactly as they were: they are tax records the shop is required
+   * to keep, and they still have to reconcile. Calling this "delete customer"
+   * in the confirm would promise something the server deliberately does not
+   * do.
+   */
+  const handleErase = async (c: Customer) => {
+    if (
+      !confirm(
+        `Erase ${c.name}'s personal details?\n\n` +
+          "Their name, phone, email and address are cleared and cannot be " +
+          "recovered. Their invoices are kept — they are tax records.",
+      )
+    )
+      return;
+    try {
+      const res = await api.delete(`/api/customers/${c.id}`);
+      // The server's own sentence: it distinguishes an erasure done now from
+      // one that had already happened, and names the date in that case.
+      toast.success(res.data?.message ?? "Customer details erased");
+      queryClient.invalidateQueries({ queryKey: ["customers"] });
+    } catch (err) {
+      const e = err as { response?: { data?: { message?: string } } };
+      toast.error(e.response?.data?.message || "Failed to erase the customer");
+    }
+  };
+
   const openEdit = (c: Customer) => {
     setEditing(c);
     setForm({
@@ -507,6 +539,17 @@ export default function Customers() {
                       className="p-2 sm:p-1.5 rounded-md text-slate-400 hover:text-blue-400 hover:bg-slate-700 transition-colors"
                     >
                       <Eye className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
+                    </button>
+                    {/* A struck-through person rather than a bin: this clears
+                        the personal details and keeps the invoices, and the
+                        icon should not promise a deletion that does not
+                        happen. */}
+                    <button
+                      aria-label={`Erase ${c.name}'s personal details`}
+                      onClick={() => handleErase(c)}
+                      className="p-2 sm:p-1.5 rounded-md text-slate-400 hover:text-red-400 hover:bg-slate-700 transition-colors"
+                    >
+                      <UserX className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
                     </button>
                   </div>
                 </div>

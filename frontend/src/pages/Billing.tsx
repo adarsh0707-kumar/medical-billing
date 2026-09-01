@@ -835,7 +835,7 @@ export default function Billing() {
                       {b.batchNumber}
                     </p>
                     {idx === 0 && (
-                      <Badge className="text-xs px-1.5 py-0 bg-teal-600">
+                      <Badge className="text-xs px-1.5 py-0 bg-teal-600 text-black">
                         Default
                       </Badge>
                     )}

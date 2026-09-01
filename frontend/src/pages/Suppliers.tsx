@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  Truck, Plus, Search, Edit2, Phone,
+  Truck, Plus, Search, Edit2, Trash2, Phone,
   Mail, MapPin, Package, Loader2, Building2
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -81,6 +81,21 @@ export default function Suppliers() {
     setEditing(null)
     setForm({ name: '', contactName: '', phone: '', email: '', gstNumber: '', address: '' })
     setShowForm(true)
+  }
+
+  const handleDelete = async (s: Supplier) => {
+    if (!confirm(`Delete ${s.name}?`)) return
+    try {
+      await api.delete(`/api/suppliers/${s.id}`)
+      toast.success('Supplier deleted')
+      queryClient.invalidateQueries({ queryKey: ['suppliers'] })
+    } catch (err) {
+      // The server distinguishes "still has stock against it" (409) from
+      // "not an administrator" (403); repeating its sentence keeps those two
+      // from arriving as one vague failure.
+      const e = err as { response?: { data?: { message?: string } } }
+      toast.error(e.response?.data?.message || 'Failed to delete the supplier')
+    }
   }
 
   const openEdit = (s: Supplier) => {
@@ -187,13 +202,22 @@ export default function Suppliers() {
                   </div>
                   {/* See Customers.tsx: the hover reveal only applies where a
                       pointer exists, or a touch device can never reach Edit. */}
-                  <button
-                    onClick={() => openEdit(s)}
-                    aria-label={`Edit ${s.name}`}
-                    className="shrink-0 p-2 sm:p-1.5 rounded-md text-slate-400 hover:text-teal-400 hover:bg-slate-700 transition-all [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100"
-                  >
-                    <Edit2 className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
-                  </button>
+                  <div className="shrink-0 flex items-center gap-1 transition-all [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100">
+                    <button
+                      onClick={() => openEdit(s)}
+                      aria-label={`Edit ${s.name}`}
+                      className="p-2 sm:p-1.5 rounded-md text-slate-400 hover:text-teal-400 hover:bg-slate-700 transition-colors"
+                    >
+                      <Edit2 className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => handleDelete(s)}
+                      aria-label={`Delete ${s.name}`}
+                      className="p-2 sm:p-1.5 rounded-md text-slate-400 hover:text-red-400 hover:bg-slate-700 transition-colors"
+                    >
+                      <Trash2 className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
+                    </button>
+                  </div>
                 </div>
 
                 <Separator className="bg-slate-700 mb-3" />

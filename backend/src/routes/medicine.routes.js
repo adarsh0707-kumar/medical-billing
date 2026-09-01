@@ -30,6 +30,10 @@ router.get(
   validateQuery(medicineSearchQuerySchema),
   medicineCtrl.search,
 ); // the POS lookup
+// Also literal-before-parameterised. Any authenticated role, like the medicine
+// list itself: this is the catalogue's own vocabulary, and the form that reads
+// it is open to every role that can add a medicine.
+router.get("/units", medicineCtrl.listUnits);
 router.get("/", validateQuery(medicineListQuerySchema), medicineCtrl.getAll);
 router.get("/:id", medicineCtrl.getOne);
 router.post(

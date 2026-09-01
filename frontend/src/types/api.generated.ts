@@ -121,6 +121,9 @@ export type DailySummaryQuery = { date?: string | Date | undefined };
 /** `expiringQuerySchema` — `backend/src/validators/inventory.validator.js` */
 export type ExpiringQuery = { days?: number | string | undefined };
 
+/** `forgotPasswordSchema` — `backend/src/validators/user.validator.js` */
+export type ForgotPasswordInput = { email: string };
+
 /** `gstReportQuerySchema` — `backend/src/validators/billing.validator.js` */
 export type GstReportQuery = { month: number | string; year: number | string };
 
@@ -146,16 +149,7 @@ export type MedicineInput = {
   name: string;
   categoryId: string;
   manufacturerId: string;
-  unit:
-    | "tablet"
-    | "capsule"
-    | "syrup"
-    | "injection"
-    | "cream"
-    | "drops"
-    | "powder"
-    | "inhaler"
-    | "other";
+  unit: string;
   gstPercent: number;
   genericName?: string | undefined;
   hsnCode?: string | undefined;
@@ -189,6 +183,18 @@ export type PrescriptionInput = {
   notes?: string | undefined;
 };
 
+/** `prescriptionRegisterQuerySchema` — `backend/src/validators/billing.validator.js` */
+export type PrescriptionRegisterQuery = {
+  page?: number | string | undefined;
+  limit?: number | string | undefined;
+  search?: string | undefined;
+  startDate?: string | Date | undefined;
+  endDate?: string | Date | undefined;
+};
+
+/** `resetPasswordSchema` — `backend/src/validators/user.validator.js` */
+export type ResetPasswordInput = { token: string; newPassword: string };
+
 /** `signupSchema` — `backend/src/validators/user.validator.js` */
 export type SignupInput = {
   shopName: string;
@@ -209,6 +215,13 @@ export type SupplierInput = {
 
 /** `supplierListQuerySchema` — `backend/src/validators/inventory.validator.js` */
 export type SupplierListQuery = { search?: string | undefined };
+
+/** `topSellersQuerySchema` — `backend/src/validators/billing.validator.js` */
+export type TopSellersQuery = {
+  month: number | string;
+  year: number | string;
+  limit?: number | string | undefined;
+};
 
 /** `trendQuerySchema` — `backend/src/validators/billing.validator.js` */
 export type TrendQuery = { days?: number | string | undefined };

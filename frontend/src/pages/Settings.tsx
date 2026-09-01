@@ -754,12 +754,15 @@ function UsersTab() {
                   <div className="flex items-center gap-3">
                     <div
                       className={`w-10 h-10 rounded-full flex items-center justify-center
-                      text-white font-bold ${
+                      font-bold ${
                         u.role === "ADMIN"
-                          ? "bg-red-600"
+                          ? "bg-red-600 text-white"
                           : u.role === "PHARMACIST"
-                            ? "bg-blue-600"
-                            : "bg-teal-600"
+                            ? "bg-blue-600 text-white"
+                            // Gold ground, so the initial is black here and
+                            // white on the other two. `text-white` is gold
+                            // under this theme and would have vanished.
+                            : "bg-teal-600 text-black"
                       }`}
                     >
                       {u.name.charAt(0).toUpperCase()}

@@ -1,7 +1,15 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import request from "supertest";
 import prisma from "../../src/config/db.js";
-import { buildApp, signIn, makeMasters, makeMedicine, makeBatch, makeSellable } from "../helpers/factory.js";
+import {
+  buildApp,
+  signIn,
+  makeMasters,
+  makeMedicine,
+  makeBatch,
+  makeSellable,
+  makeShop,
+} from "../helpers/factory.js";
 
 let app;
 beforeAll(() => {
@@ -205,7 +213,9 @@ describe("medicine writes", () => {
   });
 
   it.each([
-    ["an unlisted unit", { unit: "bottle" }],
+    ["an empty unit", { unit: "   " }],
+    ["a unit that is a sentence", { unit: "one tablet taken twice a day" }],
+    ["a unit that is not a word", { unit: "12" }],
     ["an unlisted GST rate", { gstPercent: 7 }],
     ["a one-character name", { name: "P" }],
     ["no category", { categoryId: "" }],
@@ -219,6 +229,113 @@ describe("medicine writes", () => {
       .send({ ...validBody(masters), ...override });
 
     expect(res.status).toBe(400);
+  });
+
+  /**
+   * `unit` was a nine-value enum until 2026-09-01, so a shop selling vials or
+   * sachets had to file them under "other" — which is what a customer then
+   * read in the PACK column of their invoice. It is a bounded word now: the
+   * server stopped policing membership and kept policing shape.
+   */
+  describe("units outside the original nine", () => {
+    it("accepts one", async () => {
+      const { token } = await signIn(app);
+      const masters = await makeMasters();
+
+      const res = await request(app)
+        .post("/api/inventory/medicines")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ ...validBody(masters), unit: "vial" });
+
+      expect(res.status).toBe(201);
+      expect(res.body.data.unit).toBe("vial");
+    });
+
+    // Or the units list offers the same unit twice and the shop has to guess
+    // which of them its other medicines used.
+    it("stores it lower-cased and trimmed", async () => {
+      const { token } = await signIn(app);
+      const masters = await makeMasters();
+
+      const res = await request(app)
+        .post("/api/inventory/medicines")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ ...validBody(masters), unit: "  Sachet " });
+
+      expect(res.status).toBe(201);
+      expect(res.body.data.unit).toBe("sachet");
+    });
+  });
+
+  describe("GET /api/medicines/units", () => {
+    const units = (token) =>
+      request(app)
+        .get("/api/medicines/units")
+        .set("Authorization", `Bearer ${token}`);
+
+    it("reports the units this shop actually uses, once each", async () => {
+      const { token } = await signIn(app);
+      const masters = await makeMasters();
+      for (const unit of ["vial", "vial", "sachet"]) {
+        await request(app)
+          .post("/api/inventory/medicines")
+          .set("Authorization", `Bearer ${token}`)
+          .send({
+            ...validBody(masters),
+            name: `Medicine ${unit}-${Math.random()}`,
+            unit,
+          });
+      }
+
+      const res = await units(token);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data).toEqual(["sachet", "vial"]);
+    });
+
+    it("is empty for a shop with no catalogue yet", async () => {
+      const { token } = await signIn(app);
+      expect((await units(token)).body.data).toEqual([]);
+    });
+
+    // A unit whose only medicine was withdrawn should stop being suggested.
+    it("drops a retired medicine's unit", async () => {
+      const { token } = await signIn(app);
+      const masters = await makeMasters();
+      const created = await request(app)
+        .post("/api/inventory/medicines")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ ...validBody(masters), unit: "inhaler" });
+
+      expect((await units(token)).body.data).toEqual(["inhaler"]);
+
+      await request(app)
+        .delete(`/api/inventory/medicines/${created.body.data.id}`)
+        .set("Authorization", `Bearer ${token}`);
+
+      expect((await units(token)).body.data).toEqual([]);
+    });
+
+    it("does not report another shop's vocabulary", async () => {
+      const { token } = await signIn(app);
+      const masters = await makeMasters();
+      await request(app)
+        .post("/api/inventory/medicines")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ ...validBody(masters), unit: "ampoule" });
+
+      const other = await makeShop();
+      const { token: theirs } = await signIn(app, "ADMIN", {
+        shopId: other.id,
+        email: "units-other-shop@test.local",
+      });
+
+      expect((await units(theirs)).body.data).toEqual([]);
+    });
+
+    it("refuses an unauthenticated caller", async () => {
+      expect((await request(app).get("/api/medicines/units")).status).toBe(401);
+    });
   });
 
   // Soft delete: invoice history must survive the product being retired.

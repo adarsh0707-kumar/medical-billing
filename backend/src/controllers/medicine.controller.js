@@ -109,6 +109,34 @@ const getOne = async (req, res, next) => {
   }
 };
 
+/**
+ * Every dispensing unit this shop actually uses.
+ *
+ * The medicine form offers a fixed list of suggestions plus whatever is
+ * already in use here, which is what makes "add a unit" persist: typing
+ * `vial` once stores it on a medicine, and this is how the next medicine's
+ * form comes to offer it. No `Unit` table for that — a unit is one short
+ * string on a medicine, and a master table would be a migration, a CRUD
+ * screen and a referential-integrity question in exchange for nothing the
+ * catalogue does not already know.
+ *
+ * Retired medicines are excluded — `isActive: false` is this catalogue's soft
+ * delete — so a unit whose only medicine was withdrawn stops being suggested.
+ */
+const listUnits = async (req, res, next) => {
+  try {
+    const rows = await prisma.medicine.findMany({
+      where: { shopId: req.user.shopId, isActive: true },
+      select: { unit: true },
+      distinct: ["unit"],
+      orderBy: { unit: "asc" },
+    });
+    res.json({ success: true, data: rows.map((r) => r.unit) });
+  } catch (err) {
+    next(err);
+  }
+};
+
 // Search for billing POS — fast lookup
 const search = async (req, res, next) => {
   try {
@@ -250,4 +278,12 @@ const remove = async (req, res, next) => {
   }
 };
 
-module.exports = { getAll, getOne, search, create, update, remove };
+module.exports = {
+  getAll,
+  getOne,
+  search,
+  listUnits,
+  create,
+  update,
+  remove,
+};

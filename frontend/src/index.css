@@ -279,3 +279,23 @@ input.bg-slate-700:-webkit-autofill:active {
   caret-color: var(--color-slate-100);
   transition: background-color 9999s ease-in-out 0s;
 }
+
+/**
+ * A scroll container with no visible scrollbar.
+ *
+ * For the tab strip, whose own arrows say what can be scrolled: a scrollbar
+ * drawn under the tabs reads as belonging to the page rather than to the
+ * control, which is exactly the confusion the collapsed sidebar's stray
+ * horizontal bar caused.
+ *
+ * Firefox and the WebKit pseudo-element both need saying; neither covers the
+ * other. Scrolling itself is untouched — wheel, trackpad, keyboard and touch
+ * all still work, so hiding the bar costs no reachability.
+ */
+@utility scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}

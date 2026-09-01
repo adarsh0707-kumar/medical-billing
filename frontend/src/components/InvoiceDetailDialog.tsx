@@ -492,7 +492,7 @@ function InvoiceDetailBody({
               className={
                 confirmingFullVoid
                   ? "bg-red-600 hover:bg-red-500 text-white"
-                  : "bg-teal-600 hover:bg-teal-500 text-white"
+                  : "bg-teal-600 hover:bg-teal-500 text-black"
               }
             >
               {submitting && (

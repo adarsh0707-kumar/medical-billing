@@ -1,4 +1,5 @@
-import { ChevronDown } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
@@ -36,6 +37,13 @@ interface TabSwitcherProps {
  * Both forms render, one hidden per breakpoint, so `TabsTrigger` stays inside
  * `TabsList` where Radix requires it. The pages hold the value, which is why
  * they moved from `defaultValue` to `value` + `onValueChange`.
+ *
+ * **The desktop strip scrolls, with arrows.** Reports reached ten tabs and the
+ * last of them — Sales Trend and Stock Alerts — ran off the right of a laptop
+ * screen with nothing to say they were there: the same defect the phone
+ * dropdown was built to fix, returning at a wider breakpoint as the strip grew.
+ * The arrows appear only on the side there is something to scroll to, so a
+ * strip that fits still looks exactly as it did.
  */
 export function TabSwitcher({
   tabs,
@@ -45,6 +53,57 @@ export function TabSwitcher({
 }: TabSwitcherProps) {
   const active = tabs.find((t) => t.value === value) ?? tabs[0];
   const ActiveIcon = active.icon;
+
+  const stripRef = useRef<HTMLDivElement>(null);
+  const [overflow, setOverflow] = useState({ left: false, right: false });
+
+  /** Which arrows to draw: is there anything off either edge right now? */
+  const measure = useCallback(() => {
+    const el = stripRef.current;
+    if (!el) return;
+    // A pixel of slack. Sub-pixel layout leaves scrollWidth a hair above
+    // clientWidth on strips that visibly fit, and an arrow that scrolls
+    // nothing is worse than no arrow.
+    const slack = 1;
+    setOverflow({
+      left: el.scrollLeft > slack,
+      right: el.scrollLeft + el.clientWidth < el.scrollWidth - slack,
+    });
+  }, []);
+
+  useEffect(() => {
+    const el = stripRef.current;
+    if (!el) return;
+    measure();
+    // Re-measured on resize *and* on tab-set changes — Reports adds or removes
+    // tabs with the viewer's role, so the strip can start fitting and stop.
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [measure, tabs.length]);
+
+  /**
+   * Keep the selected tab in view when it is chosen from somewhere other than
+   * a click on itself — the phone dropdown, or a page setting the tab.
+   */
+  useEffect(() => {
+    const el = stripRef.current;
+    const selected = el?.querySelector<HTMLElement>('[data-state="active"]');
+    selected?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [value]);
+
+  const scrollBy = (direction: 1 | -1) => {
+    const el = stripRef.current;
+    if (!el) return;
+    // Most of a screenful, not all of it: a tab or two stays visible across
+    // the jump so the reader keeps their place.
+    el.scrollBy({ left: direction * el.clientWidth * 0.8, behavior: "smooth" });
+  };
+
+  const arrowCls =
+    "absolute top-1/2 -translate-y-1/2 z-10 h-8 w-8 grid place-items-center " +
+    "rounded-full bg-slate-800 border border-slate-600 text-slate-300 " +
+    "hover:bg-slate-700 hover:text-white shadow-lg shadow-black/60";
 
   return (
     <>
@@ -67,17 +126,50 @@ export function TabSwitcher({
       </div>
 
       {/* Desktop */}
-      <TabsList className="hidden sm:flex bg-slate-800 border border-slate-700">
-        {tabs.map(({ value: v, label, icon: Icon }) => (
-          <TabsTrigger
-            key={v}
-            value={v}
-            className="data-[state=active]:bg-teal-600 data-[state=active]:text-black text-slate-400"
+      <div className="hidden sm:block relative">
+        {overflow.left && (
+          <button
+            type="button"
+            onClick={() => scrollBy(-1)}
+            aria-label="Scroll tabs left"
+            className={cn(arrowCls, "left-0")}
           >
-            <Icon className="w-4 h-4 mr-2" /> {label}
-          </TabsTrigger>
-        ))}
-      </TabsList>
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+        )}
+
+        <div
+          ref={stripRef}
+          onScroll={measure}
+          // `scrollbar-none` rather than a visible bar: the arrows say what
+          // can be scrolled, and a scrollbar under a tab strip reads as part
+          // of the page rather than as part of the control.
+          className="overflow-x-auto scrollbar-none"
+        >
+          <TabsList className="flex w-max bg-slate-800 border border-slate-700">
+            {tabs.map(({ value: v, label, icon: Icon }) => (
+              <TabsTrigger
+                key={v}
+                value={v}
+                className="shrink-0 data-[state=active]:bg-teal-600 data-[state=active]:text-black text-slate-400"
+              >
+                <Icon className="w-4 h-4 mr-2" /> {label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </div>
+
+        {overflow.right && (
+          <button
+            type="button"
+            onClick={() => scrollBy(1)}
+            aria-label="Scroll tabs right"
+            className={cn(arrowCls, "right-0")}
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        )}
+      </div>
     </>
   );
 }

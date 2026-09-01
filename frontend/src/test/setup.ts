@@ -24,3 +24,33 @@ import { configure } from "@testing-library/react";
  * `vitest.config.ts`, raised for the same reason and documented there.
  */
 configure({ asyncUtilTimeout: 5000 });
+
+/**
+ * jsdom implements no `ResizeObserver`, and every browser does.
+ *
+ * `TabSwitcher` observes its own strip to decide whether to draw the scroll
+ * arrows. Without a stub that constructor throws inside an effect, which React
+ * reports as a render failure in every test that mounts a page with tabs —
+ * 50 of them, none of which were about tabs.
+ *
+ * A stub that never fires is the honest shape here: jsdom does no layout, so
+ * every element measures zero and a real implementation would have nothing
+ * truthful to report anyway. Whether the arrows appear at the right moment is
+ * a question about layout, which belongs to the Playwright flows.
+ */
+class ResizeObserverStub {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+globalThis.ResizeObserver ??= ResizeObserverStub as unknown as typeof ResizeObserver;
+
+/**
+ * jsdom implements no scrolling either — `Element.prototype.scrollIntoView` is
+ * simply absent, so calling it is a TypeError rather than a no-op.
+ *
+ * `TabSwitcher` scrolls the selected tab into view when the value changes from
+ * outside the strip. Same reasoning as the observer above: there is no layout
+ * here to scroll, and where the strip ends up is a browser question.
+ */
+Element.prototype.scrollIntoView ??= function scrollIntoViewStub() {};

@@ -61,3 +61,22 @@ export const useSuppliers = <T extends Master = Master>() =>
     staleTime: MASTER_STALE_TIME,
     meta: { errorMessage: "Failed to fetch suppliers" },
   });
+
+/**
+ * The dispensing units this shop already uses.
+ *
+ * Not a master table — a unit is one short string on a medicine — but it
+ * behaves like one from the form's side: it is read wherever a medicine is
+ * edited and invalidated when one is saved, which is how a unit typed once
+ * becomes a suggestion afterwards.
+ */
+export const useUnits = () =>
+  useQuery<string[]>({
+    queryKey: ["medicine-units"],
+    queryFn: async ({ signal }) => {
+      const res = await api.get("/api/medicines/units", { signal });
+      return res.data.data;
+    },
+    staleTime: MASTER_STALE_TIME,
+    meta: { errorMessage: "Failed to fetch units" },
+  });

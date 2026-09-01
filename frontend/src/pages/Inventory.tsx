@@ -1,6 +1,11 @@
-import { useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCategories, useManufacturers, useSuppliers } from "@/hooks/useMasters";
+import {
+  useCategories,
+  useManufacturers,
+  useSuppliers,
+  useUnits,
+} from "@/hooks/useMasters";
 import { useDebounced } from "@/hooks/useDebounced";
 import {
   Package,
@@ -107,7 +112,17 @@ const formatINR = (v: number) =>
 const getDaysLeft = (date: string) =>
   Math.ceil((new Date(date).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
 
-const UNITS = [
+/**
+ * Suggestions, not the permitted set.
+ *
+ * These nine were an enum on the server until 2026-09-01, so a shop selling
+ * vials, sachets, strips or tubes had to file them under "other" — and "other"
+ * in the PACK column of a printed invoice tells a customer nothing. The server
+ * now takes any short word and `GET /api/medicines/units` reports back the ones
+ * this shop actually uses, which is what makes a unit typed once stay on the
+ * list afterwards.
+ */
+const DEFAULT_UNITS = [
   "tablet",
   "capsule",
   "syrup",
@@ -118,6 +133,14 @@ const UNITS = [
   "inhaler",
   "other",
 ];
+
+/**
+ * The value of the "add a unit" row. A sentinel rather than an empty string,
+ * because Radix treats "" as "nothing selected" and the row has to be
+ * selectable. The dot cannot collide with a real unit: the server requires one
+ * to start with a letter.
+ */
+const ADD_UNIT = ".add";
 const GST_RATES = [0, 5, 12, 18];
 
 // ─── Reusable Form Field ────────────────────────────────
@@ -164,8 +187,30 @@ function MedicinesTab() {
     isScheduledH: false,
   });
   const [submitting, setSubmitting] = useState(false);
+  // The free-text unit box, open only while a new one is being typed.
+  const [addingUnit, setAddingUnit] = useState(false);
+  // What the unit was before that box opened, so cancelling restores it
+  // rather than leaving the field empty. A ref, not state: nothing renders
+  // from it, and it must not cause one.
+  const unitBeforeAdd = useRef("tablet");
 
   const queryClient = useQueryClient();
+
+  const { data: usedUnits = [] } = useUnits();
+
+  /**
+   * The suggestions, plus every unit this shop already uses, plus whatever is
+   * on the medicine being edited — that last one matters because a medicine
+   * saved with a unit that has since gone out of use would otherwise open
+   * with an empty Unit box and lose it on the next save.
+   */
+  const unitOptions = useMemo(
+    () =>
+      Array.from(
+        new Set([...DEFAULT_UNITS, ...usedUnits, form.unit].filter(Boolean)),
+      ).sort(),
+    [usedUnits, form.unit],
+  );
 
   const { data, isLoading: loading } = useQuery({
     queryKey: ["medicines", page, search, categoryFilter],
@@ -203,6 +248,8 @@ function MedicinesTab() {
 
   const openAdd = () => {
     setEditing(null);
+    setAddingUnit(false);
+    unitBeforeAdd.current = "tablet";
     setForm({
       name: "",
       genericName: "",
@@ -219,6 +266,8 @@ function MedicinesTab() {
 
   const openEdit = (med: Medicine) => {
     setEditing(med);
+    setAddingUnit(false);
+    unitBeforeAdd.current = med.unit;
     setForm({
       name: med.name,
       genericName: med.genericName || "",
@@ -235,17 +284,33 @@ function MedicinesTab() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // The server lower-cases and trims the unit, and would otherwise accept a
+    // blank one only to fail validation. Doing it here keeps the value the
+    // form sends identical to the value that comes back, so the select does
+    // not briefly show "Vial" for a medicine stored as "vial".
+    const unit = form.unit.trim().toLowerCase();
+    if (!unit) {
+      toast.error("Give the medicine a unit");
+      return;
+    }
+    const body = { ...form, unit };
+
     setSubmitting(true);
     try {
       if (editing) {
-        await api.put(`/api/medicines/${editing.id}`, form);
+        await api.put(`/api/medicines/${editing.id}`, body);
         toast.success("Medicine updated!");
       } else {
-        await api.post("/api/medicines", form);
+        await api.post("/api/medicines", body);
         toast.success("Medicine added!");
       }
       setShowForm(false);
+      setAddingUnit(false);
       refreshMedicines();
+      // A unit typed for the first time is only a suggestion once this list
+      // is refetched — this is the half that makes "add a unit" stick.
+      queryClient.invalidateQueries({ queryKey: ["medicine-units"] });
     } catch (err: unknown) {
       const e = err as { response?: { data?: { message?: string } } };
       toast.error(e.response?.data?.message || "Failed to save");
@@ -539,25 +604,89 @@ function MedicinesTab() {
             </div>
             <div className="grid grid-cols-3 gap-3">
               <Field label="Unit *">
-                <Select
-                  value={form.unit}
-                  onValueChange={(v) => setForm({ ...form, unit: v })}
-                >
-                  <SelectTrigger className="bg-slate-700 border-slate-600 text-slate-100 h-9">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="bg-slate-800 border-slate-700">
-                    {UNITS.map((u) => (
+                {addingUnit ? (
+                  <div className="flex items-center gap-1">
+                    <Input
+                      autoFocus
+                      value={form.unit}
+                      onChange={(e) =>
+                        setForm({ ...form, unit: e.target.value })
+                      }
+                      onKeyDown={(e) => {
+                        // Enter confirms the unit rather than submitting the
+                        // whole medicine — the form is still half-filled at
+                        // this point and submitting it would be a 400.
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          if (form.unit.trim()) setAddingUnit(false);
+                        }
+                        if (e.key === "Escape") {
+                          e.preventDefault();
+                          setForm({ ...form, unit: unitBeforeAdd.current });
+                          setAddingUnit(false);
+                        }
+                      }}
+                      maxLength={20}
+                      placeholder="e.g. vial"
+                      aria-label="New unit"
+                      className={`${inputCls} h-9`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setForm({ ...form, unit: unitBeforeAdd.current });
+                        setAddingUnit(false);
+                      }}
+                      aria-label="Cancel new unit"
+                      className="p-1.5 rounded-md text-slate-400 hover:text-slate-100 hover:bg-slate-700"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <Select
+                    value={form.unit}
+                    onValueChange={(v) => {
+                      if (v === ADD_UNIT) {
+                        // Remember what was selected, so cancelling puts it
+                        // back rather than leaving the field empty.
+                        unitBeforeAdd.current = form.unit;
+                        setForm({ ...form, unit: "" });
+                        setAddingUnit(true);
+                        return;
+                      }
+                      setForm({ ...form, unit: v });
+                    }}
+                  >
+                    {/* Named explicitly: `Field` draws its label as plain
+                        text with no `htmlFor`, so the control itself carries
+                        nothing a screen reader — or a test — can address it
+                        by. */}
+                    <SelectTrigger
+                      aria-label="Unit"
+                      className="bg-slate-700 border-slate-600 text-slate-100 h-9"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-slate-800 border-slate-700">
+                      {unitOptions.map((u) => (
+                        <SelectItem
+                          key={u}
+                          value={u}
+                          className="text-slate-100 focus:bg-slate-700 capitalize"
+                        >
+                          {u}
+                        </SelectItem>
+                      ))}
                       <SelectItem
-                        key={u}
-                        value={u}
-                        className="text-slate-100 focus:bg-slate-700 capitalize"
+                        value={ADD_UNIT}
+                        className="text-teal-400 focus:bg-slate-700"
                       >
-                        {u}
+                        + Add a unit…
                       </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                    </SelectContent>
+                  </Select>
+                )}
               </Field>
               <Field label="GST % *">
                 <Select
@@ -783,7 +912,7 @@ function BatchesTab() {
               }}
               className={`px-4 py-2 text-sm font-medium transition-colors capitalize ${
                 filter === f
-                  ? "bg-teal-600 text-white"
+                  ? "bg-teal-600 text-black"
                   : "bg-slate-800 text-slate-400 hover:text-white"
               }`}
             >
@@ -1406,6 +1535,22 @@ function SuppliersTab() {
     setShowForm(true);
   };
 
+  const handleDelete = async (s: Supplier) => {
+    if (!confirm(`Delete ${s.name}?`)) return;
+    try {
+      await api.delete(`/api/suppliers/${s.id}`);
+      toast.success("Supplier deleted");
+      fetchSuppliers();
+    } catch (err) {
+      // The server's own sentence, not a guess. A supplier that still has
+      // batches against it comes back as a 409 saying exactly that, and a
+      // non-admin as a 403 — two different problems the operator would
+      // otherwise see as one vague failure.
+      const e = err as { response?: { data?: { message?: string } } };
+      toast.error(e.response?.data?.message || "Failed to delete the supplier");
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
@@ -1471,12 +1616,22 @@ function SuppliersTab() {
                       )}
                     </div>
                   </div>
-                  <button
-                    onClick={() => openEdit(s)}
-                    className="text-slate-500 hover:text-teal-400 transition-colors"
-                  >
-                    <Edit2 className="w-3.5 h-3.5" />
-                  </button>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      onClick={() => openEdit(s)}
+                      aria-label={`Edit ${s.name}`}
+                      className="p-1.5 rounded-md text-slate-400 hover:text-teal-400 hover:bg-slate-700 transition-colors"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => handleDelete(s)}
+                      aria-label={`Delete ${s.name}`}
+                      className="p-1.5 rounded-md text-slate-400 hover:text-red-400 hover:bg-slate-700 transition-colors"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
                 <div className="space-y-1 text-xs text-slate-400">
                   {s.phone && <p>📞 {s.phone}</p>}

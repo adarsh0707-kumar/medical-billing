@@ -86,7 +86,7 @@ export default function Sidebar({ collapsed, open, onClose }: SidebarProps) {
       {/* Logo */}
       <div className="flex items-center gap-3 px-4 py-5 border-b border-slate-800">
         <div className="bg-teal-500 p-1.5 rounded-lg shrink-0">
-          <Pill className="w-5 h-5 text-white" />
+          <Pill className="w-5 h-5 text-black" />
         </div>
         <div className={cn(collapsed && "md:hidden")}>
           <p className="text-white font-bold text-sm leading-none">
@@ -97,7 +97,19 @@ export default function Sidebar({ collapsed, open, onClose }: SidebarProps) {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 py-4 px-2 space-y-1 overflow-y-auto">
+      {/*
+        `overflow-x-hidden` is load-bearing, not tidying. Setting only
+        `overflow-y` to `auto` leaves the other axis computing to `auto` as
+        well, and the collapsed rail's hover labels are positioned at
+        `left-full` — outside the 64px rail. So the rail grew a horizontal
+        scrollbar of its own, which is what you were seeing lying across it and
+        pushing Logout down.
+
+        Clipping that axis means an absolutely-positioned label can no longer
+        escape the nav, which is why the labels below are the browser's own
+        `title` tooltip now rather than a div.
+      */}
+      <nav className="flex-1 py-4 px-2 space-y-1 overflow-y-auto overflow-x-hidden">
         {filtered.map(({ icon: Icon, label, path }) => (
           <NavLink
             key={path}
@@ -106,11 +118,15 @@ export default function Sidebar({ collapsed, open, onClose }: SidebarProps) {
             // desktop rail, which is never open in the first place; without it
             // the drawer stays parked over the page it just opened.
             onClick={onClose}
+            // The label on the collapsed rail. The browser's own tooltip
+            // rather than a div, because a div would have to sit outside the
+            // scrolling nav to be visible — which is the bug above.
+            title={collapsed ? label : undefined}
             className={({ isActive }) =>
               cn(
                 "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all group relative",
                 isActive
-                  ? "bg-teal-600 text-white shadow-lg shadow-teal-900/50"
+                  ? "bg-teal-600 text-black shadow-lg shadow-teal-900/50"
                   : "text-slate-400 hover:bg-slate-800 hover:text-white",
               )
             }
@@ -123,14 +139,6 @@ export default function Sidebar({ collapsed, open, onClose }: SidebarProps) {
                 collapsed && "md:hidden",
               )}
             />
-
-            {/* Tooltip for the collapsed rail. Never on the drawer, which
-                shows the label itself and has no hover to speak of. */}
-            {collapsed && (
-              <div className="hidden md:block absolute left-full ml-2 px-2 py-1 bg-slate-800 text-white text-xs rounded-md opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
-                {label}
-              </div>
-            )}
           </NavLink>
         ))}
       </nav>
@@ -147,15 +155,11 @@ export default function Sidebar({ collapsed, open, onClose }: SidebarProps) {
         </div>
         <button
           onClick={handleLogout}
+          title={collapsed ? "Logout" : undefined}
           className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-slate-400 hover:bg-red-900/30 hover:text-red-400 transition-all w-full group relative"
         >
           <LogOut className="w-4.5 h-4.5 shrink-0" />
           <span className={cn(collapsed && "md:hidden")}>Logout</span>
-          {collapsed && (
-            <div className="hidden md:block absolute left-full ml-2 px-2 py-1 bg-slate-800 text-white text-xs rounded-md opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
-              Logout
-            </div>
-          )}
         </button>
         </div>
       </aside>
