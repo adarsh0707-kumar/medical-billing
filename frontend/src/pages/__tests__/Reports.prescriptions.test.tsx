@@ -123,6 +123,26 @@ describe("Reports — Prescription register", () => {
     ).toBeInTheDocument();
   });
 
+  // What the deployed app actually showed on 2026-09-01: the request failed and
+  // the card still read "0 entries — no prescriptions recorded for this
+  // filter". On a statutory register that is the screen asserting a compliance
+  // fact it does not have.
+  it("does not report an empty register when the request failed", async () => {
+    mock.onGet(/reports\/prescriptions\?/).reply(500);
+    const user = userEvent.setup();
+    await openTab(user);
+
+    expect(await screen.findByText(/could not be loaded/i)).toBeInTheDocument();
+    expect(
+      screen.queryByText(/no prescriptions recorded/i),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/0 entries/i)).not.toBeInTheDocument();
+    // The toast that accompanies this ("Failed to load the prescription
+    // register", from the query's `meta.errorMessage`) is raised by the app's
+    // shared queryCache, which `createQueryWrapper` deliberately does not
+    // install — so it is not asserted here.
+  });
+
   it("carries the search box into the request", async () => {
     const user = userEvent.setup();
     await openTab(user);

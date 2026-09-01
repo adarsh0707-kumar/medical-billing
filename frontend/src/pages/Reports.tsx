@@ -1604,7 +1604,12 @@ function PrescriptionRegister() {
   const filters = `${debouncedSearch ? `search=${encodeURIComponent(debouncedSearch)}` : ""}${range}`;
   const query = `page=${page}&limit=20&${filters}`;
 
-  const { data, isLoading: loading } = useQuery({
+  const {
+    data,
+    isLoading: loading,
+    isError,
+    refetch,
+  } = useQuery({
     queryKey: ["prescription-register", query],
     queryFn: async ({ signal }) => {
       const res = await api.get(`/api/reports/prescriptions?${query}`, {
@@ -1615,6 +1620,7 @@ function PrescriptionRegister() {
         pagination: { total: number; pages: number };
       };
     },
+    meta: { errorMessage: "Failed to load the prescription register" },
   });
 
   const entries = data?.data ?? [];
@@ -1703,13 +1709,36 @@ function PrescriptionRegister() {
               <CardTitle className="text-white text-sm">
                 Schedule H Register
               </CardTitle>
-              <Badge className="bg-teal-900 text-teal-400">
-                {data?.pagination.total ?? 0} entries
-              </Badge>
+              {/* No count when the request failed: `0 entries` beside an empty
+                  table is a statement about the register, and the screen does
+                  not know it. */}
+              {!isError && (
+                <Badge className="bg-teal-900 text-teal-400">
+                  {data?.pagination.total ?? 0} entries
+                </Badge>
+              )}
             </div>
           </CardHeader>
           <CardContent className="p-0">
-            {entries.length === 0 ? (
+            {isError ? (
+              // A register that could not be loaded is not an empty register.
+              // Saying "no prescriptions recorded" here would be the screen
+              // asserting a compliance fact it does not have — the worst
+              // possible place for this app to guess.
+              <div className="text-center py-12 space-y-3">
+                <p className="text-slate-400 text-sm">
+                  The register could not be loaded, so this is not a statement
+                  that nothing was dispensed.
+                </p>
+                <Button
+                  onClick={() => refetch()}
+                  size="sm"
+                  className="bg-slate-700 text-slate-100 hover:bg-slate-600"
+                >
+                  Try again
+                </Button>
+              </div>
+            ) : entries.length === 0 ? (
               <p className="text-slate-400 text-sm text-center py-12">
                 No prescriptions recorded for this filter.
               </p>
@@ -1828,6 +1857,7 @@ function TopSellers() {
         }[];
       };
     },
+    meta: { errorMessage: "Failed to load the top sellers" },
   });
 
   const medicines = data?.medicines ?? [];
@@ -2001,6 +2031,7 @@ function MarginReport() {
         days: { date: string; day: number; revenue: number; cost: number; profit: number }[];
       };
     },
+    meta: { errorMessage: "Failed to load the margin report" },
   });
 
   const margin = data?.margin;
