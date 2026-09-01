@@ -1553,9 +1553,398 @@ function SalesTrend() {
 
 // ─── Main Reports Page ─────────────────────────────────
 
+// ─── Top sellers (FR-RPT-07) ─────────────────────────────
+//
+// Open to every role, like the period reports: this says what the shop sold,
+// which is its own trading record. What it cost is the margin report below, and
+// that one is not.
+function TopSellers() {
+  const now = new Date();
+  const [month, setMonth] = useState(now.getMonth() + 1);
+  const [year, setYear] = useState(now.getFullYear());
+  const [limit, setLimit] = useState(10);
+  const [exporting, setExporting] = useState(false);
+
+  const query = `month=${month}&year=${year}&limit=${limit}`;
+
+  const { data, isLoading: loading } = useQuery({
+    queryKey: ["top-sellers", query],
+    queryFn: async ({ signal }) => {
+      const res = await api.get(`/api/reports/top-sellers?${query}`, { signal });
+      return res.data.data as {
+        label: string;
+        medicines: {
+          medicineId: string;
+          name: string;
+          unit: string;
+          quantity: number;
+          value: number;
+        }[];
+      };
+    },
+  });
+
+  const medicines = data?.medicines ?? [];
+
+  const exportCsv = async () => {
+    setExporting(true);
+    try {
+      await downloadCsv(
+        `/api/reports/top-sellers/export?${query}`,
+        `top-sellers-${year}-${String(month).padStart(2, "0")}.csv`,
+      );
+      toast.success("Top sellers exported");
+    } catch {
+      toast.error("Failed to export the report");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+        <div className="flex items-center gap-3">
+          <div className="flex flex-1 items-center gap-2 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2">
+            <Calendar className="w-4 h-4 text-slate-400" />
+            <select
+              value={month}
+              onChange={(e) => setMonth(Number(e.target.value))}
+              aria-label="Month"
+              className="bg-transparent text-white text-sm outline-none"
+            >
+              {MONTHS.map((m, i) => (
+                <option key={i} value={i + 1} className="bg-slate-800">
+                  {m}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex flex-1 items-center gap-2 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2">
+            <select
+              value={year}
+              onChange={(e) => setYear(Number(e.target.value))}
+              aria-label="Year"
+              className="bg-transparent text-white text-sm outline-none"
+            >
+              {[2024, 2025, 2026].map((y) => (
+                <option key={y} value={y} className="bg-slate-800">
+                  {y}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex flex-1 items-center gap-2 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2">
+            <select
+              value={limit}
+              onChange={(e) => setLimit(Number(e.target.value))}
+              aria-label="How many"
+              className="bg-transparent text-white text-sm outline-none"
+            >
+              {/* The server caps at 100; offering more than it accepts would be
+                  a control that produces a 400. */}
+              {[10, 20, 50].map((n) => (
+                <option key={n} value={n} className="bg-slate-800">
+                  Top {n}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+        <Button
+          onClick={exportCsv}
+          size="sm"
+          disabled={!medicines.length || exporting}
+          className="w-full sm:w-auto sm:ml-auto bg-slate-700 text-slate-100 hover:bg-slate-600 disabled:opacity-40"
+        >
+          {exporting ? (
+            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+          ) : (
+            <Download className="w-4 h-4 mr-2" />
+          )}
+          Export CSV
+        </Button>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center py-16">
+          <Loader2 className="w-6 h-6 animate-spin text-teal-400" />
+        </div>
+      ) : (
+        <Card className="bg-slate-800 border-slate-700">
+          <CardHeader className="py-3 px-4 border-b border-slate-700">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-white text-sm">
+                Best Sellers — {MONTHS[month - 1]} {year}
+              </CardTitle>
+              <Badge className="bg-teal-900 text-teal-400">
+                {medicines.length} medicines
+              </Badge>
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            {medicines.length === 0 ? (
+              <p className="text-slate-400 text-sm text-center py-12">
+                Nothing sold in this period.
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-700 text-slate-400 text-xs">
+                      <th className="text-left px-4 py-3">#</th>
+                      <th className="text-left px-4 py-3">Medicine</th>
+                      <th className="text-right px-4 py-3">Units Sold</th>
+                      <th className="text-right px-4 py-3">Value</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {medicines.map((m, i) => (
+                      <tr
+                        key={m.medicineId}
+                        className="border-b border-slate-700/50 text-slate-300"
+                      >
+                        <td className="px-4 py-3 text-slate-500">{i + 1}</td>
+                        <td className="px-4 py-3 text-white">{m.name}</td>
+                        <td className="px-4 py-3 text-right tabular-nums">
+                          {m.quantity}{" "}
+                          <span className="text-slate-500">{m.unit}</span>
+                        </td>
+                        <td className="px-4 py-3 text-right tabular-nums">
+                          {formatINR(m.value)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+// ─── Profit and margin (FR-RPT-08) ───────────────────────
+//
+// ADMIN only, and the tab is filtered out for everyone else rather than
+// rendered disabled — the same treatment the GST tab gets, for the same reason.
+// The server enforces it regardless: hiding a tab is not access control.
+function MarginReport() {
+  const now = new Date();
+  const [month, setMonth] = useState(now.getMonth() + 1);
+  const [year, setYear] = useState(now.getFullYear());
+  const [exporting, setExporting] = useState(false);
+
+  const query = `month=${month}&year=${year}`;
+
+  const { data, isLoading: loading } = useQuery({
+    queryKey: ["margin", query],
+    queryFn: async ({ signal }) => {
+      const res = await api.get(`/api/reports/margin?${query}`, { signal });
+      return res.data.data as {
+        label: string;
+        margin: {
+          revenue: number;
+          cost: number;
+          profit: number;
+          marginPercent: number | null;
+          unpricedLines: number;
+        };
+        days: { date: string; day: number; revenue: number; cost: number; profit: number }[];
+      };
+    },
+  });
+
+  const margin = data?.margin;
+  const days = data?.days ?? [];
+  const hasTrade = days.some((d) => d.revenue !== 0 || d.cost !== 0);
+  const chartData = days.map((d) => ({ ...d, name: String(d.day) }));
+
+  const exportCsv = async () => {
+    setExporting(true);
+    try {
+      await downloadCsv(
+        `/api/reports/margin/export?${query}`,
+        `margin-report-${year}-${String(month).padStart(2, "0")}.csv`,
+      );
+      toast.success("Margin report exported");
+    } catch {
+      toast.error("Failed to export the report");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+        <div className="flex items-center gap-3">
+          <div className="flex flex-1 items-center gap-2 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2">
+            <Calendar className="w-4 h-4 text-slate-400" />
+            <select
+              value={month}
+              onChange={(e) => setMonth(Number(e.target.value))}
+              aria-label="Month"
+              className="bg-transparent text-white text-sm outline-none"
+            >
+              {MONTHS.map((m, i) => (
+                <option key={i} value={i + 1} className="bg-slate-800">
+                  {m}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex flex-1 items-center gap-2 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2">
+            <select
+              value={year}
+              onChange={(e) => setYear(Number(e.target.value))}
+              aria-label="Year"
+              className="bg-transparent text-white text-sm outline-none"
+            >
+              {[2024, 2025, 2026].map((y) => (
+                <option key={y} value={y} className="bg-slate-800">
+                  {y}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+        <Button
+          onClick={exportCsv}
+          size="sm"
+          disabled={!hasTrade || exporting}
+          className="w-full sm:w-auto sm:ml-auto bg-slate-700 text-slate-100 hover:bg-slate-600 disabled:opacity-40"
+        >
+          {exporting ? (
+            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+          ) : (
+            <Download className="w-4 h-4 mr-2" />
+          )}
+          Export CSV
+        </Button>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center py-16">
+          <Loader2 className="w-6 h-6 animate-spin text-teal-400" />
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <StatCard
+              label="Revenue"
+              value={formatINR(margin?.revenue ?? 0)}
+              icon={IndianRupee}
+              color="bg-blue-600"
+              sub="Excluding GST"
+            />
+            <StatCard
+              label="Cost of Goods"
+              value={formatINR(margin?.cost ?? 0)}
+              icon={Package}
+              color="bg-amber-600"
+              sub="What the stock cost"
+            />
+            <StatCard
+              label="Profit"
+              value={formatINR(margin?.profit ?? 0)}
+              icon={TrendingUp}
+              color={(margin?.profit ?? 0) < 0 ? "bg-rose-600" : "bg-emerald-600"}
+              sub="Revenue − cost"
+            />
+            <StatCard
+              label="Margin"
+              // Null, not zero, on a month that sold nothing — a percentage
+              // here would be a claim about a period that traded.
+              value={
+                margin?.marginPercent === null || margin?.marginPercent === undefined
+                  ? "—"
+                  : `${margin.marginPercent.toFixed(2)}%`
+              }
+              icon={BarChart3}
+              color="bg-teal-600"
+              sub={
+                margin?.marginPercent === null
+                  ? "No sales this period"
+                  : "Profit ÷ revenue"
+              }
+            />
+          </div>
+
+          {/* Only when there is something to warn about. A zero here is the
+              normal case and a permanent banner reading "0 lines" would train
+              the reader to stop seeing it. */}
+          {(margin?.unpricedLines ?? 0) > 0 && (
+            <Card className="bg-amber-950/40 border-amber-800">
+              <CardContent className="py-3 px-4 flex items-start gap-3">
+                <AlertTriangle className="w-4 h-4 text-amber-400 mt-0.5 shrink-0" />
+                <p className="text-amber-200 text-sm">
+                  <strong>{margin?.unpricedLines}</strong>{" "}
+                  {margin?.unpricedLines === 1 ? "line" : "lines"} sold from a
+                  batch with no recorded cost price, counted as costing nothing.
+                  Profit above is therefore an <strong>upper bound</strong> —
+                  set the purchase price on those batches to make it exact.
+                </p>
+              </CardContent>
+            </Card>
+          )}
+
+          <Card className="bg-slate-800 border-slate-700">
+            <CardHeader className="py-3 px-4 border-b border-slate-700">
+              <CardTitle className="text-white text-sm">
+                Daily Profit — {MONTHS[month - 1]} {year}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pt-4">
+              {!hasTrade ? (
+                <p className="text-slate-400 text-sm text-center py-12">
+                  No trade in this period.
+                </p>
+              ) : (
+                <ScrollableChart className="min-w-[46rem]">
+                  <ResponsiveContainer width="100%" height={260}>
+                    <BarChart data={chartData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                      <XAxis dataKey="name" stroke="#94a3b8" fontSize={12} />
+                      <YAxis
+                        stroke="#94a3b8"
+                        fontSize={12}
+                        tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`}
+                      />
+                      <Tooltip
+                        contentStyle={{
+                          background: "#1e293b",
+                          border: "1px solid #334155",
+                          borderRadius: 8,
+                          color: "#fff",
+                        }}
+                        formatter={(val) => formatINR(Number(val ?? 0))}
+                      />
+                      <Legend />
+                      <Bar dataKey="revenue" name="Revenue" fill="#3b82f6" />
+                      <Bar dataKey="cost" name="Cost" fill="#f59e0b" />
+                      <Bar dataKey="profit" name="Profit" fill="#10b981" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </ScrollableChart>
+              )}
+            </CardContent>
+          </Card>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function Reports() {
   const { user } = useAuthStore();
   const canViewGst = user?.role === "ADMIN" || user?.role === "PHARMACIST";
+  // Narrower than GST, and deliberately: takings are the shop's own trading
+  // record, what the stock cost is not. The server enforces it with
+  // `authorize("ADMIN")` — this only keeps the UI honest about it.
+  const canViewMargin = user?.role === "ADMIN";
   const [tab, setTab] = useState("daily");
 
   // GST is filtered out for a cashier rather than rendered disabled: a tab that
@@ -1569,6 +1958,12 @@ export default function Reports() {
     { value: "yearly", label: "Yearly Report", icon: CalendarRange },
     ...(canViewGst
       ? [{ value: "gst", label: "GST Report", icon: FileText }]
+      : []),
+    // Beside the period reports it reads from, and before the trend, so the
+    // "what did we sell / what did it earn" pair sit together.
+    { value: "top-sellers", label: "Top Sellers", icon: Package },
+    ...(canViewMargin
+      ? [{ value: "margin", label: "Profit & Margin", icon: BarChart3 }]
       : []),
     { value: "trend", label: "Sales Trend", icon: TrendingUp },
     { value: "alerts", label: "Stock Alerts", icon: AlertTriangle },
@@ -1602,6 +1997,14 @@ export default function Reports() {
         {canViewGst && (
           <TabsContent value="gst">
             <GstReport />
+          </TabsContent>
+        )}
+        <TabsContent value="top-sellers">
+          <TopSellers />
+        </TabsContent>
+        {canViewMargin && (
+          <TabsContent value="margin">
+            <MarginReport />
           </TabsContent>
         )}
         <TabsContent value="trend">

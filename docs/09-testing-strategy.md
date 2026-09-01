@@ -1,6 +1,6 @@
 # Testing Strategy
 
-**Measured 2026-08-31: 701 backend tests across 28 files, 144 frontend unit tests across 18 files, and a 7-flow browser smoke — all three layers on CI, all passing.**
+**Measured 2026-08-31: 701 backend tests across 28 files, 159 frontend unit tests across 19 files, and a 7-flow browser smoke — all three layers on CI, all passing.**
 
 > Counts here are taken by **running the suites**, not by adding up the tables below. Three documents once carried four different numbers because the tables were maintained by hand and two suites were never added to them.
 >
@@ -88,7 +88,7 @@ Two failures worth remembering, both fixed 2026-08-27:
 | `tests/billing/invoice-concurrency.test.js`   |     5 | Last-unit races, oversell bursts, gapless serials                          |
 | `tests/api/shop.test.js`                      |     8 | `GET`/`PUT /api/shop`: the caller's own shop only, the ADMIN gate on `PUT`, and read access for every role because printing a bill is a cashier's job (FR-SHOP-07). **Added with multi-tenancy and missing from this table until 2026-08-31** |
 
-**Frontend — 144 across 18 files, all passing.** Measured 2026-08-31 on Node 22.
+**Frontend — 159 across 19 files, all passing.** Measured 2026-08-31 on Node 22.
 The 125 recorded here before that dated from 2026-08-25 and had been overtaken by
 three files the table listed but the total never counted.
 
@@ -114,6 +114,7 @@ three files the table listed but the total never counted.
 | ------------------------------------------------ | ----: | ----------------------------------------------------------------- |
 | `src/pages/__tests__/cart-math.test.ts`        |    41 | The §4 fixtures in integer paise, mirroring the server ([G-17](./08-gap-analysis.md#g-17)) |
 | `src/lib/__tests__/amount-in-words.test.ts`    |    14 | The rupees-and-paise words on the printed invoice, in lakhs and crores, computed in paise throughout (FR-BILL-20) |
+| `src/pages/__tests__/Reports.margin.test.tsx` |    15 | The Top Sellers and Profit & Margin tabs (FR-RPT-07, FR-RPT-08): that a tab exists and opening it calls the endpoint — the assertion that would have caught both shipping with no screen — the ADMIN-only gate on margin being narrower than the GST tab's, that a cashier's page never fires a request it would get a 403 from, and the upper-bound warning when a batch had no cost price |
 | `src/pages/__tests__/Reports.void.test.tsx`    |    11 | The void and partial-return dialog: role gating, client-side bounds, the refetch ([FR-BILL-17](./01-product-requirements.md)) |
 | `src/pages/__tests__/Billing.guards.test.tsx`  |     9 | POS stock guards, driven through the rendered page                |
 | `src/pages/__tests__/Signup.test.tsx`          |     8 | The signup page: what it sends, what it refuses, and that it creates a shop rather than joining one (FR-AUTH-12) |

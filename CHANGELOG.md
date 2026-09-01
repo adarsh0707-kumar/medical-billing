@@ -11,6 +11,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### The margin and top-seller reports are reachable from the app (FR-RPT-07, FR-RPT-08)
+
+Two tabs on the Reports page: **Top Sellers** (period, a Top 10/20/50 selector, ranked table, CSV export) and **Profit & Margin** (revenue, cost of goods, profit, margin %, a daily bar chart, CSV export).
+
+**Both endpoints shipped on 2026-08-31 with no screen calling them, and that was not recorded at the time.** It is the third time this repository has done it — `POST /api/auth/logout` was live for three days before the Sign out button called it, and the void endpoint for five before a dialog existed — and docs/07 P1-7 already states the lesson: *"An endpoint nothing invokes revokes nothing, and every document here described the endpoint's behaviour as though it were the product's."* The two `FR-` rows now carry both dates, the way FR-BILL-17's does, rather than a single ✅ that implies the feature was in the product.
+
+- **Margin is ADMIN only, and the gate is narrower than the GST tab's.** Takings are the shop's own trading record; what the stock cost is not. The tab is filtered out rather than rendered disabled, matching the GST treatment, and the page does not request the report for a role the server would refuse — a hidden control that still fires a request produces an error toast and no explanation.
+- **The unpriced-lines warning is rendered only when there is one.** A permanent banner reading "0 lines" trains the reader to stop seeing it; when it appears it says the profit above is an upper bound and what to do about it.
+- **A month that sold nothing shows `—`, not `0%`**, carrying the server's `null` through rather than formatting it into a claim about a period that traded.
+- Neither tab re-sorts, re-derives or re-formats a figure the server sent. The ranking, the margin and the money are the API's, so the screen and the CSV of the same period cannot disagree ([G-21](./docs/08-gap-analysis.md#g-21)).
+
+Fifteen tests, the first of which is the one that would have caught the original omission: a tab exists, and opening it calls the endpoint. Frontend suite now **159 across 19 files**.
+
 #### Self-service password reset, and the stack's first outbound dependency (FR-AUTH-11)
 
 `POST /api/auth/forgot-password` and `POST /api/auth/reset-password`, both public because the caller cannot sign in — which is the whole problem. Migration `20260901104630_add_password_reset_tokens`.
