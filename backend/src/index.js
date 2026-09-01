@@ -45,19 +45,30 @@ if (!process.env.JWT_SECRET?.trim()) {
   process.exit(1);
 }
 
-// SMTP, on the same principle and for the same reason (FR-AUTH-11).
+// SMTP (FR-AUTH-11).
 //
-// Self-service password reset is the only way back into an account for a
-// shopkeeper who signed up themselves and has no administrator to ask. If the
-// mail variables are unset, every reset request is accepted, answered
-// cheerfully and delivers nothing — and because the endpoint must answer
-// identically whether or not the address has an account, it cannot tell the
-// caller that either. Nobody requests a password reset on a good day, so the
-// misconfiguration would sit undiscovered until the day it mattered most.
+// This refused to start until 2026-09-01, on the reasoning below: without mail,
+// every reset request is accepted, answered cheerfully and delivers nothing,
+// and because the endpoint must answer identically whether or not the address
+// has an account it cannot say so either. Nobody requests a reset on a good
+// day, so the misconfiguration would sit undiscovered until the day it
+// mattered most.
 //
-// Production only. Development and the test suite run without a mail server on
-// purpose; `sendMail` logs and returns false there, which is what lets the
-// suite assert the failure path without one.
+// That reasoning was right about the failure and wrong about the remedy, and
+// the cost was paid in production: the container exited at boot on every
+// deploy for two days. Billing, inventory, the GST return and the till were
+// down — none of which needs a mail server — because one recovery path could
+// not run. Worse, the symptom was invisible from outside: the old build kept
+// serving, so the API simply appeared to be several commits behind, and every
+// missing route looked like a route nobody had written.
+//
+// A secondary feature must not hold the primary product hostage. The
+// requirement — never accept a reset the deployment cannot deliver — is met at
+// the endpoint instead, which answers 503 while mail is unconfigured. That is
+// the same refusal, scoped to the thing that is actually broken.
+//
+// Production only: development and the test suite run without a mail server on
+// purpose, and `sendMail` logs and returns false there.
 if (process.env.NODE_ENV === "production") {
   const { missingMailConfig } = require("./config/mailer");
   // APP_URL rides with them rather than living in the mailer: sending does not
@@ -69,24 +80,32 @@ if (process.env.NODE_ENV === "production") {
     ...(process.env.APP_URL?.trim() ? [] : ["APP_URL"]),
   ];
   if (missing.length) {
+    // Loud, and on stderr as well as the log: this is a real hole in a
+    // production deployment, and the only thing louder than this was refusing
+    // to serve at all.
     console.error(
-      `❌ ${missing.join(", ")} ${missing.length === 1 ? "is" : "are"} not set. Refusing to start.\n` +
+      `⚠ ${missing.join(", ")} ${missing.length === 1 ? "is" : "are"} not set. Password reset is DISABLED.\n` +
         "\n" +
-        "   Without SMTP the API still accepts password-reset requests and\n" +
-        "   answers them normally — it just never sends the email, and it\n" +
-        "   cannot say so without revealing which addresses have accounts.\n" +
-        "   A shopkeeper who signed up themselves would have no way back in.\n" +
+        "   The API is starting anyway — billing, inventory and reporting do\n" +
+        "   not need a mail server. POST /api/auth/forgot-password answers 503\n" +
+        "   until these are set, so nobody is told a link is on its way that\n" +
+        "   this deployment cannot send. A user locked out meanwhile needs an\n" +
+        "   administrator to reset their password for them.\n" +
         "\n" +
-        "   Set them in .env.prod:\n" +
+        "   Set them in .env.prod, or in the host's environment:\n" +
         "     SMTP_HOST=smtp.example.com\n" +
         "     SMTP_PORT=587\n" +
         "     SMTP_USER=…\n" +
         "     SMTP_PASS=…\n" +
         '     SMTP_FROM="Pharmacy <noreply@example.com>"\n' +
+        "     APP_URL=https://your-pharmacy.example.com\n" +
         "\n" +
         "   See SECURITY.md and docs/06 for what each one is.",
     );
-    process.exit(1);
+    logger.warn(
+      { missing },
+      "password reset disabled: mail is not configured",
+    );
   }
 }
 

@@ -32,11 +32,19 @@ const { logger } = require("./logger");
  * The honest answer, in three parts, because "reset silently did nothing" is the
  * failure that will actually occur:
  *
- * 1. **Misconfiguration cannot survive a boot.** In production the variables are
- *    required at start-up, the way `JWT_SECRET` is (`src/index.js`). A container
- *    with no SMTP host refuses to run rather than accepting reset requests it
- *    can never fulfil. That closes the case that would otherwise persist for
- *    weeks, because nobody requests a password reset on a good day.
+ * 1. **Misconfiguration cannot be answered cheerfully.** While the variables
+ *    are unset, `POST /api/auth/forgot-password` answers **503** and issues no
+ *    token, rather than accepting a reset it can never fulfil. That closes the
+ *    case that would otherwise persist for weeks, because nobody requests a
+ *    password reset on a good day.
+ *
+ *    This was a boot guard until 2026-09-01 — the process exited in production
+ *    if the variables were unset, the way it does for `JWT_SECRET` — and that
+ *    was the wrong layer. It took an entire deployment down for two days:
+ *    billing, inventory, the GST return and the till, none of which send mail,
+ *    because one recovery path could not run. `JWT_SECRET` earns a boot guard
+ *    because nothing works without it; mail does not, because everything else
+ *    does.
  *
  * 2. **A send failure does not change the response.** It cannot: the request
  *    endpoint answers identically for a known and an unknown address, and any

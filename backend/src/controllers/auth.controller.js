@@ -14,6 +14,7 @@ const { passwordProblem } = require("../validators/password");
 // login-timing guards spent weeks asserting nothing (docs/09 §1a). Reaching
 // through the module object keeps the seam a test can actually hold.
 const mailer = require("../config/mailer");
+const { logger } = require("../config/logger");
 const crypto = require("node:crypto");
 
 const REFRESH_COOKIE = "refresh_token";
@@ -463,6 +464,35 @@ const changePassword = async (req, res, next) => {
 const forgotPassword = async (req, res, next) => {
   try {
     const { email } = req.body;
+
+    /**
+     * Refuse rather than accept a reset this deployment cannot deliver.
+     *
+     * Until 2026-09-01 this case was caught at boot: the process exited if the
+     * mail variables were unset. That took the whole API down — billing,
+     * inventory, the GST return — for a feature none of them use, and in
+     * production it did exactly that for two days.
+     *
+     * The refusal belongs here, where the thing that is broken actually is. It
+     * is **not** an enumeration oracle: the answer depends only on the
+     * deployment's configuration, so every address gets it, including
+     * addresses with no account. 503 rather than 500 — the request was
+     * well-formed and would succeed once somebody sets six variables.
+     *
+     * `resetPassword` is deliberately not guarded: a link already delivered
+     * must keep working, and consuming a token needs no mail server.
+     */
+    if (!mailer.isConfigured() || !process.env.APP_URL?.trim()) {
+      logger.error(
+        { requestId: req.id },
+        "password reset requested but mail is not configured",
+      );
+      return res.status(503).json({
+        success: false,
+        message:
+          "Password reset is not configured on this system, so no link can be sent. Ask your administrator to reset your password for you.",
+      });
+    }
 
     // Said the same way on both paths, and deliberately not "we've sent you an
     // email" — which would be a lie on the unknown-address path, and the kind

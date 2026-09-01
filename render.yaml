@@ -50,6 +50,35 @@ services:
       # req.ip, and it should be the caller's address, not 10.x.
       - key: TRUST_PROXY
         value: "loopback, linklocal, uniquelocal"
+      # ─── Mail (FR-AUTH-11) ──────────────────────────────────────────────
+      # Password reset, and nothing else. Absent, the service starts, logs a
+      # warning naming what is missing, and answers 503 on
+      # POST /api/auth/forgot-password.
+      #
+      # It is listed here because it was not, and that omission cost two days:
+      # `src/index.js` used to exit in production without these, so every
+      # deploy built, migrated, and then died at boot. Render kept serving the
+      # last image that *had* started, so from outside the API simply looked
+      # several commits behind — every new route answered 404, which is
+      # indistinguishable from a route nobody wrote.
+      #
+      # `sync: false` on all of them: they are credentials, and SMTP_FROM and
+      # APP_URL differ per deployment.
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM
+        sync: false
+      # The origin reset links are built against — the *frontend*, not this
+      # service. Without it a link arrives as a relative path: an email that
+      # looks right and goes nowhere.
+      - key: APP_URL
+        sync: false
 
 databases:
   - name: medical-billing-db

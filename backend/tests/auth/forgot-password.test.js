@@ -1,4 +1,12 @@
-import { describe, it, expect, beforeAll, beforeEach, vi } from "vitest";
+import {
+  describe,
+  it,
+  expect,
+  afterAll,
+  beforeAll,
+  beforeEach,
+  vi,
+} from "vitest";
 import request from "supertest";
 import crypto from "node:crypto";
 import { createRequire } from "node:module";
@@ -30,6 +38,30 @@ let app;
 beforeAll(() => {
   app = buildApp();
 });
+
+/**
+ * The endpoint refuses outright when mail is unconfigured (503), so the tests
+ * that exercise the *reset* have to look configured. The variables are enough:
+ * nothing here opens a socket, because `sendMail` is spied below.
+ *
+ * `APP_URL` rides with them — the send does not need it, the link does.
+ */
+const MAIL_ENV = {
+  SMTP_HOST: "smtp.test.local",
+  SMTP_PORT: "587",
+  SMTP_USER: "user",
+  SMTP_PASS: "pass",
+  SMTP_FROM: "Pharmacy <noreply@test.local>",
+  APP_URL: "https://pharmacy.test.local",
+};
+
+const configureMail = () => Object.assign(process.env, MAIL_ENV);
+const unconfigureMail = () => {
+  for (const key of Object.keys(MAIL_ENV)) delete process.env[key];
+};
+
+beforeEach(configureMail);
+afterAll(unconfigureMail);
 
 // The suite has no mail server, which is the point: `sendMail` logs and returns
 // false without one, so the failure path is the default and needs no mocking.
@@ -161,6 +193,71 @@ describe("POST /api/auth/forgot-password", () => {
     // by a user who never got their email.
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
+  });
+});
+
+/**
+ * What happens when the deployment has no mail server.
+ *
+ * This case used to be caught at boot — the process exited if the SMTP
+ * variables were unset — and on 2026-09-01 that took a production API down for
+ * two days: billing, inventory and the GST return, none of which send email,
+ * were unavailable because one recovery path could not run. The refusal moved
+ * here, to the endpoint that is actually broken.
+ */
+describe("POST /api/auth/forgot-password with no mail configured", () => {
+  beforeEach(unconfigureMail);
+
+  it("refuses rather than promising a link it cannot send", async () => {
+    const user = await makeUser({ email: "unconfigured@test.local" });
+
+    const res = await forgot(user.email);
+
+    expect(res.status).toBe(503);
+    expect(res.body.success).toBe(false);
+    expect(res.body.message).toMatch(/not configured/i);
+  });
+
+  it("issues no token, so nothing is left pending for a link nobody gets", async () => {
+    const user = await makeUser({ email: "no-token@test.local" });
+
+    await forgot(user.email);
+
+    expect(
+      await prisma.passwordResetToken.count({ where: { userId: user.id } }),
+    ).toBe(0);
+    expect(sent).not.toHaveBeenCalled();
+  });
+
+  // The refusal depends on the deployment, not on the address, so it cannot be
+  // used to ask whether somebody has an account here.
+  it("answers a known and an unknown address identically", async () => {
+    const user = await makeUser({ email: "known-unconfigured@test.local" });
+
+    const known = await forgot(user.email);
+    const unknown = await forgot("nobody-at-all@test.local");
+
+    expect(known.status).toBe(unknown.status);
+    expect(known.body).toEqual(unknown.body);
+  });
+
+  // A link already delivered must keep working: consuming a token needs no
+  // mail server, and the user holding that email is the one who is locked out.
+  it("still lets an already-issued token be redeemed", async () => {
+    const user = await makeUser({ email: "still-redeems@test.local" });
+    const token = await requestReset(user);
+
+    expect((await reset(token, NEW_PASSWORD)).status).toBe(200);
+  });
+
+  it("is missing APP_URL alone, and still refuses", async () => {
+    configureMail();
+    delete process.env.APP_URL;
+    const user = await makeUser({ email: "no-app-url@test.local" });
+
+    // Without it the link is built against an empty origin and arrives as a
+    // relative path — an email that looks right and goes nowhere.
+    expect((await forgot(user.email)).status).toBe(503);
   });
 });
 

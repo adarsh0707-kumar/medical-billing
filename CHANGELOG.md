@@ -33,6 +33,28 @@ The printed GST invoice is untouched: it paints with `text-black` on default pap
 
 ### Fixed
 
+#### The API refused to start without a mail server, and production spent two days down
+
+The boot guard added with self-service password reset (FR-AUTH-11) exited the process in production when `SMTP_HOST/PORT/USER/PASS/FROM` or `APP_URL` was unset. On Render those were never set, so from 2026-08-31 every deploy built its image, ran its migrations, printed `Refusing to start` and exited 1.
+
+**The damage was not the downtime; it was the disguise.** Render kept serving the last image that had booted, so the API stayed up on a build from before the guard existed. Four features shipped in that window were live in the browser and absent from the API, and every symptom was a `404` — which is indistinguishable from a route nobody wrote. `GET /api/medicines/units` answered `{"message":"Medicine not found"}`, because the request fell through to `/:id`. Establishing that production was merely *behind* took probing an unrelated public endpoint and arguing from its absence.
+
+The guard was the wrong layer. `JWT_SECRET` earns one because nothing works without it; mail does not, because everything else does — billing, inventory, the GST return and the till send no email and were down anyway. The requirement it was defending is real and unchanged: never accept a reset this deployment cannot deliver. That belongs at the endpoint, so `POST /api/auth/forgot-password` now answers **503** and issues no token while mail is unconfigured, and the process starts and logs loudly instead of exiting.
+
+The refusal turns on the deployment's configuration, not on the address, so every caller gets the same answer and it is not the account-enumeration oracle the identical-response rule exists to prevent. `POST /api/auth/reset-password` is deliberately unguarded: a link already delivered has to keep working, and consuming a token needs no mail server.
+
+`render.yaml` now declares the six variables it never mentioned.
+
+#### `/health` says which build is answering
+
+The corollary. There was no way to ask a running API which commit it was, so "the deploy did not happen" and "the code is wrong" — the two explanations for a `404` in production, with nothing in common — could not be told apart from outside.
+
+```json
+{ "success": true, "version": "2.0.0", "commit": "3904fcd", … }
+```
+
+`commit` comes from `RENDER_GIT_COMMIT`, or `GIT_COMMIT` anywhere else, and reads `unknown` in development. One `curl` against `git rev-parse --short HEAD` now answers a question that took an afternoon.
+
 #### The collapsed sidebar had a scrollbar lying across it
 
 Reported from a screenshot: a horizontal scrollbar sat over the bottom of the 64px rail, pushing Logout below it.
