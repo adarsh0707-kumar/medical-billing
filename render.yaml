@@ -13,7 +13,7 @@ services:
     # resolve and the app will fail with Prisma P1001.
     region: oregon
     plan: free
-    # Applies the 19 migrations in backend/prisma/migrations before traffic is
+    # Applies the 20 migrations in backend/prisma/migrations before traffic is
     # sent. The Dockerfile deliberately keeps the prisma CLI so this can run.
     preDeployCommand: npx prisma migrate deploy
     # Express serves no route at /, so the default probe of / returns 404.

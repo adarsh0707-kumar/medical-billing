@@ -2,7 +2,9 @@
 
 This folder is the single source of truth for **what the system does, how it is built, and where it is going**.
 
-Everything here was written by reading the actual source tree (`backend/src`, `frontend/src`, `prisma/schema.prisma`, `docker-compose.yml`, `nginx/nginx.conf`) as of **17 August 2026**, application version **1.0.0**.
+Everything here was written by reading the actual source tree (`backend/src`, `frontend/src`, `prisma/schema.prisma`, `docker-compose.yml`, `nginx/nginx.conf`), first on **17 August 2026** against version **1.0.0**, and maintained against the code with every change since. It describes **2.0.0**, last reconciled **2 September 2026**.
+
+That line said "as of 17 August 2026, application version 1.0.0" until 2026-09-02 — two weeks and a major version after it stopped being true, on the front page of the set that exists to stop exactly this.
 
 > **Reading rule used throughout these docs:** every capability is tagged with a status.
 > `✅ Implemented` — present in code and reachable from the UI or API.

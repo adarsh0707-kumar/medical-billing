@@ -1298,7 +1298,7 @@ Documented elsewhere in the repo but absent from the code. Requests to these ret
 
 **Four left in 2.0.0.** `/api/customers`, `/api/medicines`, `/api/suppliers` and `/api/reports` were documented in the READMEs, absent from the code, and are now real — see §2a. Their module-shaped predecessors are the deprecated paths, not 404s.
 
-`customer.routes.js`, `medicine.routes.js`, `report.routes.js` and `supplier.routes.js` exist too. Four zero-byte placeholders with exactly those names were deleted on 2026-08-20 ([G-13](./08-gap-analysis.md#g-13)) because they implied routers that did not exist; 2.0.0 is where the names became true. Nine routers are mounted: `auth`, `customer`, `medicine`, `supplier`, `report`, `inventory`, `billing`, `user` and `dashboard`.
+`customer.routes.js`, `medicine.routes.js`, `report.routes.js` and `supplier.routes.js` exist too. Four zero-byte placeholders with exactly those names were deleted on 2026-08-20 ([G-13](./08-gap-analysis.md#g-13)) because they implied routers that did not exist; 2.0.0 is where the names became true. Ten routers are mounted: `auth`, `customer`, `medicine`, `supplier`, `report`, `inventory`, `billing`, `user`, `dashboard` and `shop`.
 
 ---
 

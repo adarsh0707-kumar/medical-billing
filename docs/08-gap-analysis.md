@@ -67,7 +67,7 @@ Severity: 🔴 causes data corruption or a security exposure · 🟠 causes inco
 | [G-12](#g-12) | ✅ Fixed        | FK violations surface as 500                                            |
 | [G-03](#g-03) | ✅ Fixed        | Redis was a dead dependency                                             |
 | [G-08](#g-08) | ✅ Fixed | Sales trend costs 7 HTTP round trips |
-| [G-13](#g-13) | 🟡 Partly fixed | Dead files deleted 2026-08-20; three artefacts await a product decision |
+| [G-13](#g-13) | ✅ Fixed        | Dead files deleted 2026-08-20; the three artefacts that awaited a product decision were decided by 2026-08-24 |
 | [G-14](#g-14) | ✅ Fixed        | No automated tests                                                      |
 | [G-15](#g-15) | ✅ Fixed | Invoices are immutable with no correction path |
 | [G-17](#g-17) | ✅ Fixed        | Cart total disagreed with the invoice the server wrote                  |
@@ -413,7 +413,7 @@ Measured on 20,000 invoices: **7 requests / 259 KB / 102 ms → 1 request / unde
 The dashboard went further — it made **thirteen** requests, the seven above plus six for its panels, two of which fetched a single row purely to read `pagination.total`. `GET /api/dashboard/stats` replaces all thirteen: **794 KB / 159 ms → 6 KB / 19 ms.**
 
 ---
-### <a id="g-13"></a>G-13 🟡 Dead code — files removed, three decisions outstanding
+### <a id="g-13"></a>G-13 ✅ FIXED — Dead code removed, and the three decisions behind it taken
 
 **Deleted 2026-08-20**, each proven unreferenced first:
 
@@ -428,13 +428,15 @@ The dashboard went further — it made **thirteen** requests, the seven above pl
 
 The empty route files were actively misleading: a reader reasonably assumes `report.routes.js` means reports have a router. Re-grouping the URLs remains queued for [2.0.0](./05-roadmap-and-phases.md#release-plan).
 
-**Still open — each is a product decision, not a cleanup:**
+**The three that were not cleanups but product decisions — all now taken:**
 
-| Artefact                                                                                   | Question                                                                                                                                                                                                                                              |
+| Artefact                                                                                   | Decision                                                                                                                                                                                                                                              |
 | ------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | ~~`generateRefreshToken` (`jwt.utils.js`)~~                                          | ✅**Decided and used** — 2026-08-22. It backs `POST /api/auth/refresh`: 30-minute access tokens, with the week carried by a rotating `HttpOnly` cookie. Written in 1.0.0 for a flow that took two years to arrive, and kept rather than deleted at each review; this is what it was for |
 | ~~`generatePurchaseNumber` + `Purchase` / `PurchaseItem` models~~ | ✅ **Decided and removed** — 2026-08-24. Dropped rather than built ([PRD Q7](./01-product-requirements.md#14-open-questions)): the traceability it implied already exists on `Batch`, and the supplier endpoint no longer returns an array that was always empty |
 | ~~Redis client~~                                                                          | ✅**Decided and done** — removed rather than used ([G-03](#g-03)). Caching the `protect` lookup would have traded the immediate-deactivation guarantee for an unmeasured gain                                                              |
+
+*This entry was headed “🟡 three decisions outstanding” until 2026-09-02, and the summary table still called it partly fixed — three of the three had been struck through in the table above since 2026-08-24. The rows were kept current and the heading over them was not, which is the same failure this document exists to catch, one level up.*
 
 ---
 
@@ -649,6 +651,6 @@ The deeper point is not that the arithmetic was wrong but that it existed: the c
 | ~~6~~  | ~~[G-14](#g-14)~~                                      | **Done 2026-08-19** — 278 tests, CI, and a coverage gate on the money and auth paths                                               |
 | ~~6b~~ | ~~[G-17](#g-17)~~                                      | **Done 2026-08-20** — cart and invoice round identically, verified over 2.2M combinations and guarded by the first frontend suite  |
 | ~~6c~~ | ~~[G-18](#g-18)~~                                      | **Done 2026-08-20** — infrastructure failures no longer masquerade as bad credentials                                              |
-| ~~7~~   | ~~[G-08](#g-08), [G-03](#g-03), [G-13](#g-13), [G-15](#g-15)~~ | **Done** — the trend query, the void path and the Redis removal all landed 2026-08-20; G-13 keeps two open product decisions                                     |
+| ~~7~~   | ~~[G-08](#g-08), [G-03](#g-03), [G-13](#g-13), [G-15](#g-15)~~ | **Done** — the trend query, the void path and the Redis removal all landed 2026-08-20. G-13's two remaining product decisions followed: the refresh-token helper was adopted 2026-08-22, and `Purchase`/`generatePurchaseNumber` were dropped 2026-08-24 |
 | 8       | Part A (docs)                                          | Trim the READMEs to point at`docs/`                                                                                                     |
 | ~~9~~   | ~~[G-16](#g-16)~~                                       | **Done 2026-08-24** — data fetching moved to TanStack Query screen by screen; `set-state-in-effect` is back to `error` and `eslint .` is clean |

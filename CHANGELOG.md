@@ -162,6 +162,22 @@ Twenty tests. One of them found that the first version of the mail spy was patch
 
 ### Documentation
 
+#### The docs set reconciled against the code, and eight figures were wrong
+
+A sweep for stale numbers, dates and status markers, prompted by an audit that read the documents and then checked them.
+
+- **`docs/05`'s health snapshot** quoted 701 backend tests across 28 files and 165 frontend across 20, and dated its honest read to 2026-08-20 — describing Phase 8 as the work still ahead, three weeks after Phase 8 landed. Now 741 across 30 and 181 across 22, measured, with the read rewritten: nothing between here and a running shop is code any more, it is the four operator tasks.
+- **`docs/08`'s G-13** was headed “🟡 three decisions outstanding” and listed as partly fixed in the summary table, while its own table below showed all three struck through and decided by 2026-08-24. The rows had been kept current and the heading over them had not — the same failure the document exists to catch, one level up.
+- **`docs/09`'s coverage section** read “Measured 2026-08-22: about 85% of statements” and “the two files” above a table of four. Now 91.53%, with the four gated files' current figures and the thin spots named.
+- **`docs/01`'s NFR-23**, and the directory trees in **`docs/02`** and **`docs/06`**, still carried 604- and 701-test counts from three separate weeks.
+- **`docs/02` and `docs/04`** both said nine routers are mounted; there are ten. The shop router landed with multi-tenancy on 2026-08-29 and was never added to either table, and `docs/02`'s reports row still listed five of the ten reports.
+- **`docs/README.md`** introduced the whole set as describing version 1.0.0 as of 17 August — two weeks and a major version out of date, on the front page of the set that exists to prevent this.
+- **`render.yaml`** said it applies 19 migrations. There are 20.
+
+Both per-file test tables in `docs/09` now sum exactly to what a run reports — 741 and 181 — which is how the one genuinely missing count turned up: a test added to the prescription-register suite after its row was written.
+
+Every number here came from a run: `npm test`, `npm run test:coverage`, and the frontend suite on Node 22. None was carried over from a previous document.
+
 #### FR-BILL-18 is superseded, not planned
 
 The server-generated PDF invoice was specified when the printed bill was a receipt, and a PDF meant leaving the browser to get a document worth handing over. **FR-BILL-20 now prints a full GST tax invoice, and the browser saves it as a PDF named after the invoice number** — so what that requirement was reaching for exists, without either of the dependencies its backlog note proposed. Puppeteer in particular would have pulled a Chromium into a backend image whose entire deployment story is one small container.

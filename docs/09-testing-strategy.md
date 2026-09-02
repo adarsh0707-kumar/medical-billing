@@ -1,6 +1,6 @@
 # Testing Strategy
 
-**Measured 2026-09-01: 741 backend tests across 30 files, 181 frontend unit tests across 22 files, and a 7-flow browser smoke — all three layers on CI, all passing.**
+**Measured 2026-09-02: 741 backend tests across 30 files, 181 frontend unit tests across 22 files, and a 7-flow browser smoke — all three layers on CI, all passing.**
 
 > Counts here are taken by **running the suites**, not by adding up the tables below. Three documents once carried four different numbers because the tables were maintained by hand and two suites were never added to them.
 >
@@ -90,7 +90,7 @@ Two failures worth remembering, both fixed 2026-08-27:
 | `tests/billing/invoice-concurrency.test.js`   |     5 | Last-unit races, oversell bursts, gapless serials                          |
 | `tests/api/shop.test.js`                      |     8 | `GET`/`PUT /api/shop`: the caller's own shop only, the ADMIN gate on `PUT`, and read access for every role because printing a bill is a cashier's job (FR-SHOP-07). **Added with multi-tenancy and missing from this table until 2026-08-31** |
 
-**Frontend — 181 across 22 files, all passing.** Measured 2026-09-01 on Node 22.
+**Frontend — 181 across 22 files, all passing.** Measured 2026-09-02 on Node 22.
 The 125 recorded here before that dated from 2026-08-25 and had been overtaken by
 three files the table listed but the total never counted.
 
@@ -117,7 +117,7 @@ three files the table listed but the total never counted.
 | `src/pages/__tests__/cart-math.test.ts`        |    41 | The §4 fixtures in integer paise, mirroring the server ([G-17](./08-gap-analysis.md#g-17)) |
 | `src/lib/__tests__/amount-in-words.test.ts`    |    14 | The rupees-and-paise words on the printed invoice, in lakhs and crores, computed in paise throughout (FR-BILL-20) |
 | `src/pages/__tests__/Reports.margin.test.tsx` |    15 | The Top Sellers and Profit & Margin tabs (FR-RPT-07, FR-RPT-08): that a tab exists and opening it calls the endpoint — the assertion that would have caught both shipping with no screen — the ADMIN-only gate on margin being narrower than the GST tab's, that a cashier's page never fires a request it would get a 403 from, and the upper-bound warning when a batch had no cost price |
-| `src/pages/__tests__/Reports.prescriptions.test.tsx` |     8 | The Schedule H register tab (FR-MED-12), the fourth endpoint here built before anything called it: that the tab exists and opening it asks the server, that the search box and both date bounds reach the request — and that a lone bound does not, since the server would ignore it while the screen said otherwise — and that a cashier is never offered a tab that would 403 |
+| `src/pages/__tests__/Reports.prescriptions.test.tsx` |     9 | The Schedule H register tab (FR-MED-12), the fourth endpoint here built before anything called it: that the tab exists and opening it asks the server, that the search box and both date bounds reach the request — and that a lone bound does not, since the server would ignore it while the screen said otherwise — and that a cashier is never offered a tab that would 403 Plus the case the deployed app actually showed: a failed request rendering as "0 entries — no prescriptions recorded", which is the screen asserting a compliance fact it does not have |
 | `src/pages/__tests__/Inventory.units.test.tsx` |     4 | The unit field after it stopped being an enum: that the select offers the units the shop already uses and not only the built-in nine, that a hand-typed one leaves the browser lower-cased, that cancelling restores the previous unit rather than clearing a required field, and that a blank one is refused here rather than sent |
 | `src/pages/__tests__/Reports.void.test.tsx`    |    11 | The void and partial-return dialog: role gating, client-side bounds, the refetch ([FR-BILL-17](./01-product-requirements.md)) |
 | `src/pages/__tests__/Billing.guards.test.tsx`  |     9 | POS stock guards, driven through the rendered page                |
@@ -142,14 +142,18 @@ only the CSV download, the one flow built on browser machinery rather than ours.
 
 ### Coverage
 
-Measured 2026-08-22: **about 85% of statements** overall. The gate is deliberately not a whole-repo number — it sits on the two files where a regression is a financial or security incident:
+Measured 2026-09-02: **91.53% of statements** overall (91.81% of lines, 80.30% of branches). The gate is deliberately not a whole-repo number — it sits on the four files where a regression is a financial or security incident:
 
 | File                              | Statements | Branches | Gate |
 | --------------------------------- | ---------: | -------: | ---- |
-| `billing.controller.js`         |     97.05% |   80.00% | 90%  |
+| `billing.controller.js`         |     98.17% |   87.09% | 90%  |
 | `auth.middleware.js`            |     96.66% |   95.00% | 90%  |
-| `dashboard.controller.js`       |     97.37% |   91.66% | 90%  |
-| `utils/trend.js`                |    100.00% |   90.00% | 100% |
+| `dashboard.controller.js`       |     97.36% |   91.66% | 90%  |
+| `utils/trend.js`                |    100.00% |   85.71% | 100% |
+
+The thin spots outside the gate, in order: `config/mailer.js` **48.1%**, `controllers/manufacturer.controller.js` **70.4%**, `middlewares/error.middleware.js` **71.4%**, `controllers/medicine.controller.js` **77.4%**. The mailer is low on purpose — no suite opens an SMTP socket, so its send path is never executed — and the other three are ordinary gaps.
+
+*This section read “Measured 2026-08-22: about 85% of statements” and “the two files” over a table of four, until 2026-09-02. Both had been true once.*
 
 > **`dashboard.controller.js` was the lowest in the codebase at 21.73%**, and is now at 97.37% with a gate of its own. It serves `GET /api/dashboard/stats`, the single request that replaced thirteen, so every panel the dashboard renders depends on it — and almost none of it was exercised. Writing the tests found two defects: the expiry panel keyed its window to the current instant rather than local midnight (the third site of that bug, the other two having been fixed the same day), and the trend chart bucketed days in UTC while the zero-fill loop keyed them locally, so an early-morning sale was charted on the previous day. The second is the more instructive: the chart and the daily summary disagreed about which day a sale belonged to, and neither was obviously wrong on its own screen.
 
