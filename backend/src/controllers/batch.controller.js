@@ -1,5 +1,6 @@
 const prisma = require("../config/db");
-const { toCsv, sendCsv } = require("../utils/csv");
+const { streamCsv } = require("../utils/csv");
+const { logger } = require("../config/logger");
 const { setReason } = require("../config/audit-context");
 
 // Local midnight today — the same boundary `createInvoice` derives, and for the
@@ -75,25 +76,40 @@ const getAll = async (req, res, next) => {
  * Batches expiring inside the window, shared by the screen and the CSV export so
  * the two cannot drift apart.
  */
-const expiringData = async ({ days, shopId }) => {
+const expiringWhere = ({ days, shopId }) => {
   const futureDate = new Date();
   futureDate.setDate(futureDate.getDate() + days);
 
-  const batches = await prisma.batch.findMany({
-    where: {
-      shopId,
-      expiryDate: { lte: futureDate, gte: startOfToday() },
-      quantity: { gt: 0 },
-    },
-    include: {
-      medicine: { select: { name: true, unit: true } },
-      supplier: { select: { name: true } },
-    },
-    orderBy: { expiryDate: "asc" },
-  });
-
-  return { days, batches };
+  return {
+    shopId,
+    expiryDate: { lte: futureDate, gte: startOfToday() },
+    quantity: { gt: 0 },
+  };
 };
+
+/**
+ * What an expiry row carries, and in what order.
+ *
+ * `id` closes the ordering: a shop takes in many batches with the same expiry
+ * date, so `expiryDate` alone leaves a tie the database may break differently
+ * between two queries — which a paged export turns into a repeated row and a
+ * missing one.
+ */
+const EXPIRING_LIST = {
+  include: {
+    medicine: { select: { name: true, unit: true } },
+    supplier: { select: { name: true } },
+  },
+  orderBy: [{ expiryDate: "asc" }, { id: "asc" }],
+};
+
+const expiringData = async ({ days, shopId }) => ({
+  days,
+  batches: await prisma.batch.findMany({
+    where: expiringWhere({ days, shopId }),
+    ...EXPIRING_LIST,
+  }),
+});
 
 const getExpiring = async (req, res, next) => {
   try {
@@ -108,18 +124,27 @@ const getExpiring = async (req, res, next) => {
 };
 
 /** Same split, same reason, for the low-stock report. */
-const lowStockData = async ({ threshold, shopId }) => {
-  const batches = await prisma.batch.findMany({
-    where: { shopId, quantity: { lte: threshold, gt: 0 } },
-    include: {
-      medicine: { select: { name: true, unit: true, category: true } },
-      supplier: { select: { name: true } },
-    },
-    orderBy: { quantity: "asc" },
-  });
+const lowStockWhere = ({ threshold, shopId }) => ({
+  shopId,
+  quantity: { lte: threshold, gt: 0 },
+});
 
-  return { threshold, batches };
+/** `id` closes the ordering — quantity ties constantly. See `EXPIRING_LIST`. */
+const LOW_STOCK_LIST = {
+  include: {
+    medicine: { select: { name: true, unit: true, category: true } },
+    supplier: { select: { name: true } },
+  },
+  orderBy: [{ quantity: "asc" }, { id: "asc" }],
 };
+
+const lowStockData = async ({ threshold, shopId }) => ({
+  threshold,
+  batches: await prisma.batch.findMany({
+    where: lowStockWhere({ threshold, shopId }),
+    ...LOW_STOCK_LIST,
+  }),
+});
 
 const getLowStock = async (req, res, next) => {
   try {
@@ -175,11 +200,17 @@ const LOW_STOCK_COLUMNS = [
 
 const exportExpiring = async (req, res, next) => {
   try {
-    const { days, batches } = await expiringData({
-      ...req.validatedQuery,
-      shopId: req.user.shopId,
-    });
-    sendCsv(res, `expiring-${days}-days.csv`, toCsv(EXPIRING_COLUMNS, batches));
+    const { days } = req.validatedQuery;
+    const where = expiringWhere({ days, shopId: req.user.shopId });
+
+    await streamCsv(
+      res,
+      `expiring-${days}-days.csv`,
+      EXPIRING_COLUMNS,
+      (skip, take) =>
+        prisma.batch.findMany({ where, ...EXPIRING_LIST, skip, take }),
+      { logger },
+    );
   } catch (err) {
     next(err);
   }
@@ -187,14 +218,16 @@ const exportExpiring = async (req, res, next) => {
 
 const exportLowStock = async (req, res, next) => {
   try {
-    const { threshold, batches } = await lowStockData({
-      ...req.validatedQuery,
-      shopId: req.user.shopId,
-    });
-    sendCsv(
+    const { threshold } = req.validatedQuery;
+    const where = lowStockWhere({ threshold, shopId: req.user.shopId });
+
+    await streamCsv(
       res,
       `low-stock-at-${threshold}.csv`,
-      toCsv(LOW_STOCK_COLUMNS, batches),
+      LOW_STOCK_COLUMNS,
+      (skip, take) =>
+        prisma.batch.findMany({ where, ...LOW_STOCK_LIST, skip, take }),
+      { logger },
     );
   } catch (err) {
     next(err);

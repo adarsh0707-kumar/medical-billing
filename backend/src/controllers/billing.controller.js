@@ -1,6 +1,6 @@
 const prisma = require("../config/db");
-const { toCsv, sendCsv } = require("../utils/csv");
-const { MAX_LIMIT } = require("../validators/common.validator");
+const { toCsv, sendCsv, streamCsv } = require("../utils/csv");
+const { logger } = require("../config/logger");
 const { Prisma } = require("@prisma/client");
 const {
   generateInvoiceNumber,
@@ -797,7 +797,14 @@ const summaryForPeriod = async (period) => {
   };
 };
 
-const dailySummaryData = async (query, shopId) => {
+/**
+ * The day's bounds and the `where` that selects it.
+ *
+ * Extracted so the screen and the CSV cannot disagree about which invoices are
+ * in a day. The export pages this same clause rather than re-deriving it — the
+ * G-21 rule: one definition, or the file and the report drift.
+ */
+const dailySummaryPeriod = (query, shopId) => {
   // Absent means today; a garbage date is a 400 from validateQuery rather than
   // an Invalid Date that silently matched nothing.
   const date = query.date ?? new Date();
@@ -814,15 +821,31 @@ const dailySummaryData = async (query, shopId) => {
   const endOfDay = new Date(date);
   endOfDay.setHours(23, 59, 59, 999);
 
-  const period = { shopId, date: { gte: startOfDay, lte: endOfDay } };
+  return {
+    startOfDay,
+    where: { shopId, date: { gte: startOfDay, lte: endOfDay } },
+  };
+};
+
+/**
+ * The invoice list both the daily register and its export read.
+ *
+ * `id` is the last term of the ordering, not decoration: `date` alone is not a
+ * total order — two sales in the same second tie — and a paged export over a
+ * partial order can repeat one row and drop another. The screen never noticed
+ * because it takes the whole day in one query.
+ */
+const INVOICE_LIST = {
+  include: { customer: { select: { name: true } } },
+  orderBy: [{ date: "desc" }, { id: "asc" }],
+};
+
+const dailySummaryData = async (query, shopId) => {
+  const { startOfDay, where } = dailySummaryPeriod(query, shopId);
 
   const [invoices, summary] = await Promise.all([
-    prisma.invoice.findMany({
-      where: period,
-      include: { customer: { select: { name: true } } },
-      orderBy: { date: "desc" },
-    }),
-    summaryForPeriod(period),
+    prisma.invoice.findMany({ where, ...INVOICE_LIST }),
+    summaryForPeriod(where),
   ]);
 
   return { date: startOfDay, invoices, summary };
@@ -1019,11 +1042,8 @@ const marginReportData = async ({ month, year }, shopId) => {
 // Every row names a patient and what they were dispensed, which is the most
 // sensitive join in this database (threat T-9) — and a pharmacist needs it,
 // because dispensing Schedule H is their job.
-const prescriptionRegisterData = async (query, shopId) => {
-  const { page, limit, search, startDate, endDate } = query;
-  const skip = (page - 1) * limit;
-
-  const where = {
+/** The register's filter, shared by the paged screen and the streamed export. */
+const prescriptionRegisterWhere = ({ search, startDate, endDate }, shopId) => ({
     // Scoped through the invoice, because `Prescription` carries no `shopId` of
     // its own — it hangs off exactly one invoice, and that invoice has the
     // tenant. Filtering on the relation keeps the boundary in the same `where`
@@ -1039,27 +1059,42 @@ const prescriptionRegisterData = async (query, shopId) => {
     // On `prescribedOn`, the date the practitioner wrote it — not the date of
     // supply. They are different dates and an inspector asks about the former;
     // the invoice date is on the row for anyone who wants the latter.
-    ...(startDate && endDate && { prescribedOn: { gte: startDate, lte: endDate } }),
-  };
+  ...(startDate && endDate && { prescribedOn: { gte: startDate, lte: endDate } }),
+});
+
+/**
+ * What a register row carries, and in what order.
+ *
+ * `id` closes the ordering, as on the invoice registers: `prescribedOn` is a
+ * date rather than a timestamp, so a busy day is one enormous tie, and a paged
+ * export over a partial order silently repeats and drops rows.
+ */
+const PRESCRIPTION_LIST = {
+  orderBy: [{ prescribedOn: "desc" }, { id: "asc" }],
+  include: {
+    invoice: {
+      select: {
+        id: true,
+        invoiceNumber: true,
+        date: true,
+        status: true,
+        totalAmount: true,
+        items: { select: { medicineName: true, quantity: true } },
+      },
+    },
+  },
+};
+
+const prescriptionRegisterData = async (query, shopId) => {
+  const { page, limit } = query;
+  const where = prescriptionRegisterWhere(query, shopId);
 
   const [entries, total] = await Promise.all([
     prisma.prescription.findMany({
       where,
-      skip,
+      skip: (page - 1) * limit,
       take: limit,
-      orderBy: { prescribedOn: "desc" },
-      include: {
-        invoice: {
-          select: {
-            id: true,
-            invoiceNumber: true,
-            date: true,
-            status: true,
-            totalAmount: true,
-            items: { select: { medicineName: true, quantity: true } },
-          },
-        },
-      },
+      ...PRESCRIPTION_LIST,
     }),
     prisma.prescription.count({ where }),
   ]);
@@ -1189,7 +1224,11 @@ const getTrend = async (req, res, next) => {
  * The month's filing figures, shared by the screen and the CSV export. Same
  * reasoning as `dailySummaryData`: one query, so the two cannot disagree.
  */
-const gstReportData = async ({ month, year }, shopId) => {
+/**
+ * The tax period's bounds and the `where` that selects it. Shared by the report
+ * and its export for the reason `dailySummaryPeriod` is.
+ */
+const gstReportPeriod = ({ month, year }, shopId) => {
   const startDate = new Date(year, month - 1, 1);
   // `.999`, not `.000`. Omitting the milliseconds argument closed the month at
   // 23:59:59.000 while the next one opens at 00:00:00.000, so a sale committed
@@ -1198,14 +1237,23 @@ const gstReportData = async ({ month, year }, shopId) => {
   // A tax period has to be a partition of time, not a cover with holes in it.
   const endDate = new Date(year, month, 0, 23, 59, 59, 999);
 
+  return {
+    shopId,
+    date: { gte: startDate, lte: endDate },
+    paymentStatus: "PAID",
+  };
+};
+
+/** Same `id` tiebreaker, same reason — see `INVOICE_LIST`. */
+const GST_LIST = {
+  include: { items: true },
+  orderBy: [{ date: "asc" }, { id: "asc" }],
+};
+
+const gstReportData = async ({ month, year }, shopId) => {
   const invoices = await prisma.invoice.findMany({
-    where: {
-      shopId,
-      date: { gte: startDate, lte: endDate },
-      paymentStatus: "PAID",
-    },
-    include: { items: true },
-    orderBy: { date: "asc" },
+    where: gstReportPeriod({ month, year }, shopId),
+    ...GST_LIST,
   });
 
   const totals = invoices.reduce(
@@ -1258,12 +1306,20 @@ const INVOICE_COLUMNS = [
 
 const exportDailySummary = async (req, res, next) => {
   try {
-    const { date, invoices } = await dailySummaryData(
+    const { startOfDay, where } = dailySummaryPeriod(
       req.validatedQuery,
       req.user.shopId,
     );
-    const day = date.toISOString().slice(0, 10);
-    sendCsv(res, `daily-summary-${day}.csv`, toCsv(INVOICE_COLUMNS, invoices));
+    const day = startOfDay.toISOString().slice(0, 10);
+
+    await streamCsv(
+      res,
+      `daily-summary-${day}.csv`,
+      INVOICE_COLUMNS,
+      (skip, take) =>
+        prisma.invoice.findMany({ where, ...INVOICE_LIST, skip, take }),
+      { logger },
+    );
   } catch (err) {
     next(err);
   }
@@ -1271,12 +1327,21 @@ const exportDailySummary = async (req, res, next) => {
 
 const exportGstReport = async (req, res, next) => {
   try {
-    const { month, year, invoices } = await gstReportData(
-      req.validatedQuery,
-      req.user.shopId,
-    );
+    const { month, year } = req.validatedQuery;
+    const where = gstReportPeriod({ month, year }, req.user.shopId);
     const period = `${year}-${String(month).padStart(2, "0")}`;
-    sendCsv(res, `gst-report-${period}.csv`, toCsv(INVOICE_COLUMNS, invoices));
+
+    // Streamed, and this is the one where it matters most: a tax return that
+    // stops after the rows that happened to fit is a filing error nobody can
+    // see in the file.
+    await streamCsv(
+      res,
+      `gst-report-${period}.csv`,
+      INVOICE_COLUMNS,
+      (skip, take) =>
+        prisma.invoice.findMany({ where, ...GST_LIST, skip, take }),
+      { logger },
+    );
   } catch (err) {
     next(err);
   }
@@ -1289,6 +1354,14 @@ const exportGstReport = async (req, res, next) => {
  * reports are — a register. A month or a year is read as a shape over time, and
  * a year's worth of documents is both an enormous file and not the thing on the
  * screen. The row a reader wants here is the bucket.
+ *
+ * **This is why these four do not stream.** Monthly and margin are one row per
+ * day of a month — at most 31. Yearly is twelve. Top sellers is the `limit` the
+ * reader chose, capped at 100, where "the top ten" is the report rather than a
+ * truncation of it. The row count is bounded by the shape of the report and not
+ * by how much the shop traded, so paging them would add a loop around a single
+ * query and buy nothing. The five that are one row per *record* — daily
+ * summary, GST, the Schedule H register, expiring and low stock — stream.
  */
 const BREAKDOWN_COLUMNS = [
   { header: "Period", get: (r) => r.date ?? r.label },
@@ -1374,20 +1447,23 @@ const exportPrescriptionRegister = async (req, res, next) => {
     // The export ignores whatever page the screen is on and starts from the
     // first row, because a compliance document is not a page of a table.
     //
-    // It does *not* ignore the ceiling: MAX_LIMIT still applies, so a register
-    // with more than 100 entries in the chosen range exports its first 100 and
-    // says nothing about the rest. That is a real limitation — narrowing the
-    // date range is the answer today. Lifting it means streaming the CSV
-    // rather than building it in memory, which is the same unfinished work
-    // every other export here has.
-    const { entries } = await prescriptionRegisterData(
-      { ...req.validatedQuery, page: 1, limit: MAX_LIMIT },
+    // It used to stop at MAX_LIMIT as well — the first 100 entries, silently,
+    // with nothing in the file to say the register continued. Rule 65(11) asks
+    // the pharmacy to *produce* the particulars, and a document that ends
+    // without saying so produces the wrong number of them. It streams now, so
+    // the whole register comes out whatever the range holds.
+    const where = prescriptionRegisterWhere(
+      req.validatedQuery,
       req.user.shopId,
     );
-    sendCsv(
+
+    await streamCsv(
       res,
       "prescription-register.csv",
-      toCsv(PRESCRIPTION_COLUMNS, entries),
+      PRESCRIPTION_COLUMNS,
+      (skip, take) =>
+        prisma.prescription.findMany({ where, ...PRESCRIPTION_LIST, skip, take }),
+      { logger },
     );
   } catch (err) {
     next(err);

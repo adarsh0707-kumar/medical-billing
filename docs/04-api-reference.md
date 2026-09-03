@@ -1157,7 +1157,7 @@ Added 2026-09-01. The Schedule H register: every prescription recorded against a
 
 CSV of the register: `Prescribed On, Prescriber, Reg. No, Patient, Invoice No, Supplied On, Medicines, Status, Notes`. `Medicines` is the invoice's lines joined as `Name x10; Other x2`, so one row is one prescription. Filename `prescription-register.csv` — the only export not named after a period, because this one is defined by its filter rather than by a month.
 
-It ignores the page the screen is on and starts from the first row: a compliance document is not a page of a table. It does **not** ignore `MAX_LIMIT` — a register with more than 100 entries in the chosen range exports its first 100 and says nothing about the rest, which is a real limitation shared with every other export here and is answered today by narrowing the date range.
+It ignores the page the screen is on and starts from the first row: a compliance document is not a page of a table. It ignores `MAX_LIMIT` too — **the whole register comes out**, however many entries the range holds, streamed rather than built in memory. It capped at the first 100 until 2026-09-03 and said nothing about the rest, which is the defect that prompted this: see [§9b](#9b-csv-exports--fr-rpt-09).
 
 ---
 
@@ -1263,6 +1263,18 @@ One endpoint per report. Each takes **the same query parameters, the same valida
 | `GET /api/reports/low-stock/export?threshold=`      | `batches/low-stock`      | any role          |
 
 **200** `text/csv; charset=utf-8` with `Content-Disposition: attachment`. The server names the file after the period it covers — `daily-summary-2026-08-24.csv`, `gst-report-2026-08.csv`, `expiring-90-days.csv`, `low-stock-at-20.csv` — and clients should use that name rather than deriving their own.
+
+### Every export produces the whole report
+
+**Since 2026-09-03 no export truncates.** Five of the nine are one row per *record* — daily summary, GST, the Schedule H register, expiring and low stock — and those **stream**: the header goes out, then the query is paged and rows are written as they come, so memory stays flat whatever the period holds. A month with forty thousand invoices exports forty thousand rows.
+
+The other four are bounded by the shape of the report rather than by trade: monthly and margin are one row per day of a month (at most 31), yearly is twelve, and top sellers is the `limit` the caller chose, where "the top ten" is the report and not a truncation of it. They are still built in memory, because paging a query that returns 31 rows adds a loop and nothing else.
+
+> **Until 2026-09-03 the Schedule H register stopped at 100 rows.** `MAX_LIMIT` — the cap that bounds what a *client* may ask a list endpoint for, so `?limit=999999` cannot become a table scan (threat T-10) — was applied to a document nobody had asked to be paginated. A register that ends early is not a short download; it is the wrong answer to Rule 65(11), and nothing in the file said so.
+
+**A streamed export that fails mid-file destroys the connection** rather than ending cleanly. A truncated CSV that terminates properly is indistinguishable from a complete one, which on a compliance document is the worst available outcome — an aborted transfer is at least a visible failure. The first page is fetched *before* any header is sent, so the ordinary failures (a bad query, a database that is down) still arrive as a normal error response.
+
+**An export is not a snapshot.** Pages are separate queries, so a row written into the period while the file is being written may appear in no page or in two. The streamed reports are either over a closed period — a past day, a filed month — where nothing is being written any more, or live stock views where the reader is looking at a moving shelf regardless. Ordering on every streamed query ends in `id` so it is total: without a tiebreaker, two invoices sharing a timestamp can swap places between two pages, which loses one row and repeats another while the total stays right.
 
 ### Serialisation rules
 

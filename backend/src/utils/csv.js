@@ -73,35 +73,48 @@ const FORMATTERS = {
 };
 
 /**
- * Builds a CSV from a column spec and a list of rows.
+ * One row, formatted and escaped.
  *
  * A column is `{ header, get, kind }`. `kind` decides both the formatting and
  * whether the formula guard applies, which is why it is explicit rather than
  * inferred from the value — a money column that happened to be null on the first
  * row would otherwise be typed as text for the whole file.
+ *
+ * Extracted so `toCsv` and `streamCsv` cannot diverge. They are two ways of
+ * delivering the same file, and G-21 is what happens when one export grows its
+ * own idea of what a column contains: a second implementation of the escaping
+ * rules would be the same defect with a different shape.
  */
-const toCsv = (columns, rows) => {
-  const header = columns.map((c) => escape(c.header)).join(",");
+const csvRow = (columns, row) =>
+  columns
+    .map((col) => {
+      const kind = col.kind ?? "text";
+      const formatted = FORMATTERS[kind](col.get(row));
+      // Only text can carry a formula; see FORMULA_LEAD.
+      const guarded =
+        kind === "text" && FORMULA_LEAD.test(formatted)
+          ? `'${formatted}`
+          : formatted;
+      return escape(guarded);
+    })
+    .join(",");
 
-  const body = rows.map((row) =>
-    columns
-      .map((col) => {
-        const kind = col.kind ?? "text";
-        const formatted = FORMATTERS[kind](col.get(row));
-        // Only text can carry a formula; see FORMULA_LEAD.
-        const guarded =
-          kind === "text" && FORMULA_LEAD.test(formatted)
-            ? `'${formatted}`
-            : formatted;
-        return escape(guarded);
-      })
-      .join(","),
-  );
+const csvHeader = (columns) => columns.map((c) => escape(c.header)).join(",");
 
+/**
+ * Builds a CSV from a column spec and a list of rows, in memory.
+ *
+ * For reports that are bounded by their own shape — a month has at most 31
+ * daily buckets, a year has 12, a top-ten is ten — where paging would add a
+ * loop around a single query and nothing else. Everything that is one row per
+ * *record* uses `streamCsv` instead.
+ */
+const toCsv = (columns, rows) =>
   // Trailing newline: POSIX convention, and some parsers drop the last record
   // without it.
-  return BOM + [header, ...body].join(EOL) + EOL;
-};
+  BOM +
+  [csvHeader(columns), ...rows.map((row) => csvRow(columns, row))].join(EOL) +
+  EOL;
 
 /**
  * Sends a CSV as a download.
@@ -118,4 +131,81 @@ const sendCsv = (res, filename, csv) => {
   res.send(csv);
 };
 
-module.exports = { toCsv, sendCsv, money, isoDate, isoDateTime, BOM, EOL };
+/**
+ * How many rows a streamed export pulls per query.
+ *
+ * Unrelated to `MAX_LIMIT`, which bounds what a *client* may ask a list
+ * endpoint for (threat T-10). This is an internal read size: nobody chose it
+ * from a query string and no request gets larger because of it. 500 rows of a
+ * GST register is a few hundred kilobytes held at once, which keeps the memory
+ * ceiling flat without making the round trips the dominant cost.
+ */
+const STREAM_PAGE = 500;
+
+/**
+ * Streams a CSV as a download, paging the query so memory stays flat.
+ *
+ * `fetchPage(skip, take)` returns the next slice of rows; the loop stops on the
+ * first short page. Rows are formatted by `csvRow`, the same function `toCsv`
+ * uses, so the escaping and the formula guard are shared rather than
+ * reimplemented.
+ *
+ * **The first page is fetched before any header is sent.** That is deliberate:
+ * once a `200` and the CSV headers are on the wire, a failure can no longer be
+ * reported as a `500` with a message — the client has a file. Fetching first
+ * means the overwhelmingly common failure (a bad query, a database that is
+ * down) still arrives as a clean error through `next(err)`, and only a failure
+ * *mid-file* falls to the destroy path below.
+ *
+ * If a later page throws, the response is destroyed rather than ended. A
+ * truncated CSV that terminates cleanly is indistinguishable from a complete
+ * one, and on a compliance document that is the worst available outcome — an
+ * aborted transfer is a visible failure, which is what the caller needs.
+ *
+ * **An export is not a snapshot.** Pages are separate queries, so a row written
+ * into the period *while the file is being written* may land in no page or in
+ * two. The reports that stream are either over a closed period — a past day, a
+ * filed month — where nothing is being written any more, or live stock views
+ * where the reader is looking at a moving shelf regardless. Making it a true
+ * snapshot means holding a repeatable-read transaction open for the length of
+ * the download, which trades a connection for a guarantee no reader here has
+ * asked for.
+ */
+const streamCsv = async (res, filename, columns, fetchPage, { logger } = {}) => {
+  let skip = 0;
+  let rows = await fetchPage(skip, STREAM_PAGE);
+
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  res.write(BOM + csvHeader(columns) + EOL);
+
+  try {
+    while (rows.length) {
+      // One write per page rather than per row: the same bytes, an order of
+      // magnitude fewer syscalls, and still a bounded buffer.
+      res.write(rows.map((row) => csvRow(columns, row)).join(EOL) + EOL);
+      if (rows.length < STREAM_PAGE) break;
+      skip += STREAM_PAGE;
+      rows = await fetchPage(skip, STREAM_PAGE);
+    }
+    res.end();
+  } catch (err) {
+    logger?.error(
+      { err, filename, rowsWritten: skip },
+      "csv export failed mid-file; connection destroyed rather than truncated",
+    );
+    res.destroy(err);
+  }
+};
+
+module.exports = {
+  toCsv,
+  sendCsv,
+  streamCsv,
+  money,
+  isoDate,
+  isoDateTime,
+  BOM,
+  EOL,
+  STREAM_PAGE,
+};

@@ -33,6 +33,22 @@ The printed GST invoice is untouched: it paints with `text-black` on default pap
 
 ### Fixed
 
+#### Exports produce the whole report, not the part that fit
+
+The Schedule H register exported its **first 100 rows** and said nothing about the rest. `MAX_LIMIT` is the cap that stops a client asking a list endpoint for `?limit=999999` (threat T-10); applying it to a compliance document nobody asked to paginate turned Rule 65(11)'s "produce the particulars" into "produce some of them". A register that ends early is not a short download — and a truncated CSV that terminates cleanly is indistinguishable from a complete one.
+
+**The five exports that are one row per record now stream** — daily summary, GST, the Schedule H register, expiring and low stock. The header goes out, then the query is paged and rows are written as they come, so memory stays flat whatever the period holds.
+
+**The other four do not, and that is the answer rather than an omission.** Monthly and margin are one row per day of a month, so at most 31. Yearly is twelve. Top sellers is the `limit` the caller chose, where "the top ten" *is* the report. Their row count is set by the shape of the report and not by how much the shop traded, so paging them would add a loop around a single query and buy nothing.
+
+Three things were needed beyond the loop:
+
+- **`toCsv` and the new `streamCsv` share `csvRow`.** A second implementation of the escaping and the formula guard is G-21's exact shape — an export growing its own idea of what a column contains — so a unit test asserts the streamed bytes are **identical** to what `toCsv` would have built, across two full pages and a partial one.
+- **Every streamed query orders by `id` last.** `date DESC` is not a total order: two sales in the same second tie, and a paged read over a partial order repeats one row and drops another while the row *count* stays right. A test counts distinct keys rather than lines for exactly that reason.
+- **A failure mid-file destroys the connection** instead of ending it. The first page is fetched before any header is sent, so an ordinary failure — a bad query, a database that is down — is still a clean error response; only a failure after bytes are on the wire falls to the destroy path, where an aborted transfer is the honest outcome.
+
+Nineteen tests: 120 rows exported where the ceiling was 100, on the register and the GST return; distinct keys across the page boundary; the CSV agreeing with the JSON report on its row count; tenant scoping surviving the paged query; and the bounded four still bounded.
+
 #### The API refused to start without a mail server, and production spent two days down
 
 The boot guard added with self-service password reset (FR-AUTH-11) exited the process in production when `SMTP_HOST/PORT/USER/PASS/FROM` or `APP_URL` was unset. On Render those were never set, so from 2026-08-31 every deploy built its image, ran its migrations, printed `Refusing to start` and exited 1.

@@ -1,6 +1,6 @@
 # Testing Strategy
 
-**Measured 2026-09-02: 741 backend tests across 30 files, 181 frontend unit tests across 22 files, and a 7-flow browser smoke — all three layers on CI, all passing.**
+**Measured 2026-09-03: 760 backend tests across 31 files, 181 frontend unit tests across 22 files, and a 7-flow browser smoke — all three layers on CI, all passing.**
 
 > Counts here are taken by **running the suites**, not by adding up the tables below. Three documents once carried four different numbers because the tables were maintained by hand and two suites were never added to them.
 >
@@ -50,7 +50,7 @@ Two decisions worth knowing:
 
 ### What exists
 
-**Backend — 741 across 30 files, all passing.** The count is what a run reports, not what passes — recording it the other way would be the drift this section exists to prevent, and for a while the two genuinely differed.
+**Backend — 760 across 31 files, all passing.** The count is what a run reports, not what passes — recording it the other way would be the drift this section exists to prevent, and for a while the two genuinely differed.
 
 Two failures worth remembering, both fixed 2026-08-27:
 
@@ -73,7 +73,7 @@ Two failures worth remembering, both fixed 2026-08-27:
 | `tests/billing/reports.test.js`               |    36 | Daily, trend and GST reports, date boundaries, paid-only filtering — **plus the monthly and yearly reports** added 2026-08-30: day/month boundaries, reconciliation with an unpaid invoice in the period, the zero-fill, both CSV shapes and the role split |
 | `tests/billing/invoice-void.test.js`          |    22 | Stock restoration, credit notes, partial returns, **twelve** concurrent returns, period rule |
 | `tests/inventory/medicines.test.js`           |    28 | Stock totals, POS search, soft delete, validation, and the unit vocabulary: a unit outside the original nine accepted and stored lower-cased, `GET /units` reporting each in use once, dropping a retired medicine's unit, and not reporting another shop's |
-| `tests/reports/csv.test.js`                   |    16 | Escaping, the formula-injection guard, the BOM and CRLF                    |
+| `tests/reports/csv.test.js`                   |    21 | Escaping, the formula-injection guard, the BOM and CRLF                    |
 | `tests/inventory/masters.test.js`             |    15 | Masters CRUD, delete conflicts, suppliers                                  |
 | `tests/auth/password-change-required.test.js` |    13 | The forced-password-change gate and its two deliberate exemptions          |
 | `tests/billing/customers.test.js`             |    13 | Uniqueness, validation, search, history, pagination shape                  |
@@ -82,6 +82,7 @@ Two failures worth remembering, both fixed 2026-08-27:
 | `tests/reports/csv-export.test.js`            |    11 | The four export endpoints: filenames, headers, money as stored             |
 | `tests/reports/top-sellers.test.js`           |    19 | The ranking: a renamed medicine staying one row under its current name (BR-12), a partial return coming off the units in the month the credit note was issued, a fully returned medicine dropping off, the capped `limit`, and shop scoping |
 | `tests/reports/prescription-register.test.js` |    21 | The Schedule H register: the date filter reading `prescribedOn` and not the date of supply, search across prescriber / registration number / patient, tenancy through `invoice.shopId` where the row has none of its own, the role split, and the export starting from the first row whatever page is on screen |
+| `tests/reports/export-streaming.test.js`      |    14 | That the five row-per-record exports produce the *whole* report: 120 rows out of each where the old ceiling was 100, every key present exactly once across the page boundary, the file agreeing with the JSON report on its row count, tenant scoping surviving the paged query, and the four bounded exports staying bounded |
 | `tests/reports/margin.test.js`                |    20 | The margin report: revenue excluding GST against batch cost, the day rows reconciling to the headline, a credit note landing in the month it was issued while its sale stays in its own, a zero-cost batch counted rather than passing as free, the ADMIN-only contrast with `/monthly`, and shop scoping |
 | `tests/audit/audit-retention.test.js`         |     8 | The 24-month sweep: both sides of the window boundary, the dry run changing nothing, that it writes no audit rows of its own, and that an erasure still completes when the sweep has already taken its rows |
 | `tests/audit/audit-log.test.js`               |     9 | Actor and before/after on every audited write, what is deliberately not audited, and — since the 2026-08-31 migration off `$use` — that an audit row rolls back with the transaction it describes |
