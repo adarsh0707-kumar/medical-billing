@@ -437,12 +437,185 @@ COMPOSE_FILE=docker-compose.prod.yml ENV_FILE=.env.prod ./scripts/restore.sh bac
 
 `restore.sh` asks for confirmation before replacing a database, and runs inside a single transaction so a failure rolls back rather than leaving something that is neither the old state nor the new. Set `FORCE=1` for unattended use.
 
-### Rotating the database password
+### Rotating a secret
 
-Postgres applies `POSTGRES_USER` and `POSTGRES_PASSWORD` **only when it initialises an empty data directory**. Changing them in `.env.prod` on a running system does nothing to the database, and the API then fails to authenticate with `P1000`. Either:
+Two secrets can be rotated on a running system. They fail in opposite ways, which
+is why each gets its own procedure rather than one paragraph of advice:
+`JWT_SECRET` does exactly what you tell it and takes every session with it, while
+the database password quietly does *nothing* and lets you find out from a
+`P1000` five minutes later.
 
-```sql
-ALTER ROLE myuser WITH PASSWORD 'the new one';
+Neither procedure touches business data. Both are safe to rehearse against the
+development stack first, and worth rehearsing there once before you need them.
+
+#### Rotating `JWT_SECRET`
+
+**It signs everybody out. That is not a side effect — it is the whole
+mechanism.** `JWT_SECRET` signs both halves of a session: the 30-minute access
+token the browser keeps in `localStorage`, and the 7-day refresh token in the
+`HttpOnly` cookie. Change it and every token in existence stops verifying at
+once. That bluntness is also why it is worth having: it is the only lever that
+ends every session on the system regardless of user (§10 P1-7 in
+[07](./07-security.md)).
+
+It does **not** touch password-reset links, which are random 32-byte values
+stored as SHA-256 hashes and never signed, and it does not touch the database.
+
+1. **Pick the moment.** Everyone signed in is signed out when the new process
+   takes over. A cashier mid-sale loses an unsubmitted cart — nothing committed,
+   but a re-keyed basket. Outside trading hours if you have the choice.
+2. **Generate one.** `openssl rand -hex 32`. Nothing shorter; this is an HMAC
+   key, not a password anyone types.
+3. **Put it in `.env.prod`** as `JWT_SECRET=`, and **keep the old value**
+   somewhere until step 6. It is the only way back.
+4. **Recreate the backend alone:**
+
+   ```bash
+   docker compose -f docker-compose.prod.yml --env-file .env.prod \
+     up -d --force-recreate backend
+   ```
+
+   Postgres and nginx keep running. `src/index.js` refuses to start without the
+   variable, so a typo that empties it fails loudly at boot rather than
+   answering `401` to every request — that was [D-15](./08-gap-analysis.md#d-15).
+5. **Verify** — see below.
+6. **Destroy the old value** once you are satisfied. Until then it is a live
+   credential sitting in a second place.
+
+**What the users see.** The next request answers `401`; the SPA's interceptor
+tries its one silent refresh; the cookie fails `jwt.verify`, so the server clears
+it and answers `401` again; the app returns them to the sign-in page. They sign
+in and carry on. **Reuse detection does not fire** — verification fails before
+the token's `jti` is ever read, so nobody's account is flagged as compromised by
+a rotation.
+
+**What breaks mid-rotation.** Between the old container stopping and the new one
+passing its health check, nginx has no backend and answers `502`. Seconds,
+usually; the compose health check allows a 30-second start period. Nothing that
+was already committed is at risk — the database is not involved.
+
+**How to tell it worked.**
+
+```bash
+curl -sk https://localhost/health/ready | jq          # 200, "database":{"status":"up"}
+curl -sk https://localhost/health | jq -r .commit     # the build you expect
 ```
 
-then update `.env.prod` and restart the backend — or take a dump, recreate the volume, and restore into it.
+Then sign in fresh — that must succeed. If you kept an old token, present it:
+`401 Invalid token.` is the rotation working, not a fault. The logs should show
+users re-authenticating and nothing at `error`.
+
+**Backing out.** Put the old value back and recreate again. Sessions minted under
+the *new* secret die instead — there is no dual-key verification here, because
+`jwt.verify` is handed exactly one secret, so a rotation and its reversal each
+cost one sign-out. Rotating twice in five minutes signs everyone out twice.
+
+**On a managed host** (the Render deployment): set `JWT_SECRET` in the service's
+environment. Saving it restarts the service, which *is* step 4. Confirm the
+restart actually happened with `/health` — it reports the running commit, so you
+are reading the new process rather than assuming it.
+
+#### Rotating the database password
+
+**The thing that surprises people: editing `.env.prod` changes nothing.** The
+Postgres image applies `POSTGRES_USER` and `POSTGRES_PASSWORD` only when it
+initialises an **empty** data directory. On an existing volume they are ignored
+entirely — so the role keeps its old password while the backend starts presenting
+the new one, and Prisma fails with `P1000: Authentication failed`. The password
+must be changed *inside* the database, not in the file.
+
+Generate it with `openssl rand -hex 32` rather than `-base64`. The value ends up
+inside `DATABASE_URL`, and base64 emits `/` and `+`, which have meaning in a URL;
+hex sidesteps the escaping question rather than answering it.
+
+**Path A — `ALTER ROLE`.** The routine one. Reach for it for a scheduled
+rotation, a suspected leak, or when you have lost the password entirely.
+
+1. Take a backup first regardless: `COMPOSE_FILE=docker-compose.prod.yml
+   ENV_FILE=.env.prod ./scripts/backup.sh`
+2. Change it inside Postgres. Read the role and database name **out of the
+   running container** rather than assuming your shell has them — `.env.prod` is
+   passed to compose, not sourced into your session, so `$POSTGRES_USER` is
+   empty in the terminal you are typing into. This is the same trick
+   `scripts/backup.sh` uses, and for the same reason:
+
+   ```bash
+   COMPOSE="docker compose -f docker-compose.prod.yml --env-file .env.prod"
+   DB_USER=$($COMPOSE exec -T postgres printenv POSTGRES_USER | tr -d '\r')
+   DB_NAME=$($COMPOSE exec -T postgres printenv POSTGRES_DB   | tr -d '\r')
+
+   $COMPOSE exec -T postgres psql -U "$DB_USER" -d "$DB_NAME" \
+     -c "ALTER ROLE \"$DB_USER\" WITH PASSWORD 'the-new-one';"
+   ```
+
+   Expect `ALTER ROLE` back. The new password is now live for every *new*
+   connection; the backend's existing pool keeps working until it reconnects,
+   which is why step 4 is a restart rather than a wait.
+
+   **This works without knowing the old password.** The image's `pg_hba.conf`
+   grants `trust` to the container's own unix socket *and* to `127.0.0.1/32`,
+   so a connection from inside the container is never challenged. Everything
+   else — including the backend container, which reaches the database as host
+   `postgres` — falls through to `scram-sha-256`. That is why
+   `docker-compose.prod.yml` publishes no `ports:` for Postgres: the trust rules
+   are reachable only from inside the container, and publishing 5432 would put
+   the host's network beside them.
+
+   The same fact makes one obvious check useless. **Do not verify with `psql`
+   from inside the Postgres container** — `PGPASSWORD=anything psql -h 127.0.0.1`
+   succeeds whatever you type, because loopback is trusted. It will tell you the
+   old password still works when it no longer does. Verify from the application
+   instead, which is what step 5 does.
+3. Update `POSTGRES_PASSWORD` in `.env.prod`. `DATABASE_URL` is composed from the
+   same three variables, so there is nothing else to edit and nothing that can
+   drift.
+4. Recreate the backend alone, exactly as for `JWT_SECRET` above. Postgres does
+   not need recreating; if you recreate it, it ignores the variable anyway,
+   which is the whole trap.
+5. Verify — below.
+
+**Path B — dump, recreate the volume, restore.** Reach for it when the volume is
+being rebuilt anyway: moving hosts, changing `POSTGRES_USER` (which the init
+script cannot re-run for you), or a data directory you no longer trust.
+
+1. `./scripts/backup.sh`, immediately before the next step and with the app
+   already stopped if you can — anything written between the dump and the
+   shutdown is lost.
+2. `docker compose -f docker-compose.prod.yml --env-file .env.prod down`
+   — **without** `-v`, which would take the volume before you have chosen to.
+3. Update `.env.prod` with the new user and password.
+4. Remove the volume by name. Find it rather than guessing: `docker volume ls |
+   grep pgdata_prod` — it is `<project>_pgdata_prod`, and the project is the
+   directory name unless you have set `COMPOSE_PROJECT_NAME`.
+5. `up -d`, then `npx prisma migrate deploy`, then
+   `./scripts/restore.sh backups/<file>.dump`.
+6. Verify.
+
+**What breaks mid-rotation.** Path A costs a backend restart: a `502` for a few
+seconds, with the database serving throughout. Path B is a full outage for as
+long as the restore takes, and the window between the dump and the shutdown is
+data you are choosing to lose.
+
+**How to tell it worked.** `/health/ready` runs `SELECT 1` over the
+application's own connection, so a `200` with `"database":{"status":"up"}` is
+proof the new password authenticates — not merely that the process is alive.
+That is the only check that means anything here, for the loopback-trust reason
+above.
+
+```bash
+curl -sk https://localhost/health/ready | jq
+```
+
+Then commit something real: a sale, or `npm run purge:audit` with no `--apply`.
+The failure to watch for is `P1000: Authentication failed` in the backend log,
+which means step 2 and step 3 disagree — the role has one password and
+`.env.prod` names another.
+
+*Rehearsed against the development stack on 2026-09-03: `ALTER ROLE` over the
+container socket with no old password, the old credential then refused from the
+backend with exactly that `P1000`, the new one accepted, and the stack returned
+to its committed password afterwards. The loopback-trust false positive is in
+these notes because the rehearsal produced one.*
+
+**Backing out.** Path A: `ALTER ROLE` back to the old password and restore
+`.env.prod`. Path B: you have the dump — that is what it is for.

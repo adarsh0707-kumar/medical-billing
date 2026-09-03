@@ -46,13 +46,18 @@ services:
       # The browser is same-origin through nginx, so CORS applies only to callers
       # reaching the API directly. In production the allowlist is exactly this.
       CORS_ORIGINS: "${CORS_ORIGINS:?must be set - the origin(s) allowed to call the API directly}"
-      # Mail (FR-AUTH-11). Required, like JWT_SECRET and for the same reason:
-      # the failure is silent. Without these the API still accepts password
-      # resets and answers them normally, and cannot say otherwise without
-      # revealing which addresses have accounts — so a shopkeeper who signed up
-      # themselves would have no way back into their own shop. `src/index.js`
-      # refuses to start without them too; this is the earlier of the two
-      # errors, and the one that names the file to edit.
+      # Mail (FR-AUTH-11). Required *by this file*, and deliberately so — a
+      # production stack should not launch half-configured — but no longer by
+      # the application. `src/index.js` refused to start without these until
+      # 2026-09-01, which took a deployed API down for two days over a feature
+      # none of billing, inventory or reporting uses. It now starts, warns, and
+      # answers 503 on POST /api/auth/forgot-password so nobody is promised a
+      # reset link this deployment cannot send.
+      #
+      # So the compose guard is a deployment policy rather than a correctness
+      # one: it fails here, before anything starts, with the name of the
+      # variable and the file to edit. Drop the `:?` on a deployment that
+      # genuinely has no mail server and accepts that password reset is off.
       SMTP_HOST: "${SMTP_HOST:?must be set - the mail server password resets are sent through}"
       SMTP_PORT: "${SMTP_PORT:?must be set - 465 for implicit TLS, 587 for STARTTLS}"
       SMTP_USER: "${SMTP_USER:?must be set}"

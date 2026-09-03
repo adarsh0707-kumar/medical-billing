@@ -162,6 +162,22 @@ Twenty tests. One of them found that the first version of the mail spy was patch
 
 ### Documentation
 
+#### Key rotation is a procedure now, not a warning (P2-16)
+
+The last open item in the security backlog. `docs/07 §7` had the sharp edge written down — Postgres applies `POSTGRES_PASSWORD` only when it initialises an empty data directory — but a warning is not something an operator can follow at 2am, and it only described one of the two secrets.
+
+Two runbooks in [`docs/06`](./docs/06-development-guide.md#rotating-a-secret), because the two fail in opposite directions:
+
+- **`JWT_SECRET` does exactly what it is told, and signs every user out doing it.** It signs both halves of a session — the 30-minute access token and the 7-day refresh cookie — so changing it invalidates every token in existence. The runbook says that first, in those words, because it is the mechanism rather than a side effect. It also states what does *not* break: password-reset links are random values stored as hashes and never signed, and reuse detection cannot fire, because verification fails before a token's `jti` is ever read. Backing out costs a second sign-out; there is no dual-key verification, since `jwt.verify` is handed exactly one secret.
+- **The database password appears to change and does not.** Editing `.env.prod` leaves the role untouched while the backend starts presenting the new value, and Prisma fails `P1000` — after the fact, which is the whole problem. Two paths: `ALTER ROLE` for a scheduled rotation, a suspected leak, or a password you have lost; dump-recreate-restore when the volume is being rebuilt anyway or `POSTGRES_USER` itself has to change.
+
+**Rehearsed against the development stack rather than reasoned about**, which is the only reason two of these notes exist:
+
+- The `ALTER ROLE` command as first drafted read `psql -U "$POSTGRES_USER"`, which is **empty in the operator's shell** — `.env.prod` is passed to compose, not sourced into a session. It now reads the role out of the running container, the way `scripts/backup.sh` already does.
+- The image grants `trust` to loopback as well as to the unix socket, so `PGPASSWORD=anything psql -h 127.0.0.1` succeeds from inside the Postgres container **whatever you type**. A rotation verified that way looks like it failed. The runbook says not to, and verifies through `/health/ready` instead, which runs `SELECT 1` over the application's own connection.
+
+Also corrects a comment in `docker-compose.prod.yml` that still claimed `src/index.js` refuses to start without the SMTP variables. It stopped doing that on 2026-09-01. The compose guard stays — a production stack should not launch half-configured — but it is now labelled as the deployment policy it is rather than as a second copy of an application guard that no longer exists.
+
 #### The docs set reconciled against the code, and eight figures were wrong
 
 A sweep for stale numbers, dates and status markers, prompted by an audit that read the documents and then checked them.
