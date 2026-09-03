@@ -613,8 +613,13 @@ Full record including category, manufacturer and **all** batches (each with its 
 | `unit`                           | required. 1–20 chars, must start with a letter, then letters, digits, spaces, `.` `-` `/`. **Lower-cased and trimmed on the way in.** Nine values were enumerated here until 2026-09-01 — see below |
 | `gstPercent`                     | number, one of`0, 5, 12, 18`                                                    |
 | `isScheduledH`                   | boolean, default`false`                                                         |
+| `defaultSupplierId`              | optional. The distributor this medicine is usually reordered from; `""` or `null` clears it. Must be a supplier of **your** shop, or the request is a `404` — see below. Distinct from the supplier on a batch, which records where one consignment came from |
 
-**201** with the created medicine including its category and manufacturer. Unknown fields are silently stripped by Zod.
+**201** with the created medicine including its category, manufacturer and `defaultSupplier` (`{ id, name, code }`). Unknown fields are silently stripped by Zod.
+
+> **A foreign reference answers 404.** `categoryId`, `manufacturerId` and `defaultSupplierId` must all belong to the caller's shop, and one that does not reads exactly as an id that never existed — `Category not found`, `Manufacturer not found`, `Supplier not found`. The same guard covers `supplierId` on `POST /api/inventory/batches`.
+>
+> Until 2026-09-03 none of these were checked: a foreign key only asks whether a row exists, never whose it is, so a medicine could be filed under another shop's category and the response's `include` would read that shop's name straight back. The tenancy rule covers the row being written; this covers the rows it points at.
 
 > **`unit` stopped being an enum on 2026-09-01.** It permitted exactly nine values — tablet, capsule, syrup, injection, cream, drops, powder, inhaler, other — so a shop selling vials, sachets, strips or tubes had to file them under `other`, and `other` is then what the customer read in the **PACK** column of their invoice. The list was never going to be complete, and a closed enum makes every omission a `400` the operator cannot act on.
 >
@@ -731,11 +736,37 @@ Manual stock adjustment for breakage, theft, a miscount, or expired stock coming
 `search` matches name (case-insensitive) or phone. Results ordered by name, unpaginated.
 
 ```json
-{ "name": "MedPlus Distributors", "contactName": "Rahul", "phone": "9876543210",
-  "email": "rahul@medplus.in", "gstNumber": "27AABCU9603R1ZM", "address": "…" }
+{
+  "code": "SUP-001",
+  "name": "Sharma Medical Agencies",
+  "contactName": "Rakesh Sharma",
+  "phone": "+91 94310 22781",
+  "email": "orders@sharmamedical.in",
+  "gstNumber": "10AAGCS4821K1ZP",
+  "address": "Shop 14, Govind Mitra Road, Patna Market",
+  "city": "Patna", "state": "Bihar", "pincode": "800004",
+  "drugLicenceNo": "BR/PAT/20B-2214, 21B-2215",
+  "paymentTerms": "30 days credit",
+  "deliveryDays": "Mon, Wed, Fri",
+  "creditLimit": 250000,
+  "notes": "General multi-company stockist — analgesics and fast-moving OTC"
+}
 ```
 
-`name` is required (≥ 2 chars); everything else is optional. `email` must be a valid address **or** an empty string.
+**`name` is required (≥ 2 chars) and everything else is optional**, which is the shape of the real workflow rather than laziness: a distributor is entered mid-call from a phone number and filled in from the first invoice. `email` must be a valid address **or** an empty string.
+
+| Field                             | Rule |
+| --------------------------------- | ---- |
+| `code`                          | ≤ 30 chars, **unique per shop**. A duplicate is a `409`. Omit it rather than sending `""` — an empty string is a *value*, so two blank codes collide on the index while any number of suppliers may have no code at all |
+| `pincode`                       | exactly six digits, or an empty string. A string and not a number, so a leading zero survives |
+| `creditLimit`                   | number ≥ 0, up to `DECIMAL(12,2)`. Recorded, not enforced — nothing blocks a purchase that exceeds it |
+| `paymentTerms`, `deliveryDays` | ≤ 60 chars, free text. Not enumerated: "On order (2-4 hrs)" is a real delivery arrangement and is not a set of weekdays |
+| `drugLicenceNo`                 | ≤ 120 chars, free text. State licence formats differ, and a pattern that rejected a valid one would block a real supplier |
+| `notes`                         | ≤ 500 chars |
+
+`state` is stored because it decides the place of supply on a purchase. **This system does not yet act on that** — an inter-state purchase attracts IGST and the billing pipeline only computes the intra-state CGST + SGST pair. Recording it makes the question visible rather than answered.
+
+*Everything from `code` down was added on 2026-09-03. Before that a supplier was a contact card: it could not hold the shop's own reference for the distributor, their licence, or the terms the purchase is made on.*
 
 `GET /:id` returns the supplier with `_count.batches` — how many stock batches have been received from them. **404** `Supplier not found`.
 

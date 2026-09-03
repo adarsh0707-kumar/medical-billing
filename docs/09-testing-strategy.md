@@ -1,6 +1,6 @@
 # Testing Strategy
 
-**Measured 2026-09-03: 760 backend tests across 31 files, 181 frontend unit tests across 22 files, and a 7-flow browser smoke — all three layers on CI, all passing.**
+**Measured 2026-09-03: 781 backend tests across 32 files, 185 frontend unit tests across 22 files, and a 7-flow browser smoke — all three layers on CI, all passing.**
 
 > Counts here are taken by **running the suites**, not by adding up the tables below. Three documents once carried four different numbers because the tables were maintained by hand and two suites were never added to them.
 >
@@ -50,7 +50,7 @@ Two decisions worth knowing:
 
 ### What exists
 
-**Backend — 760 across 31 files, all passing.** The count is what a run reports, not what passes — recording it the other way would be the drift this section exists to prevent, and for a while the two genuinely differed.
+**Backend — 781 across 32 files, all passing.** The count is what a run reports, not what passes — recording it the other way would be the drift this section exists to prevent, and for a while the two genuinely differed.
 
 Two failures worth remembering, both fixed 2026-08-27:
 
@@ -73,6 +73,7 @@ Two failures worth remembering, both fixed 2026-08-27:
 | `tests/billing/reports.test.js`               |    36 | Daily, trend and GST reports, date boundaries, paid-only filtering — **plus the monthly and yearly reports** added 2026-08-30: day/month boundaries, reconciliation with an unpaid invoice in the period, the zero-fill, both CSV shapes and the role split |
 | `tests/billing/invoice-void.test.js`          |    22 | Stock restoration, credit notes, partial returns, **twelve** concurrent returns, period rule |
 | `tests/inventory/medicines.test.js`           |    28 | Stock totals, POS search, soft delete, validation, and the unit vocabulary: a unit outside the original nine accepted and stored lower-cased, `GET /units` reporting each in use once, dropping a retired medicine's unit, and not reporting another shop's |
+| `tests/inventory/supplier-master.test.js`     |    21 | The distributor master: every field of a real supplier card round-tripping, the per-shop uniqueness of `code` (and that any number of suppliers may have none), a six-digit PIN keeping its leading zero, the credit limit staying exact, a medicine's primary supplier being cleared by a supplier deletion while a *batch* still blocks it, and the foreign-reference guard answering 404 for another shop's category, manufacturer or supplier |
 | `tests/reports/csv.test.js`                   |    21 | Escaping, the formula-injection guard, the BOM and CRLF                    |
 | `tests/inventory/masters.test.js`             |    15 | Masters CRUD, delete conflicts, suppliers                                  |
 | `tests/auth/password-change-required.test.js` |    13 | The forced-password-change gate and its two deliberate exemptions          |
@@ -91,7 +92,7 @@ Two failures worth remembering, both fixed 2026-08-27:
 | `tests/billing/invoice-concurrency.test.js`   |     5 | Last-unit races, oversell bursts, gapless serials                          |
 | `tests/api/shop.test.js`                      |     8 | `GET`/`PUT /api/shop`: the caller's own shop only, the ADMIN gate on `PUT`, and read access for every role because printing a bill is a cashier's job (FR-SHOP-07). **Added with multi-tenancy and missing from this table until 2026-08-31** |
 
-**Frontend — 181 across 22 files, all passing.** Measured 2026-09-02 on Node 22.
+**Frontend — 185 across 22 files, all passing.** Measured 2026-09-02 on Node 22.
 The 125 recorded here before that dated from 2026-08-25 and had been overtaken by
 three files the table listed but the total never counted.
 
@@ -135,7 +136,7 @@ three files the table listed but the total never counted.
 | `src/lib/__tests__/currency.test.ts`          |     6 | The chart axis formatter, and the sub-₹1,000 case that made every tick on three charts read `₹0k` while the bars had height — plus the negatives a margin chart can produce |
 | `src/lib/__tests__/download.test.ts`           |     4 | Blob download and the `Content-Disposition` filename              |
 | `src/components/__tests__/ProtectedRoute.test.tsx` | 3 | Redirect when unauthenticated                                     |
-| `src/pages/__tests__/Suppliers.test.tsx`       |     5 | Supplier list and form, plus deleting: the confirm, the request, the re-read, and the server's own 409 sentence reaching the operator rather than a generic failure |
+| `src/pages/__tests__/Suppliers.test.tsx`       |     9 | Supplier list and form, plus the fuller distributor card — the whole card reaching the request, an untouched field omitted rather than sent as `""` (two blank codes would collide on the unique index), and the credit limit leaving as a number — plus deleting: the confirm, the request, the re-read, and the server's own 409 sentence reaching the operator rather than a generic failure |
 | `src/hooks/__tests__/query-cancellation.test.tsx` |  2 | In-flight queries cancel on unmount                               |
 
 **Browser — 7 flows**, `e2e/smoke.spec.ts`. Chromium runs all seven; Firefox runs

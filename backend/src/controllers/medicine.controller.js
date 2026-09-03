@@ -1,4 +1,5 @@
 const prisma = require("../config/db");
+const { findForeignRef } = require("../utils/owned-refs");
 
 const getAll = async (req, res, next) => {
   try {
@@ -25,6 +26,10 @@ const getAll = async (req, res, next) => {
         include: {
           category: true,
           manufacturer: true,
+          // The edit form opens from this list, so it needs the preferred
+          // distributor already loaded. Not on `search`, which is the POS
+          // lookup — a till does not care who the shop reorders from.
+          defaultSupplier: { select: { id: true, name: true, code: true } },
           batches: {
             where: { quantity: { gt: 0 } },
             orderBy: { expiryDate: "asc" },
@@ -93,6 +98,7 @@ const getOne = async (req, res, next) => {
       include: {
         category: true,
         manufacturer: true,
+        defaultSupplier: { select: { id: true, name: true, code: true } },
         batches: {
           include: { supplier: true },
           orderBy: { expiryDate: "asc" },
@@ -222,11 +228,36 @@ const search = async (req, res, next) => {
   }
 };
 
+/**
+ * What a medicine's references resolve to on a read. `defaultSupplier` is a
+ * `select` rather than the whole row: the screen wants a name to show, not the
+ * distributor's credit limit alongside every catalogue entry.
+ */
+const MEDICINE_REFS = {
+  category: true,
+  manufacturer: true,
+  defaultSupplier: { select: { id: true, name: true, code: true } },
+};
+
+/** The three ids a medicine body can carry, each of which must be this shop's. */
+const medicineRefs = (body) => [
+  { model: "category", id: body.categoryId, label: "Category" },
+  { model: "manufacturer", id: body.manufacturerId, label: "Manufacturer" },
+  { model: "supplier", id: body.defaultSupplierId, label: "Supplier" },
+];
+
 const create = async (req, res, next) => {
   try {
+    const foreign = await findForeignRef(req.user.shopId, medicineRefs(req.body));
+    if (foreign) {
+      return res
+        .status(404)
+        .json({ success: false, message: `${foreign} not found` });
+    }
+
     const medicine = await prisma.medicine.create({
       data: { ...req.body, shopId: req.user.shopId },
-      include: { category: true, manufacturer: true },
+      include: MEDICINE_REFS,
     });
     res
       .status(201)
@@ -241,6 +272,13 @@ const create = async (req, res, next) => {
 // singular update() only accepts a unique selector, which shopId is not.
 const update = async (req, res, next) => {
   try {
+    const foreign = await findForeignRef(req.user.shopId, medicineRefs(req.body));
+    if (foreign) {
+      return res
+        .status(404)
+        .json({ success: false, message: `${foreign} not found` });
+    }
+
     const result = await prisma.medicine.updateMany({
       where: { id: req.params.id, shopId: req.user.shopId },
       data: req.body,
@@ -252,7 +290,7 @@ const update = async (req, res, next) => {
     }
     const medicine = await prisma.medicine.findUnique({
       where: { id: req.params.id },
-      include: { category: true, manufacturer: true },
+      include: MEDICINE_REFS,
     });
     res.json({ success: true, message: "Medicine updated", data: medicine });
   } catch (err) {

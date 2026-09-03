@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  Truck, Plus, Search, Edit2, Trash2, Phone,
+  Truck, Plus, Search, Edit2, Trash2, Phone, FileBadge,
   Mail, MapPin, Package, Loader2, Building2
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -21,17 +21,36 @@ import {
 interface Supplier {
   id: string
   name: string
+  /** The shop's own reference for this distributor — `SUP-001`. */
+  code?: string
   contactName?: string
   phone?: string
   email?: string
   gstNumber?: string
   address?: string
+  city?: string
+  state?: string
+  pincode?: string
+  drugLicenceNo?: string
+  paymentTerms?: string
+  deliveryDays?: string
+  /** Decimal on the server; a number here, through the API's replacer. */
+  creditLimit?: number
+  notes?: string
   createdAt: string
 }
 
 // ─── Helpers ───────────────────────────────────────────
 
 const inputCls = "bg-slate-700 border-slate-600 text-white placeholder:text-slate-500 focus:border-teal-500 h-9"
+
+/** Whole rupees: a credit limit is negotiated in thousands, not paise. */
+const formatINR = (v: number) =>
+  new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    maximumFractionDigits: 0,
+  }).format(v)
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -57,10 +76,13 @@ export default function Suppliers() {
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState<Supplier | null>(null)
   const [submitting, setSubmitting] = useState(false)
-  const [form, setForm] = useState({
-    name: '', contactName: '', phone: '',
-    email: '', gstNumber: '', address: ''
-  })
+  const EMPTY_FORM = {
+    name: '', code: '', contactName: '', phone: '',
+    email: '', gstNumber: '', address: '', city: '', state: '',
+    pincode: '', drugLicenceNo: '', paymentTerms: '', deliveryDays: '',
+    creditLimit: '', notes: '',
+  }
+  const [form, setForm] = useState(EMPTY_FORM)
 
   const queryClient = useQueryClient()
 
@@ -79,7 +101,7 @@ export default function Suppliers() {
 
   const openAdd = () => {
     setEditing(null)
-    setForm({ name: '', contactName: '', phone: '', email: '', gstNumber: '', address: '' })
+    setForm(EMPTY_FORM)
     setShowForm(true)
   }
 
@@ -101,22 +123,56 @@ export default function Suppliers() {
   const openEdit = (s: Supplier) => {
     setEditing(s)
     setForm({
-      name: s.name, contactName: s.contactName || '',
+      name: s.name, code: s.code || '', contactName: s.contactName || '',
       phone: s.phone || '', email: s.email || '',
-      gstNumber: s.gstNumber || '', address: s.address || ''
+      gstNumber: s.gstNumber || '', address: s.address || '',
+      city: s.city || '', state: s.state || '', pincode: s.pincode || '',
+      drugLicenceNo: s.drugLicenceNo || '',
+      paymentTerms: s.paymentTerms || '', deliveryDays: s.deliveryDays || '',
+      creditLimit: s.creditLimit != null ? String(s.creditLimit) : '',
+      notes: s.notes || '',
     })
     setShowForm(true)
   }
 
+  /**
+   * The form's shape is not the API's, in two ways that both matter.
+   *
+   * **An untouched field is omitted, not sent as `''`.** `code` is unique per
+   * shop, and an empty string is a *value* — two suppliers saved with a blank
+   * code would collide on the unique index and the second would come back 409
+   * for a field nobody filled in. Postgres treats NULLs as distinct, so the
+   * absent case has to actually be absent.
+   *
+   * **`creditLimit` leaves as a number.** It is typed into a text box and the
+   * schema wants a number; a blank one is no limit rather than zero, which is
+   * a different claim.
+   */
+  const toPayload = (f: typeof EMPTY_FORM) => {
+    const { creditLimit, ...rest } = f
+    const payload: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(rest)) {
+      if (value.trim() !== '') payload[key] = value.trim()
+    }
+    if (creditLimit.trim() !== '') payload.creditLimit = Number(creditLimit)
+    return payload
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    if (form.creditLimit.trim() !== '' && !Number.isFinite(Number(form.creditLimit))) {
+      toast.error('Credit limit must be a number')
+      return
+    }
+
     setSubmitting(true)
     try {
       if (editing) {
-        await api.put(`/api/suppliers/${editing.id}`, form)
+        await api.put(`/api/suppliers/${editing.id}`, toPayload(form))
         toast.success('Supplier updated!')
       } else {
-        await api.post('/api/suppliers', form)
+        await api.post('/api/suppliers', toPayload(form))
         toast.success('Supplier added!')
       }
       setShowForm(false)
@@ -193,8 +249,17 @@ export default function Suppliers() {
                       flex items-center justify-center shrink-0`}>
                       <Building2 className="w-5 h-5 text-white" />
                     </div>
-                    <div>
-                      <p className="text-white font-semibold text-sm">{s.name}</p>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-white font-semibold text-sm truncate">
+                          {s.name}
+                        </p>
+                        {s.code && (
+                          <span className="text-[10px] font-mono text-slate-500 shrink-0">
+                            {s.code}
+                          </span>
+                        )}
+                      </div>
                       {s.contactName && (
                         <p className="text-slate-400 text-xs">{s.contactName}</p>
                       )}
@@ -236,10 +301,17 @@ export default function Suppliers() {
                       <span className="truncate">{s.email}</span>
                     </div>
                   )}
-                  {s.address && (
+                  {(s.address || s.city) && (
                     <div className="flex items-center gap-2 text-slate-400">
                       <MapPin className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                      <span className="truncate">{s.address}</span>
+                      {/* Joined here rather than stored joined: the parts are
+                          separate columns because they are searched on, and a
+                          card wants one line. */}
+                      <span className="truncate">
+                        {[s.address, s.city, s.state, s.pincode]
+                          .filter(Boolean)
+                          .join(', ')}
+                      </span>
                     </div>
                   )}
                   {s.gstNumber && (
@@ -249,6 +321,38 @@ export default function Suppliers() {
                         {s.gstNumber}
                       </Badge>
                     </div>
+                  )}
+                  {s.drugLicenceNo && (
+                    <div className="flex items-center gap-2 text-slate-400">
+                      <FileBadge className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                      <span className="truncate font-mono text-[11px]">
+                        {s.drugLicenceNo}
+                      </span>
+                    </div>
+                  )}
+                  {(s.paymentTerms || s.deliveryDays || s.creditLimit != null) && (
+                    <div className="flex flex-wrap gap-1.5 pt-0.5">
+                      {s.paymentTerms && (
+                        <Badge className="bg-slate-700 text-slate-300 text-[10px] px-1.5 py-0">
+                          {s.paymentTerms}
+                        </Badge>
+                      )}
+                      {s.deliveryDays && (
+                        <Badge className="bg-slate-700 text-slate-300 text-[10px] px-1.5 py-0">
+                          {s.deliveryDays}
+                        </Badge>
+                      )}
+                      {s.creditLimit != null && (
+                        <Badge className="bg-slate-700 text-slate-300 text-[10px] px-1.5 py-0 tabular-nums">
+                          Limit {formatINR(s.creditLimit)}
+                        </Badge>
+                      )}
+                    </div>
+                  )}
+                  {s.notes && (
+                    <p className="text-slate-500 text-[11px] pt-0.5 line-clamp-2">
+                      {s.notes}
+                    </p>
                   )}
                 </div>
 
@@ -305,7 +409,63 @@ export default function Suppliers() {
             <Field label="Address">
               <Input value={form.address}
                 onChange={e => setForm({ ...form, address: e.target.value })}
-                placeholder="Full address with city" className={inputCls} />
+                placeholder="Street / shop number" className={inputCls} />
+            </Field>
+            <div className="grid grid-cols-3 gap-3">
+              <Field label="City">
+                <Input value={form.city}
+                  onChange={e => setForm({ ...form, city: e.target.value })}
+                  placeholder="Patna" className={inputCls} />
+              </Field>
+              <Field label="State">
+                <Input value={form.state}
+                  onChange={e => setForm({ ...form, state: e.target.value })}
+                  placeholder="Bihar" className={inputCls} />
+              </Field>
+              <Field label="PIN Code">
+                <Input value={form.pincode} inputMode="numeric" maxLength={6}
+                  onChange={e => setForm({ ...form, pincode: e.target.value })}
+                  placeholder="800004" className={inputCls} />
+              </Field>
+            </div>
+
+            <Separator className="bg-slate-700" />
+            {/* The commercial half of a distributor card. All optional: a
+                supplier is usually entered from a phone number and filled in
+                later from the first invoice. */}
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Supplier Code">
+                <Input value={form.code}
+                  onChange={e => setForm({ ...form, code: e.target.value })}
+                  placeholder="SUP-001" className={inputCls} />
+              </Field>
+              <Field label="Drug Licence No.">
+                <Input value={form.drugLicenceNo}
+                  onChange={e => setForm({ ...form, drugLicenceNo: e.target.value })}
+                  placeholder="BR/PAT/20B-2214, 21B-2215" className={inputCls} />
+              </Field>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <Field label="Payment Terms">
+                <Input value={form.paymentTerms}
+                  onChange={e => setForm({ ...form, paymentTerms: e.target.value })}
+                  placeholder="30 days credit" className={inputCls} />
+              </Field>
+              <Field label="Delivery Days">
+                <Input value={form.deliveryDays}
+                  onChange={e => setForm({ ...form, deliveryDays: e.target.value })}
+                  placeholder="Mon, Wed, Fri" className={inputCls} />
+              </Field>
+              <Field label="Credit Limit (₹)">
+                <Input value={form.creditLimit} inputMode="decimal"
+                  onChange={e => setForm({ ...form, creditLimit: e.target.value })}
+                  placeholder="250000" className={inputCls} />
+              </Field>
+            </div>
+            <Field label="Notes">
+              <Input value={form.notes}
+                onChange={e => setForm({ ...form, notes: e.target.value })}
+                placeholder="What they carry, how they deliver" className={inputCls} />
             </Field>
             <Separator className="bg-slate-700" />
             <div className="flex gap-2 justify-end">

@@ -1,4 +1,5 @@
 const prisma = require("../config/db");
+const { findForeignRef } = require("../utils/owned-refs");
 const { streamCsv } = require("../utils/csv");
 const { logger } = require("../config/logger");
 const { setReason } = require("../config/audit-context");
@@ -238,17 +239,20 @@ const create = async (req, res, next) => {
   try {
     // The medicine being batched has to be this shop's own, or a batch would
     // attach itself — and its denormalised shopId — to another tenant's
-    // medicine. findFirst rather than findUnique-then-check for the same
-    // reason as medicine.controller.js: a foreign id should read as "not
-    // found", not as a separate ownership rejection.
-    const medicine = await prisma.medicine.findFirst({
-      where: { id: req.body.medicineId, shopId: req.user.shopId },
-      select: { id: true },
-    });
-    if (!medicine) {
+    // medicine. A foreign id reads as "not found" rather than as a separate
+    // ownership rejection, which is the rule across this API.
+    //
+    // The supplier was not checked until 2026-09-03, so a batch could name
+    // another shop's distributor and the response's `supplier: { name }`
+    // would read it back. Both go through one guard now.
+    const foreign = await findForeignRef(req.user.shopId, [
+      { model: "medicine", id: req.body.medicineId, label: "Medicine" },
+      { model: "supplier", id: req.body.supplierId, label: "Supplier" },
+    ]);
+    if (foreign) {
       return res
         .status(404)
-        .json({ success: false, message: "Medicine not found" });
+        .json({ success: false, message: `${foreign} not found` });
     }
 
     const data = {

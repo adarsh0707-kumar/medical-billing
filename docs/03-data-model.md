@@ -223,10 +223,13 @@ Identical shape to `Category`: `id`, `shopId`, `name` unique **per shop**, `medi
 | `packSize`                  | String?      | optional, free text | Added 2026-08-31. How the product is packed, copied off the carton as a distributor writes it —`1*15ML`, `1*10`, `1*15GM`. Printed as **PACK** on the invoice. Free text on purpose: it is a label, not a quantity to compute with. **Distinct from `unit`**, which is the dispensing unit — a strip of ten tablets has unit `tablet` and packSize `1*10` |
 | `gstPercent`                | Decimal(5,2) | default`12`      | Zod restricts to 0 / 5 / 12 / 18                                                                                               |
 | `isScheduledH`              | Boolean      | default`false`   | Prescription-only flag; displayed at POS, not enforced                                                                         |
+| `defaultSupplierId`         | String?      | FK → Supplier, `SetNull` on delete | Added 2026-09-03. Where this medicine is *usually* bought — the "primary supplier" a distributor master names per item. **Not the same fact as `Batch.supplierId`**, and both are needed: the batch records where one consignment actually came from, which is what a recall follows, while this is a preference and can be wrong without making any past purchase wrong. Deriving it from the most recent batch would conflate them — a one-off purchase from whoever had stock that week would silently become the answer to "who do we buy this from" |
 | `isActive`                  | Boolean      | default`true`    | Soft-delete flag; list and search filter on it                                                                                 |
 | `createdAt` / `updatedAt` | DateTime     | auto               |                                                                                                                                |
 
-Relations: `category`, `manufacturer`, `batches Batch[]`.
+Relations: `category`, `manufacturer`, `defaultSupplier Supplier?`, `batches Batch[]`.
+
+> **A reference in a request body is checked against the caller's shop.** The tenancy rule puts `shopId` in the same `where` as `id` on every scoped read and write, which covers the row being written and says nothing about the rows it points at. Until 2026-09-03 `POST /api/medicines` passed `categoryId` and `manufacturerId` straight into `create`, and a foreign key only asks whether a row exists, never whose it is — so a medicine could be filed under another shop's category, and the response's `include` would read that shop's name back. `utils/owned-refs.js` now checks all three ids here and the supplier on a batch, answering **404** for a foreign one, never 403.
 
 **No unique constraint on `name`.** Two medicines with the same brand name from different manufacturers are legal — and intended.
 
@@ -261,18 +264,29 @@ Relations: `shop`, `medicine`, `supplier`, `invoiceItems`. *(`purchaseItems` was
 
 ### 3.6 `Supplier`
 
-| Column          | Type     | Constraints                           |
-| --------------- | -------- | ------------------------------------- |
-| `id`          | String   | PK, cuid                              |
-| `name`        | String   | required, min 2                       |
-| `contactName` | String?  | optional                              |
-| `phone`       | String?  | optional                              |
-| `email`       | String?  | optional, email format when non-empty |
-| `gstNumber`   | String?  | optional — supplier GSTIN            |
-| `address`     | String?  | optional                              |
-| `createdAt`   | DateTime | auto                                  |
+| Column            | Type      | Constraints                           | Notes |
+| ----------------- | --------- | ------------------------------------- | ----- |
+| `id`            | String    | PK, cuid                              | |
+| `code`          | String?   | **unique per shop** when present      | The shop's own reference for this distributor — `SUP-001`. Optional, because a shop that has never used codes should not be made to invent them. Postgres treats NULLs as distinct, so any number of suppliers may have none — but an **empty string is a value**, and two blank codes collide. Clients send the field absent, not `""` |
+| `name`          | String    | required, min 2                       | |
+| `contactName`   | String?   | optional                              | |
+| `phone`         | String?   | optional                              | |
+| `email`         | String?   | optional, email format when non-empty | |
+| `gstNumber`     | String?   | optional — supplier GSTIN            | |
+| `address`       | String?   | optional                              | The street line only |
+| `city`          | String?   | optional                              | |
+| `state`         | String?   | optional                              | Separate from the address because it decides the **place of supply** on a purchase. Note what this system does *not* do with it: an inter-state purchase attracts IGST, and the billing pipeline only ever computes the intra-state CGST + SGST pair. Recording the state makes the question visible, not answered |
+| `pincode`       | String?   | six digits when present               | A string, not a number: some Indian PINs begin with a zero |
+| `drugLicenceNo` | String?   | optional                              | The distributor's own licence — `BR/PAT/20B-2214, 21B-2215`. Free text: state formats differ and a pattern that rejected a valid one would block a real supplier. Spelled as `Shop.drugLicenceNo` |
+| `paymentTerms`  | String?   | optional                              | "30 days credit", "Cash on delivery". Free text for the operator to read; nothing computes a due date from it |
+| `deliveryDays`  | String?   | optional                              | "Mon, Wed, Fri", "Daily", "On order (2-4 hrs)" — which is why this is not a set of weekdays |
+| `creditLimit`   | Decimal?  | `DECIMAL(12,2)`, ≥ 0                | Money, so never a Float (G-07). Recorded, not enforced — it is the figure the owner negotiated |
+| `notes`         | String?   | optional, max 500                     | Remarks: what they carry, how they deliver |
+| `createdAt`     | DateTime  | auto                                  | |
 
-Relations: `batches Batch[]`. Hard delete; fails with an FK error once any batch references the supplier.
+Relations: `batches Batch[]`, `preferredFor Medicine[]`. Hard delete; fails with an FK error once any **batch** references the supplier, while a medicine's *preference* is set to null instead — see §3.4.
+
+**Added 2026-09-03**, from a real distributor master. The columns before that date were name, contact, phone, email, GSTIN and one line of address, which is a contact card rather than a supplier record: it could not hold the shop's code for the distributor, their licence, or the terms the purchase is made on.
 
 ### 3.7 `Customer`
 
@@ -589,6 +603,7 @@ These must hold at all times. Any new write path must preserve them.
 | `20260828120000_add_shops_multi_tenant`  | 2026-08-28 | Adds the`Shop` table and a `shopId` on User, Category, Manufacturer, Medicine, Batch, Customer, Supplier, Invoice, InvoiceCounter and AuditLog, with an index on each. Re-keys `Category` and `Manufacturer` to `@@unique([shopId, name])`, `Customer` to `@@unique([shopId, phone])`, `Invoice` to `@@unique([shopId, invoiceNumber])`, and `InvoiceCounter` to `@@id([shopId, day])`. See §3.0 |
 | `20260830190000_drop_stale_global_unique_indexes` | 2026-08-30 | **Hand-written.** Drops`Category_name_key`, `Manufacturer_name_key`, `Customer_phone_key` and `Invoice_invoiceNumber_key`, which the multi-tenant migration meant to remove and did not — it used `ALTER TABLE ... DROP CONSTRAINT IF EXISTS`, and Prisma writes `@unique` as a bare `CREATE UNIQUE INDEX`, so all four missed silently. See the note below |
 | `20260901104630_add_password_reset_tokens` | 2026-09-01 | Adds `PasswordResetToken` — the state behind self-service password reset (FR-AUTH-11). See §3.11a |
+| `20260903120000_add_supplier_master_and_default_supplier` | 2026-09-03 | Grows `Supplier` into a distributor master — `code` (unique per shop), `city`, `state`, `pincode`, `drugLicenceNo`, `paymentTerms`, `deliveryDays`, `creditLimit`, `notes` — and adds `Medicine.defaultSupplierId` (`SetNull`). Every column nullable and nothing backfilled: an existing supplier row is valid and simply unfilled, and there is no default that would be true of a distributor nobody has entered details for. See §3.4 and §3.6 |
 | `20260831123451_add_pack_mrp_and_drug_licence` | 2026-08-31 | Adds three nullable columns the printed invoice needs and had nowhere to read: `Medicine.packSize`, `Batch.mrp` and `Shop.drugLicenceNo`. All nullable and none defaulted — see §3.4, §3.5 and §3.0 for why `mrp` in particular is not derived from `sellingPrice` |
 
 All 20 are applied — confirmed against `_prisma_migrations` on 2026-09-01. Two of them contain SQL that exists **only** in migration history and cannot be reproduced from `schema.prisma`; see the note in §4 before rebuilding a database with `db push`.

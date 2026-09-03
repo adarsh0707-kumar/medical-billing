@@ -47,6 +47,21 @@ const medicineSchema = z.object({
     .number()
     .refine((v) => [0, 5, 12, 18].includes(v), "GST must be 0, 5, 12 or 18"),
   isScheduledH: z.boolean().default(false),
+  /**
+   * Where this medicine is usually bought from — the "primary supplier" a
+   * distributor master names per item. Optional, and an empty string clears
+   * it, because a select that has been emptied means "no preference" rather
+   * than a validation error.
+   *
+   * Not the same as the supplier on a batch: that one records where a
+   * particular consignment came from and is the fact a recall follows. See the
+   * schema comment on `Medicine.defaultSupplierId`.
+   */
+  defaultSupplierId: z
+    .string()
+    .optional()
+    .transform((v) => (v === "" ? null : v))
+    .nullable(),
 });
 
 // A batch cannot have been made after it expires. Applied wherever both dates
@@ -132,13 +147,50 @@ const batchUpdateSchema = z
   .strict()
   .refine(datesInOrder, dateOrderError);
 
+/**
+ * A distributor card.
+ *
+ * Everything but the name is optional, and that is the shape of the problem
+ * rather than laziness: a shop enters a supplier the first time it buys from
+ * one, often with a phone number and nothing else, and fills the card in later
+ * from the invoice. A required field here is a supplier nobody can save.
+ *
+ * The commercial terms are free text on purpose — see the schema comments on
+ * `Supplier`. "On order (2-4 hrs)" is a real delivery arrangement and it is not
+ * a set of weekdays.
+ */
 const supplierSchema = z.object({
   name: z.string().min(2, "Supplier name is required"),
+  // The shop's own reference for this distributor, unique per shop when
+  // present. A duplicate is a 409 from the database rather than a check here,
+  // for the reason G-12 gives: a read-then-write pair is not a guard.
+  code: z.string().trim().max(30, "Code is too long").optional(),
   contactName: z.string().optional(),
   phone: z.string().optional(),
   email: z.email().optional().or(z.literal("")),
   gstNumber: z.string().optional(),
   address: z.string().optional(),
+  city: z.string().trim().max(60).optional(),
+  state: z.string().trim().max(60).optional(),
+  // Six digits. Not coerced to a number — a PIN starting with a zero is a real
+  // PIN and an integer column would eat the zero.
+  pincode: z
+    .string()
+    .trim()
+    .regex(/^\d{6}$/, "PIN code must be six digits")
+    .optional()
+    .or(z.literal("")),
+  drugLicenceNo: z.string().trim().max(120).optional(),
+  paymentTerms: z.string().trim().max(60).optional(),
+  deliveryDays: z.string().trim().max(60).optional(),
+  // Money, so it is bounded the way every other money field is: DECIMAL(12,2)
+  // holds ten integer digits, and a credit limit past that is a typo.
+  creditLimit: z
+    .number()
+    .min(0, "A credit limit cannot be negative")
+    .max(9999999999.99, "Credit limit is too large")
+    .optional(),
+  notes: z.string().trim().max(500, "Notes are too long").optional(),
 });
 
 // ─── Query schemas ─────────────────────────────────────

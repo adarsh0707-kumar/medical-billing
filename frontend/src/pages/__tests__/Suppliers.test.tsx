@@ -140,4 +140,98 @@ describe("Suppliers", () => {
       );
     });
   });
+
+  /**
+   * The distributor card grew the fields a real supplier master carries, and
+   * the form's shape is not the API's in two ways this layer is the only place
+   * to see.
+   */
+  describe("the fuller card", () => {
+    const openForm = async (user: ReturnType<typeof userEvent.setup>) => {
+      render(<Suppliers />, { wrapper: createQueryWrapper() });
+      await screen.findByText("Kaveri Distributors");
+      await user.click(screen.getByRole("button", { name: /add supplier/i }));
+      await user.type(
+        await screen.findByPlaceholderText(/Company \/ Distributor name/i),
+        "Sharma Medical Agencies",
+      );
+    };
+
+    const submit = async (user: ReturnType<typeof userEvent.setup>) => {
+      const button = screen
+        .getAllByRole("button", { name: /add supplier/i })
+        .find((b) => b.getAttribute("type") === "submit")!;
+      await user.click(button);
+    };
+
+    const posted = () => JSON.parse(mock.history.post[0].data);
+
+    it("sends the whole card when it is filled in", async () => {
+      const user = userEvent.setup();
+      await openForm(user);
+
+      await user.type(screen.getByPlaceholderText("SUP-001"), "SUP-001");
+      await user.type(screen.getByPlaceholderText("Patna"), "Patna");
+      await user.type(screen.getByPlaceholderText("Bihar"), "Bihar");
+      await user.type(screen.getByPlaceholderText("800004"), "800004");
+      await user.type(
+        screen.getByPlaceholderText(/BR\/PAT/),
+        "BR/PAT/20B-2214",
+      );
+      await user.type(screen.getByPlaceholderText("30 days credit"), "30 days credit");
+      await user.type(screen.getByPlaceholderText("Mon, Wed, Fri"), "Mon, Wed, Fri");
+      await user.type(screen.getByPlaceholderText("250000"), "250000");
+
+      await submit(user);
+
+      await waitFor(() => expect(mock.history.post).toHaveLength(1));
+      expect(posted()).toMatchObject({
+        name: "Sharma Medical Agencies",
+        code: "SUP-001",
+        city: "Patna",
+        state: "Bihar",
+        pincode: "800004",
+        drugLicenceNo: "BR/PAT/20B-2214",
+        paymentTerms: "30 days credit",
+        deliveryDays: "Mon, Wed, Fri",
+      });
+    });
+
+    // `code` is unique per shop and an empty string is a *value*: two blank
+    // codes collide on the index and the second supplier is refused over a
+    // field nobody filled in. NULLs are distinct, so absent must be absent.
+    it("omits the fields nobody filled in rather than sending empty strings", async () => {
+      const user = userEvent.setup();
+      await openForm(user);
+
+      await submit(user);
+
+      await waitFor(() => expect(mock.history.post).toHaveLength(1));
+      const body = posted();
+      expect(body).toEqual({ name: "Sharma Medical Agencies" });
+      expect("code" in body).toBe(false);
+    });
+
+    it("sends the credit limit as a number, not the typed string", async () => {
+      const user = userEvent.setup();
+      await openForm(user);
+      await user.type(screen.getByPlaceholderText("250000"), "250000");
+
+      await submit(user);
+
+      await waitFor(() => expect(mock.history.post).toHaveLength(1));
+      expect(posted().creditLimit).toBe(250000);
+    });
+
+    it("refuses to send a credit limit that is not a number", async () => {
+      const user = userEvent.setup();
+      await openForm(user);
+      await user.type(screen.getByPlaceholderText("250000"), "two lakh");
+
+      await submit(user);
+
+      expect(mock.history.post).toHaveLength(0);
+      expect(toast.error).toHaveBeenCalledWith("Credit limit must be a number");
+    });
+  });
 });

@@ -238,6 +238,21 @@ model Medicine {
   packSize       String?
   gstPercent     Decimal      @default(12) @db.Decimal(5, 2) // 0, 5, 12, 18
   isScheduledH   Boolean      @default(false) // prescription required
+  /// Where this medicine is *usually* bought — the "primary supplier" a
+  /// distributor master names for each item.
+  ///
+  /// Distinct from `Batch.supplierId`, and both are needed. The batch records
+  /// who a particular consignment actually came from, which is the traceable
+  /// fact and the one a recall follows. This records who to reorder from,
+  /// which is a preference and can be wrong without making any past purchase
+  /// wrong. Reading a default off the most recent batch would conflate the
+  /// two: a one-off purchase from whoever had stock that week would silently
+  /// become the answer to "who do we buy this from".
+  ///
+  /// Optional, and `SetNull` on delete: dropping a distributor should clear
+  /// the preference rather than refuse the deletion. A batch reference still
+  /// blocks it (`P2003` → 409), because that one is history.
+  defaultSupplierId String?
   isActive       Boolean      @default(true)
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
@@ -245,9 +260,11 @@ model Medicine {
   shop           Shop         @relation(fields: [shopId], references: [id])
   category       Category     @relation(fields: [categoryId], references: [id])
   manufacturer   Manufacturer @relation(fields: [manufacturerId], references: [id])
+  defaultSupplier Supplier?   @relation("MedicineDefaultSupplier", fields: [defaultSupplierId], references: [id], onDelete: SetNull)
   batches        Batch[]
 
   @@index([shopId])
+  @@index([defaultSupplierId])
 }
 
 model Batch {
@@ -341,17 +358,64 @@ enum Gender {
 model Supplier {
   id          String     @id @default(cuid())
   shopId      String
+  /// The distributor's own code on the shop's ledger — `SUP-001`. Optional,
+  /// because a shop that has never used codes should not be made to invent
+  /// them, and unique per shop when present so two cards cannot claim one.
+  /// Postgres treats NULLs as distinct, so the many suppliers without a code
+  /// do not collide with each other.
+  code        String?
   name        String
   contactName String?
   phone       String?
   email       String?
   gstNumber   String?
+  /// The street line. `city`, `state` and `pincode` are separate columns
+  /// rather than more of this string because they are searched and sorted on,
+  /// and because `state` decides the place of supply on a purchase.
+  ///
+  /// **Note what this system does not yet do with that.** GST on an
+  /// inter-state purchase is IGST, not CGST + SGST, and the billing pipeline
+  /// only ever computes the intra-state pair. Recording the state does not
+  /// make the tax treatment correct — it makes it *visible*, which is the
+  /// first of the two.
   address     String?
+  city        String?
+  state       String?
+  /// A string, not a number: Indian PINs are six digits and some begin with a
+  /// zero, which an integer column would eat.
+  pincode     String?
+  /// The distributor's own licence — `BR/PAT/20B-2214, 21B-2215`. A pharmacy
+  /// has to be able to show who it bought from was licensed to sell.
+  /// Deliberately free text: a state licence number is two or three numbers
+  /// with a local format, and a pattern that rejected a valid one would block
+  /// a real supplier.
+  ///
+  /// Spelled the way `Shop.drugLicenceNo` is, so a reader does not have to
+  /// remember which model chose which spelling.
+  drugLicenceNo String?
+  /// Commercial terms, both free text and both for the operator to read rather
+  /// than for the system to act on: "30 days credit", "Cash on delivery",
+  /// "Mon, Wed, Fri", "On order (2-4 hrs)". Nothing here computes a due date
+  /// or a delivery window, and modelling weekdays as an enum would have made
+  /// the last of those unstorable.
+  paymentTerms String?
+  deliveryDays String?
+  /// What the shop has agreed it may owe this distributor. Money, so Decimal —
+  /// never a Float, for the reason G-07 records. Nothing enforces it; it is
+  /// the figure the owner negotiated, recorded where they can see it.
+  creditLimit Decimal?   @db.Decimal(12, 2)
+  /// Free text about the supplier — what they carry, how they deliver, who to
+  /// ask for. The sample master calls this "focus"; it is a remarks field.
+  notes       String?
   createdAt   DateTime   @default(now())
 
   shop        Shop       @relation(fields: [shopId], references: [id])
   batches     Batch[]
+  /// Medicines that name this distributor as where they are usually bought.
+  /// See `Medicine.defaultSupplierId`.
+  preferredFor Medicine[] @relation("MedicineDefaultSupplier")
 
+  @@unique([shopId, code])
   @@index([shopId])
 }
 

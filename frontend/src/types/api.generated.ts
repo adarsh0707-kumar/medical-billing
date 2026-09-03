@@ -155,6 +155,7 @@ export type MedicineInput = {
   hsnCode?: string | undefined;
   packSize?: string | undefined;
   isScheduledH?: boolean | undefined;
+  defaultSupplierId?: string | null | undefined;
 };
 
 /** `medicineListQuerySchema` — `backend/src/validators/inventory.validator.js` */
@@ -206,11 +207,20 @@ export type SignupInput = {
 /** `supplierSchema` — `backend/src/validators/inventory.validator.js` */
 export type SupplierInput = {
   name: string;
+  code?: string | undefined;
   contactName?: string | undefined;
   phone?: string | undefined;
   email?: string | undefined;
   gstNumber?: string | undefined;
   address?: string | undefined;
+  city?: string | undefined;
+  state?: string | undefined;
+  pincode?: string | undefined;
+  drugLicenceNo?: string | undefined;
+  paymentTerms?: string | undefined;
+  deliveryDays?: string | undefined;
+  creditLimit?: number | undefined;
+  notes?: string | undefined;
 };
 
 /** `supplierListQuerySchema` — `backend/src/validators/inventory.validator.js` */

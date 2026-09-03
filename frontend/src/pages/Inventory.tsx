@@ -67,11 +67,21 @@ interface Manufacturer {
 interface Supplier {
   id: string;
   name: string;
+  /** The shop's own reference for this distributor — `SUP-001`. */
+  code?: string;
   contactName?: string;
   phone?: string;
   email?: string;
   gstNumber?: string;
   address?: string;
+  city?: string;
+  state?: string;
+  pincode?: string;
+  drugLicenceNo?: string;
+  paymentTerms?: string;
+  deliveryDays?: string;
+  creditLimit?: number;
+  notes?: string;
 }
 interface Medicine {
   id: string;
@@ -85,6 +95,12 @@ interface Medicine {
   isActive: boolean;
   category: Category;
   manufacturer: Manufacturer;
+  /**
+   * Where this medicine is usually bought — a preference, not a history.
+   * The supplier on a *batch* records where one consignment came from, which
+   * is the fact a recall follows; this is the one to reorder from.
+   */
+  defaultSupplier?: { id: string; name: string; code?: string } | null;
   totalStock?: number;
   sellingPrice?: number;
   nearestExpiry?: string;
@@ -141,7 +157,82 @@ const DEFAULT_UNITS = [
  * to start with a letter.
  */
 const ADD_UNIT = ".add";
+
+/**
+ * "No preference" in the primary-supplier select.
+ *
+ * A sentinel for the same reason `ADD_UNIT` is one: Radix reads `""` as
+ * "nothing selected" and refuses it as an item value, but clearing the
+ * preference has to be a thing the operator can pick. It is translated back to
+ * `""` on the way into the form, and the payload sends `null`.
+ */
+const NO_SUPPLIER = ".none";
 const GST_RATES = [0, 5, 12, 18];
+
+/**
+ * The distributor card, as a form.
+ *
+ * Shared shape for the two places a supplier is edited — this tab and the
+ * Suppliers page — so the two cannot offer different fields for one record.
+ */
+const EMPTY_SUPPLIER_FORM = {
+  name: "",
+  code: "",
+  contactName: "",
+  phone: "",
+  email: "",
+  gstNumber: "",
+  address: "",
+  city: "",
+  state: "",
+  pincode: "",
+  drugLicenceNo: "",
+  paymentTerms: "",
+  deliveryDays: "",
+  creditLimit: "",
+  notes: "",
+};
+
+type SupplierForm = typeof EMPTY_SUPPLIER_FORM;
+
+const supplierFormFrom = (s: Supplier): SupplierForm => ({
+  name: s.name,
+  code: s.code || "",
+  contactName: s.contactName || "",
+  phone: s.phone || "",
+  email: s.email || "",
+  gstNumber: s.gstNumber || "",
+  address: s.address || "",
+  city: s.city || "",
+  state: s.state || "",
+  pincode: s.pincode || "",
+  drugLicenceNo: s.drugLicenceNo || "",
+  paymentTerms: s.paymentTerms || "",
+  deliveryDays: s.deliveryDays || "",
+  creditLimit: s.creditLimit != null ? String(s.creditLimit) : "",
+  notes: s.notes || "",
+});
+
+/**
+ * An untouched field is **omitted**, not sent as `""`.
+ *
+ * `code` is unique per shop, and an empty string is a value: two suppliers
+ * saved with a blank code collide on the unique index, and the second comes
+ * back 409 over a field nobody filled in. Postgres treats NULLs as distinct,
+ * so the absent case has to actually be absent.
+ *
+ * `creditLimit` leaves as a number — it is typed into a text box, and a blank
+ * one means no limit rather than zero.
+ */
+const supplierPayload = (f: SupplierForm) => {
+  const { creditLimit, ...rest } = f;
+  const payload: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(rest)) {
+    if (value.trim() !== "") payload[key] = value.trim();
+  }
+  if (creditLimit.trim() !== "") payload.creditLimit = Number(creditLimit);
+  return payload;
+};
 
 // ─── Reusable Form Field ────────────────────────────────
 
@@ -185,6 +276,7 @@ function MedicinesTab() {
     unit: "tablet",
     gstPercent: 12,
     isScheduledH: false,
+    defaultSupplierId: "",
   });
   const [submitting, setSubmitting] = useState(false);
   // The free-text unit box, open only while a new one is being typed.
@@ -242,6 +334,9 @@ function MedicinesTab() {
   // rather than one per tab, and they cannot disagree after an edit.
   const { data: categories = [] } = useCategories<Category>();
   const { data: manufacturers = [] } = useManufacturers<Manufacturer>();
+  // For the primary-supplier select. The shared query, so the Batches tab and
+  // this form cannot disagree about the distributor list.
+  const { data: suppliers = [] } = useSuppliers<Supplier>();
 
   const refreshMedicines = () =>
     queryClient.invalidateQueries({ queryKey: ["medicines"] });
@@ -260,6 +355,7 @@ function MedicinesTab() {
       unit: "tablet",
       gstPercent: 12,
       isScheduledH: false,
+      defaultSupplierId: "",
     });
     setShowForm(true);
   };
@@ -278,6 +374,7 @@ function MedicinesTab() {
       unit: med.unit,
       gstPercent: med.gstPercent,
       isScheduledH: med.isScheduledH,
+      defaultSupplierId: med.defaultSupplier?.id ?? "",
     });
     setShowForm(true);
   };
@@ -734,6 +831,44 @@ function MedicinesTab() {
                 />
               </Field>
             </div>
+            {/* Who this is usually reordered from. A preference, so it is
+                clearable — and separate from the supplier recorded on each
+                batch, which is where a consignment actually came from. */}
+            <Field label="Primary Supplier">
+              <Select
+                value={form.defaultSupplierId || NO_SUPPLIER}
+                onValueChange={(v) =>
+                  setForm({
+                    ...form,
+                    defaultSupplierId: v === NO_SUPPLIER ? "" : v,
+                  })
+                }
+              >
+                <SelectTrigger
+                  aria-label="Primary Supplier"
+                  className="bg-slate-700 border-slate-600 text-slate-100 h-9"
+                >
+                  <SelectValue placeholder="No preference" />
+                </SelectTrigger>
+                <SelectContent className="bg-slate-800 border-slate-700">
+                  <SelectItem
+                    value={NO_SUPPLIER}
+                    className="text-slate-400 focus:bg-slate-700"
+                  >
+                    No preference
+                  </SelectItem>
+                  {suppliers.map((sup) => (
+                    <SelectItem
+                      key={sup.id}
+                      value={sup.id}
+                      className="text-slate-100 focus:bg-slate-700"
+                    >
+                      {sup.code ? `${sup.code} · ${sup.name}` : sup.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
             <div className="flex items-center gap-2 pt-1">
               <input
                 type="checkbox"
@@ -1492,14 +1627,7 @@ function SuppliersTab() {
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Supplier | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [form, setForm] = useState({
-    name: "",
-    contactName: "",
-    phone: "",
-    email: "",
-    gstNumber: "",
-    address: "",
-  });
+  const [form, setForm] = useState(EMPTY_SUPPLIER_FORM);
 
   const queryClient = useQueryClient();
 
@@ -1511,27 +1639,13 @@ function SuppliersTab() {
 
   const openAdd = () => {
     setEditing(null);
-    setForm({
-      name: "",
-      contactName: "",
-      phone: "",
-      email: "",
-      gstNumber: "",
-      address: "",
-    });
+    setForm(EMPTY_SUPPLIER_FORM);
     setShowForm(true);
   };
 
   const openEdit = (s: Supplier) => {
     setEditing(s);
-    setForm({
-      name: s.name,
-      contactName: s.contactName || "",
-      phone: s.phone || "",
-      email: s.email || "",
-      gstNumber: s.gstNumber || "",
-      address: s.address || "",
-    });
+    setForm(supplierFormFrom(s));
     setShowForm(true);
   };
 
@@ -1553,13 +1667,22 @@ function SuppliersTab() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (
+      form.creditLimit.trim() !== "" &&
+      !Number.isFinite(Number(form.creditLimit))
+    ) {
+      toast.error("Credit limit must be a number");
+      return;
+    }
+
     setSubmitting(true);
     try {
       if (editing) {
-        await api.put(`/api/suppliers/${editing.id}`, form);
+        await api.put(`/api/suppliers/${editing.id}`, supplierPayload(form));
         toast.success("Supplier updated!");
       } else {
-        await api.post("/api/suppliers", form);
+        await api.post("/api/suppliers", supplierPayload(form));
         toast.success("Supplier added!");
       }
       setShowForm(false);
@@ -1713,7 +1836,97 @@ function SuppliersTab() {
               <Input
                 value={form.address}
                 onChange={(e) => setForm({ ...form, address: e.target.value })}
-                placeholder="Full address"
+                placeholder="Street / shop number"
+                className={inputCls}
+              />
+            </Field>
+            <div className="grid grid-cols-3 gap-3">
+              <Field label="City">
+                <Input
+                  value={form.city}
+                  onChange={(e) => setForm({ ...form, city: e.target.value })}
+                  placeholder="Patna"
+                  className={inputCls}
+                />
+              </Field>
+              <Field label="State">
+                <Input
+                  value={form.state}
+                  onChange={(e) => setForm({ ...form, state: e.target.value })}
+                  placeholder="Bihar"
+                  className={inputCls}
+                />
+              </Field>
+              <Field label="PIN Code">
+                <Input
+                  value={form.pincode}
+                  inputMode="numeric"
+                  maxLength={6}
+                  onChange={(e) => setForm({ ...form, pincode: e.target.value })}
+                  placeholder="800004"
+                  className={inputCls}
+                />
+              </Field>
+            </div>
+            <Separator className="bg-slate-700" />
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Supplier Code">
+                <Input
+                  value={form.code}
+                  onChange={(e) => setForm({ ...form, code: e.target.value })}
+                  placeholder="SUP-001"
+                  className={inputCls}
+                />
+              </Field>
+              <Field label="Drug Licence No.">
+                <Input
+                  value={form.drugLicenceNo}
+                  onChange={(e) =>
+                    setForm({ ...form, drugLicenceNo: e.target.value })
+                  }
+                  placeholder="BR/PAT/20B-2214"
+                  className={inputCls}
+                />
+              </Field>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <Field label="Payment Terms">
+                <Input
+                  value={form.paymentTerms}
+                  onChange={(e) =>
+                    setForm({ ...form, paymentTerms: e.target.value })
+                  }
+                  placeholder="30 days credit"
+                  className={inputCls}
+                />
+              </Field>
+              <Field label="Delivery Days">
+                <Input
+                  value={form.deliveryDays}
+                  onChange={(e) =>
+                    setForm({ ...form, deliveryDays: e.target.value })
+                  }
+                  placeholder="Mon, Wed, Fri"
+                  className={inputCls}
+                />
+              </Field>
+              <Field label="Credit Limit (₹)">
+                <Input
+                  value={form.creditLimit}
+                  inputMode="decimal"
+                  onChange={(e) =>
+                    setForm({ ...form, creditLimit: e.target.value })
+                  }
+                  placeholder="250000"
+                  className={inputCls}
+                />
+              </Field>
+            </div>
+            <Field label="Notes">
+              <Input
+                value={form.notes}
+                onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                placeholder="What they carry, how they deliver"
                 className={inputCls}
               />
             </Field>

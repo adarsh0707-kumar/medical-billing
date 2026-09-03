@@ -109,6 +109,32 @@ Six tests, the first of which is the reported case.
 
 ### Added
 
+#### The supplier record is a distributor master, not a contact card
+
+Checked against a real supplier master for a Patna pharmacy: of everything in it, `Supplier` could store the name, contact, phone, email, GSTIN and one line of address. It could not store the shop's own code for the distributor, their drug licence, the payment terms, the delivery days, the credit limit, or the city, state and PIN as anything but more of the address string. Nine columns, all nullable, nothing backfilled — an existing supplier row is valid and simply unfilled, and there is no default that would be true of a distributor nobody has entered details for.
+
+Three of them are decisions rather than columns:
+
+- **`code` is unique per shop, and an empty string is a value.** Two suppliers saved with a blank code collide on the index, and the second is refused over a field nobody filled in — so both forms omit an untouched field rather than sending `""`. Postgres treats NULLs as distinct, which is what lets any number of suppliers have no code.
+- **`deliveryDays` and `paymentTerms` are free text**, and the sample data is the argument: "On order (2-4 hrs)" is a real delivery arrangement and it is not a set of weekdays.
+- **`state` is stored and not acted on.** It decides the place of supply, an inter-state purchase attracts IGST, and this billing pipeline only ever computes the intra-state CGST + SGST pair. Recording it makes the question visible; it does not answer it, and the docs say so rather than implying the tax treatment follows.
+
+#### A medicine records which distributor it is usually bought from
+
+The master names a primary supplier per item and the schema had nowhere to put it: supplier existed only on `Batch`. `Medicine.defaultSupplierId` is that place, and it is deliberately **not** derived from the most recent batch — the two are different facts. A batch's supplier is history, is what a recall follows, and is never wrong; a primary supplier is a preference that can be wrong without making any past purchase wrong. Reading one off the other would let a one-off purchase from whoever had stock that week silently become the answer to "who do we buy this from".
+
+`SetNull` on delete, for the same reason: dropping a distributor should forget where the shop reordered from, while a batch reference still blocks the deletion.
+
+### Fixed
+
+#### A reference in a request body was never checked against the caller's shop
+
+Adding a third foreign key to the medicine form is what surfaced it. Multi-tenancy here works by putting `shopId` in the same `where` as `id` on every scoped read and write — which covers the row being written and says nothing about the rows it points at. `POST /api/medicines` passed `categoryId` and `manufacturerId` straight into `create`, and a foreign key only asks whether a row exists, never whose it is. So a medicine could be filed under another shop's category, and the `include` on the response would read that shop's category name back to the caller. `POST /api/inventory/batches` checked its `medicineId` and not its `supplierId` — the same shape, half-closed.
+
+One guard in `utils/owned-refs.js` now covers all four. A foreign id answers **404**, never 403, because the alternative confirms the row exists to somebody who cannot see it.
+
+### Added
+
 #### Units are the shop's own vocabulary, not a list of nine
 
 `unit` on a medicine was a Zod enum of nine values, so a pharmacy selling vials, sachets, strips or tubes had to file them under **other** — and `other` is what the customer then read in the PACK column of their printed invoice. The requirement that named those nine (FR-MED-07) was making the invoice less true, so it is marked superseded rather than met.
