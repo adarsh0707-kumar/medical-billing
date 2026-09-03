@@ -119,6 +119,19 @@ Three of them are decisions rather than columns:
 - **`deliveryDays` and `paymentTerms` are free text**, and the sample data is the argument: "On order (2-4 hrs)" is a real delivery arrangement and it is not a set of weekdays.
 - **`state` is stored and not acted on.** It decides the place of supply, an inter-state purchase attracts IGST, and this billing pipeline only ever computes the intra-state CGST + SGST pair. Recording it makes the question visible; it does not answer it, and the docs say so rather than implying the tax treatment follows.
 
+#### The HSN code is a list with descriptions, not an eight-digit box
+
+HSN is the classification a GST return is filed against, so unlike a category or a unit it is not the shop's to invent — the code either is the government's code for what is being sold or it is wrong. What the operator had was an empty box and their memory, and `30049099` against `30049011` decided at the counter is how a return comes back wrong.
+
+The medicine form now offers the twelve codes a general pharmacy uses, each with what it covers — *Insulin*, *Ayurvedic / Unani / Siddha medicaments*, *Medicated shampoo (18%)*. The three rate hints are the government's and are there because those three are the surprises; nothing sets `gstPercent` from the code, because a wrong rate applied silently is a filing error nobody sees.
+
+**It is a list and not a cage**, for the reason the `unit` enum was removed nine days after it shipped: twelve codes are nowhere near the whole schedule, and a shop that starts selling a device or a supplement outside them would file under something it knows is wrong. There is an "Other HSN code…" box beside the list.
+
+Two things this deliberately does *not* do:
+
+- **No server-side format validation.** The catalogue already holds 5-, 6- and 8-digit codes and one non-numeric value. A `^\d{4,8}$` rule would be correct in the abstract and would make those rows uneditable — which is exactly what the nine-value `unit` enum did to a shop that sells vials.
+- **No silent normalisation.** A code the list does not recognise is shown on the trigger and survives a save. Without that, opening a medicine filed under a six-digit code and correcting its spelling would quietly rewrite what it is filed under.
+
 #### A medicine records which distributor it is usually bought from
 
 The master names a primary supplier per item and the schema had nowhere to put it: supplier existed only on `Batch`. `Medicine.defaultSupplierId` is that place, and it is deliberately **not** derived from the most recent batch — the two are different facts. A batch's supplier is history, is what a recall follows, and is never wrong; a primary supplier is a preference that can be wrong without making any past purchase wrong. Reading one off the other would let a one-off purchase from whoever had stock that week silently become the answer to "who do we buy this from".

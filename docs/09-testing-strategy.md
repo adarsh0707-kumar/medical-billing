@@ -1,6 +1,6 @@
 # Testing Strategy
 
-**Measured 2026-09-03: 781 backend tests across 32 files, 185 frontend unit tests across 22 files, and a 7-flow browser smoke — all three layers on CI, all passing.**
+**Measured 2026-09-03: 781 backend tests across 32 files, 192 frontend unit tests across 23 files, and a 7-flow browser smoke — all three layers on CI, all passing.**
 
 > Counts here are taken by **running the suites**, not by adding up the tables below. Three documents once carried four different numbers because the tables were maintained by hand and two suites were never added to them.
 >
@@ -92,7 +92,7 @@ Two failures worth remembering, both fixed 2026-08-27:
 | `tests/billing/invoice-concurrency.test.js`   |     5 | Last-unit races, oversell bursts, gapless serials                          |
 | `tests/api/shop.test.js`                      |     8 | `GET`/`PUT /api/shop`: the caller's own shop only, the ADMIN gate on `PUT`, and read access for every role because printing a bill is a cashier's job (FR-SHOP-07). **Added with multi-tenancy and missing from this table until 2026-08-31** |
 
-**Frontend — 185 across 22 files, all passing.** Measured 2026-09-02 on Node 22.
+**Frontend — 192 across 23 files, all passing.** Measured 2026-09-02 on Node 22.
 The 125 recorded here before that dated from 2026-08-25 and had been overtaken by
 three files the table listed but the total never counted.
 
@@ -121,6 +121,7 @@ three files the table listed but the total never counted.
 | `src/pages/__tests__/Reports.margin.test.tsx` |    15 | The Top Sellers and Profit & Margin tabs (FR-RPT-07, FR-RPT-08): that a tab exists and opening it calls the endpoint — the assertion that would have caught both shipping with no screen — the ADMIN-only gate on margin being narrower than the GST tab's, that a cashier's page never fires a request it would get a 403 from, and the upper-bound warning when a batch had no cost price |
 | `src/pages/__tests__/Reports.prescriptions.test.tsx` |     9 | The Schedule H register tab (FR-MED-12), the fourth endpoint here built before anything called it: that the tab exists and opening it asks the server, that the search box and both date bounds reach the request — and that a lone bound does not, since the server would ignore it while the screen said otherwise — and that a cashier is never offered a tab that would 403 Plus the case the deployed app actually showed: a failed request rendering as "0 entries — no prescriptions recorded", which is the screen asserting a compliance fact it does not have |
 | `src/pages/__tests__/Inventory.units.test.tsx` |     4 | The unit field after it stopped being an enum: that the select offers the units the shop already uses and not only the built-in nine, that a hand-typed one leaves the browser lower-cased, that cancelling restores the previous unit rather than clearing a required field, and that a blank one is refused here rather than sent |
+| `src/pages/__tests__/Inventory.hsn.test.tsx`  |     7 | The HSN select: each code offered with what it covers, the whole reference list present, a code outside it still enterable — and the one that matters, an unrecognised code surviving an edit rather than being dropped when somebody corrects a medicine's spelling |
 | `src/pages/__tests__/Reports.void.test.tsx`    |    11 | The void and partial-return dialog: role gating, client-side bounds, the refetch ([FR-BILL-17](./01-product-requirements.md)) |
 | `src/pages/__tests__/Billing.guards.test.tsx`  |     9 | POS stock guards, driven through the rendered page                |
 | `src/pages/__tests__/Signup.test.tsx`          |     8 | The signup page: what it sends, what it refuses, and that it creates a shop rather than joining one (FR-AUTH-12) |

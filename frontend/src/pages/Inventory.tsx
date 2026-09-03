@@ -7,6 +7,7 @@ import {
   useUnits,
 } from "@/hooks/useMasters";
 import { useDebounced } from "@/hooks/useDebounced";
+import { hsnOptions } from "@/lib/hsn";
 import {
   Package,
   Plus,
@@ -167,6 +168,17 @@ const ADD_UNIT = ".add";
  * `""` on the way into the form, and the payload sends `null`.
  */
 const NO_SUPPLIER = ".none";
+
+/**
+ * "Not set" and "Other HSN code…" in the HSN select.
+ *
+ * Sentinels for the same reason `ADD_UNIT` is one: Radix reads `""` as nothing
+ * selected and will not take it as an item value, while clearing the code and
+ * typing one off the list both have to be things the operator can pick. A
+ * leading dot cannot collide with a real code, which is digits.
+ */
+const NO_HSN = ".none";
+const OTHER_HSN = ".other";
 const GST_RATES = [0, 5, 12, 18];
 
 /**
@@ -281,6 +293,9 @@ function MedicinesTab() {
   const [submitting, setSubmitting] = useState(false);
   // The free-text unit box, open only while a new one is being typed.
   const [addingUnit, setAddingUnit] = useState(false);
+  // The same, for an HSN code that is not on the reference list.
+  const [typingHsn, setTypingHsn] = useState(false);
+  const hsnBeforeTyping = useRef("");
   // What the unit was before that box opened, so cancelling restores it
   // rather than leaving the field empty. A ref, not state: nothing renders
   // from it, and it must not cause one.
@@ -344,7 +359,9 @@ function MedicinesTab() {
   const openAdd = () => {
     setEditing(null);
     setAddingUnit(false);
+    setTypingHsn(false);
     unitBeforeAdd.current = "tablet";
+    hsnBeforeTyping.current = "";
     setForm({
       name: "",
       genericName: "",
@@ -363,7 +380,9 @@ function MedicinesTab() {
   const openEdit = (med: Medicine) => {
     setEditing(med);
     setAddingUnit(false);
+    setTypingHsn(false);
     unitBeforeAdd.current = med.unit;
+    hsnBeforeTyping.current = med.hsnCode || "";
     setForm({
       name: med.name,
       genericName: med.genericName || "",
@@ -404,6 +423,7 @@ function MedicinesTab() {
       }
       setShowForm(false);
       setAddingUnit(false);
+      setTypingHsn(false);
       refreshMedicines();
       // A unit typed for the first time is only a suggestion once this list
       // is refetched — this is the half that makes "add a unit" stick.
@@ -808,15 +828,96 @@ function MedicinesTab() {
                   </SelectContent>
                 </Select>
               </Field>
+              {/* The code a GST return is filed against, offered with what
+                  each one covers. Not a closed list — see lib/hsn.ts. */}
               <Field label="HSN Code">
-                <Input
-                  value={form.hsnCode}
-                  onChange={(e) =>
-                    setForm({ ...form, hsnCode: e.target.value })
-                  }
-                  placeholder="30041011"
-                  className={inputCls}
-                />
+                {typingHsn ? (
+                  <div className="flex items-center gap-1">
+                    <Input
+                      autoFocus
+                      value={form.hsnCode}
+                      onChange={(e) =>
+                        setForm({ ...form, hsnCode: e.target.value })
+                      }
+                      onKeyDown={(e) => {
+                        // Enter confirms the code rather than submitting a
+                        // half-filled medicine, as on the unit box above.
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          setTypingHsn(false);
+                        }
+                        if (e.key === "Escape") {
+                          e.preventDefault();
+                          setForm({ ...form, hsnCode: hsnBeforeTyping.current });
+                          setTypingHsn(false);
+                        }
+                      }}
+                      inputMode="numeric"
+                      maxLength={12}
+                      placeholder="30041011"
+                      aria-label="Other HSN code"
+                      className={`${inputCls} h-9`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setForm({ ...form, hsnCode: hsnBeforeTyping.current });
+                        setTypingHsn(false);
+                      }}
+                      aria-label="Cancel other HSN code"
+                      className="p-1.5 rounded-md text-slate-400 hover:text-slate-100 hover:bg-slate-700"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <Select
+                    value={form.hsnCode || NO_HSN}
+                    onValueChange={(v) => {
+                      if (v === OTHER_HSN) {
+                        hsnBeforeTyping.current = form.hsnCode;
+                        setForm({ ...form, hsnCode: "" });
+                        setTypingHsn(true);
+                        return;
+                      }
+                      setForm({ ...form, hsnCode: v === NO_HSN ? "" : v });
+                    }}
+                  >
+                    <SelectTrigger
+                      aria-label="HSN Code"
+                      className="bg-slate-700 border-slate-600 text-slate-100 h-9"
+                    >
+                      {/* The trigger shows the code alone. The description is
+                          what the list is for; a code is what the invoice
+                          prints and what the operator recognises. */}
+                      <SelectValue placeholder="Not set" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-slate-800 border-slate-700 max-h-72">
+                      <SelectItem
+                        value={NO_HSN}
+                        className="text-slate-400 focus:bg-slate-700"
+                      >
+                        Not set
+                      </SelectItem>
+                      {hsnOptions(form.hsnCode).map((entry) => (
+                        <SelectItem
+                          key={entry.code}
+                          value={entry.code}
+                          className="text-slate-100 focus:bg-slate-700"
+                        >
+                          <span className="font-mono">{entry.code}</span>
+                          <span className="text-slate-400"> — {entry.description}</span>
+                        </SelectItem>
+                      ))}
+                      <SelectItem
+                        value={OTHER_HSN}
+                        className="text-teal-400 focus:bg-slate-700"
+                      >
+                        + Other HSN code…
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
               </Field>
               {/* Printed as PACK on the invoice: the label off the carton, not
                   a quantity — "1*15ML" for a bottle, "1*10" for a strip. */}

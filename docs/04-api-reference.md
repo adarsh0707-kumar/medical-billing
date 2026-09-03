@@ -608,7 +608,8 @@ Full record including category, manufacturer and **all** batches (each with its 
 | Field                              | Rule                                                                              |
 | ---------------------------------- | --------------------------------------------------------------------------------- |
 | `name`                           | required, ≥ 2 chars                                                              |
-| `genericName`, `hsnCode`       | optional strings                                                                  |
+| `genericName`                    | optional string                                                                   |
+| `hsnCode`                        | optional string, **any format**. The classification a GST return is filed against. The client offers a reference list with descriptions and takes anything; the server stores what it is given, because the catalogue holds codes of several lengths from before that list existed and a format rule would make those rows uneditable |
 | `categoryId`, `manufacturerId` | required, must exist                                                              |
 | `unit`                           | required. 1–20 chars, must start with a letter, then letters, digits, spaces, `.` `-` `/`. **Lower-cased and trimmed on the way in.** Nine values were enumerated here until 2026-09-01 — see below |
 | `gstPercent`                     | number, one of`0, 5, 12, 18`                                                    |
