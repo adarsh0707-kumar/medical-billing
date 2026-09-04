@@ -33,6 +33,23 @@ The printed GST invoice is untouched: it paints with `text-black` on default pap
 
 ### Fixed
 
+#### The deploy broke on an unparseable lockfile, for the second time
+
+`npm ci` failed in the Docker build with *"can only install with an existing package-lock.json … lockfileVersion >= 1"*. The file was there, tracked, 218 KB, in the build context — and **not valid JSON**. A dependabot merge resolution had eaten an entry's closing braces, leaving `@prisma/client-runtime-utils` unterminated with no comma before the next key. No conflict markers survived, so nothing looked wrong in review.
+
+That error message is the trap. It reads as a *missing file* and sent the investigation toward the build context both times this happened; the fix is to check whether the file parses. A `COPY package*.json ./` probe confirmed the lockfile arrived intact, which is what turned the search around.
+
+**Prisma is pinned back to 5.22.** `package.json` had said `^7.10.0` since the merge, and nothing has ever run on it: the container, the suite and production are all 5.22. Prisma 7 drops the datasource `url`, renames the prisma-client-js generator and requires a driver adapter, so it is a migration rather than a bump. The minor bumps that arrived in the same batch — zod 4.5.2, express-rate-limit 8.7.0, eslint 10.9.1, typescript 7.0.2 — are kept.
+
+Verified by building the real image: `docker build -f backend/Dockerfile backend` completes, the client generates at 5.22.0, the prisma CLI survives `npm prune --omit=dev`, and vitest and eslint are absent from the runtime layer.
+
+**This is the second time, so the recurrence is what got fixed rather than only the symptom:**
+
+- **Dependabot no longer raises Prisma majors.** An `ignore` rule on `prisma` and `@prisma/client` for `semver-major` only — 5.x patches and minors, security patches included, still arrive.
+- **CI checks both lockfiles parse before it installs anything.** It names the file and the position, which is the difference between a five-minute fix and an afternoon. Proven against the commit that broke this deploy: the step fails on it and passes on the repair.
+
+The earlier occurrence was fixed and never written down anywhere, which is a fair part of why it came back.
+
 #### Exports produce the whole report, not the part that fit
 
 The Schedule H register exported its **first 100 rows** and said nothing about the rest. `MAX_LIMIT` is the cap that stops a client asking a list endpoint for `?limit=999999` (threat T-10); applying it to a compliance document nobody asked to paginate turned Rule 65(11)'s "produce the particulars" into "produce some of them". A register that ends early is not a short download — and a truncated CSV that terminates cleanly is indistinguishable from a complete one.

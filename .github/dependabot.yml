@@ -27,6 +27,25 @@ updates:
       backend-minor-and-patch:
         patterns: ["*"]
         update-types: ["minor", "patch"]
+    # Prisma majors are not raised automatically any more, because the same
+    # one has now broken production twice.
+    #
+    # Prisma 7 is not a version bump for this codebase. It drops the datasource
+    # `url`, renames the prisma-client-js generator and requires a driver
+    # adapter — so the pull request is green on Dependabot's side, unbuildable
+    # on ours, and the breakage only shows at deploy. Both times it also
+    # arrived with a merge that left package-lock.json unparseable, which is
+    # the failure the deploy actually reported.
+    #
+    # This blocks **majors only**. A 5.x patch or minor — including a security
+    # patch, which Dependabot raises on its own schedule — still comes through
+    # untouched. The upgrade is real work that wants a branch and a test run
+    # against a real database, not a merge button on a Monday.
+    ignore:
+      - dependency-name: "prisma"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@prisma/client"
+        update-types: ["version-update:semver-major"]
     commit-message:
       prefix: "chore(backend)"
     labels: ["dependencies", "backend"]

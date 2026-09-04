@@ -46,6 +46,38 @@ jobs:
           cache: npm
           cache-dependency-path: backend/package-lock.json
 
+      # Both lockfiles, checked as JSON before anything installs.
+      #
+      # Twice now a merge resolution has left package-lock.json unparseable —
+      # markers stripped but a separator or an entry's closing braces eaten —
+      # and both times it reached main and broke the deploy. `npm ci` does
+      # catch it, but it reports "can only install with an existing
+      # package-lock.json ... lockfileVersion >= 1", which reads as a *missing
+      # file* and sent both investigations off toward the build context. The
+      # file was there, intact in size, and simply not JSON.
+      #
+      # This says which file and which line, in one step that costs a second.
+      # It is not a substitute for `npm ci` below — it is the difference
+      # between a five-minute fix and an afternoon.
+      - name: Lockfiles are valid JSON
+        run: |
+          for f in ../backend/package-lock.json ../frontend/package-lock.json; do
+            node -e "
+              const fs = require('fs');
+              const path = process.argv[1];
+              try {
+                const lock = JSON.parse(fs.readFileSync(path, 'utf8'));
+                if (!(lock.lockfileVersion >= 1)) {
+                  throw new Error('lockfileVersion is ' + lock.lockfileVersion);
+                }
+                console.log(path + ': valid, lockfileVersion ' + lock.lockfileVersion);
+              } catch (err) {
+                console.error('::error file=' + path + '::' + path + ' is not a usable lockfile — ' + err.message);
+                process.exit(1);
+              }
+            " "$f"
+          done
+
       - run: npm ci
 
       # Lint before anything that needs a database or a generated client: it
