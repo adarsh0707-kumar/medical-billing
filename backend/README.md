@@ -82,7 +82,7 @@ Before 2.0.0 the grouping was by *module* — customers under `/api/billing/`,
 medicines and suppliers under `/api/inventory/`, no `/api/reports` at all. Every
 one of those paths still works and is **deprecated**: each answers with
 `Deprecation`, `Sunset` and `Link: rel="successor-version"` headers, logs a
-warning naming the caller, and is removed in **2.1.0**. An alias and its
+warning naming the caller, and is removed in **3.1.0**. An alias and its
 successor run the same controller function, so they cannot answer differently.
 Full mapping: [docs/04 §2a](../docs/04-api-reference.md).
 

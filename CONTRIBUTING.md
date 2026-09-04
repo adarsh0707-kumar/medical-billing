@@ -131,7 +131,7 @@ Serials are allocated by an atomic upsert against `InvoiceCounter` **inside the 
 
 Routers are grouped by **resource** now. Customers are at `/api/customers`, medicines at `/api/medicines`, suppliers at `/api/suppliers`, and the five reports at `/api/reports/...`.
 
-Before 2.0.0 they were grouped by *module* — customers only at `/api/billing/customers`, medicines and suppliers under `/api/inventory/`, reports filed under whichever table each one read. Those paths **still work and are deprecated**: they answer with `Deprecation`, `Sunset` and `Link: rel="successor-version"` headers, log a warning naming the caller, and are removed in **2.1.0**.
+Before 2.0.0 they were grouped by *module* — customers only at `/api/billing/customers`, medicines and suppliers under `/api/inventory/`, reports filed under whichever table each one read. Those paths **still work and are deprecated**: they answer with `Deprecation`, `Sunset` and `Link: rel="successor-version"` headers, log a warning naming the caller, and are removed in **3.1.0**.
 
 So when you copy a path out of an old branch, an old ticket or a stale tab, check it against the mapping table in [`docs/04-api-reference.md` §2a](./docs/04-api-reference.md). A deprecated path works, which is exactly what makes it easy to leave in.
 

@@ -165,7 +165,7 @@ backend/tests/                   781 tests across 32 files — Vitest + Supertes
 | `/api/dashboard` | `dashboard.routes.js` | `GET /stats` — every dashboard panel in one request ([G-08](./08-gap-analysis.md#g-08)) |
 | `/api/shop`      | `shop.routes.js`      | the caller's own shop record — the business details an invoice header prints (Phase 12) |
 
-**Before 2.0.0** the routers were grouped by *module*, and this was the single most common source of client confusion: customers were reachable only at `/api/billing/customers`, medicines and suppliers only under `/api/inventory/`, and the five reports were filed under whichever table each happened to read. Every one of those paths still works and is **deprecated** — they carry `Deprecation`, `Sunset` and `Link: rel="successor-version"` headers, log a warning naming the caller, and are removed in 2.1.0. See [`docs/04` §2a](./04-api-reference.md) for the full mapping.
+**Before 2.0.0** the routers were grouped by *module*, and this was the single most common source of client confusion: customers were reachable only at `/api/billing/customers`, medicines and suppliers only under `/api/inventory/`, and the five reports were filed under whichever table each happened to read. Every one of those paths still works and is **deprecated** — they carry `Deprecation`, `Sunset` and `Link: rel="successor-version"` headers, log a warning naming the caller, and are removed in 3.1.0. See [`docs/04` §2a](./04-api-reference.md) for the full mapping.
 
 What did **not** move, and why:
 

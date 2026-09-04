@@ -39,7 +39,7 @@ Batches, categories and manufacturers stay under `/api/inventory` because they a
 
 Before 2.0.0 the routers were grouped by *module*, not resource. It was the single most common source of client confusion, and every document under `docs/` carried a warning about it.
 
-**Every path below still works** and will keep working until **2.1.0**. Each responds with:
+**Every path below still works** and will keep working until **3.1.0**. Each responds with:
 
 | Header                                   | Meaning                                            |
 | ------------------------------------------ | ---------------------------------------------------- |
@@ -47,7 +47,9 @@ Before 2.0.0 the routers were grouped by *module*, not resource. It was the sing
 | `Sunset: Mon, 30 Nov 2026 00:00:00 GMT` | RFC 8594 — the date it stops working               |
 | `Link: <new-path>; rel="successor-version"` | RFC 8288 — where it went                       |
 
-The server also logs a `warn` line per call, carrying the request id and the caller's user id, so an operator can find out **who** is still on an old path before 2.1.0 removes it.
+The server also logs a `warn` line per call, carrying the request id and the caller's user id, so an operator can find out **who** is still on an old path before 3.1.0 removes it.
+
+> The removal was originally announced for 2.1.0. That release never shipped — the work that followed 2.0.0 broke clients and went out as 3.0.0 on 2026-09-04 — so the step is now 3.1.0. **The `Sunset` date below has not moved**, and no path here has been removed or changed in the meantime.
 
 | Deprecated path                                     | Use instead                          |
 | ----------------------------------------------------- | -------------------------------------- |

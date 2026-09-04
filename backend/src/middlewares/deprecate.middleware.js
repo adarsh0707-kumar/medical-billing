@@ -1,7 +1,10 @@
 const { logger } = require("../config/logger");
 
 /**
- * Marks a route as a deprecated alias for one minor version (2.0.0 → 2.1.0).
+ * Marks a route as a deprecated alias, from 2.0.0 until its removal in 3.1.0.
+ * The removal was announced for 2.1.0; that release never shipped, because the
+ * work after 2.0.0 broke clients and went out as 3.0.0 instead. Only the
+ * version number moved — SUNSET below is the date clients were given.
  *
  * The 2.0.0 re-grouping moved customers, medicines and suppliers out of the
  * module-shaped paths they were buried in. Breaking every client on the day of
@@ -15,9 +18,9 @@ const { logger } = require("../config/logger");
  *   route went rather than only that it is going.
  * - A `warn` log carrying the request id, so an operator can find *which*
  *   client is still on the old path before it is removed. That is the one that
- *   decides whether 2.1.0 can safely drop them.
+ *   decides whether 3.1.0 can safely drop them.
  *
- * Removal is a deliberate step in 2.1.0, not an expiry: the header is a promise
+ * Removal is a deliberate step in 3.1.0, not an expiry: the header is a promise
  * about intent, and nothing enforces it automatically.
  */
 

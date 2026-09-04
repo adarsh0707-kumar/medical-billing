@@ -108,7 +108,7 @@ Since **2.0.0** the URL layout is grouped by resource: `/api/customers`,
 `/api/medicines`, `/api/suppliers`, `/api/reports`. It used to be grouped by
 module — customers under `/api/billing/`, medicines and suppliers under
 `/api/inventory/` — which was the most common thing clients got wrong. Those
-paths still work, now marked deprecated, and are removed in 2.1.0. The mapping
+paths still work, now marked deprecated, and are removed in 3.1.0. The mapping
 is in [04 §2a](./docs/04-api-reference.md).
 
 ---

@@ -301,12 +301,17 @@ Semantic versioning, per `CHANGELOG.md`.
 | **1.3.0** | Phase 9                          | CI green, critical-path coverage                                                        |
 | ~~**1.4.0**~~ | ~~Phase 10~~                 | **Cancelled 2026-08-24** — the schema was dropped rather than built (PRD Q7)     |
 | **2.0.0** | Phase 11 + breaking API cleanups | **Released 2026-08-24.** Routes re-grouped by resource; everything untagged since 1.0.0 folded in |
+| ~~**2.1.0**~~ | ~~Removal of the deprecated aliases~~ | **Superseded 2026-09-04** — the release that shipped next was a major, so the removal moved to 3.1.0 |
+| **3.0.0** | Phases 12 and 13 + multi-tenancy | **Released 2026-09-04.** Every shop-specific row carries a `shopId`; `setup-status` removed and signup reopened |
+| **3.1.0** | Removal of the deprecated pre-2.0.0 paths | Alias-call logs show who is still calling, and the advertised `Sunset` (2026-11-30) has passed |
 
 > ~~Moving customers to `/api/customers`, suppliers to `/api/suppliers` and medicines to `/api/medicines` would make the API match every reader's expectation — but it breaks clients. Bundle it into 2.0.0 rather than dribbling it out.~~
 >
-> **Done, and bundled as advised.** Customers, medicines and suppliers moved to the top level and a `/api/reports` router was added, all in one release. The old paths were kept as deprecated aliases for one minor version rather than removed outright — they answer with `Deprecation`/`Sunset`/`Link` headers and log who is still calling, so 2.1.0 can remove them on evidence rather than on a guess.
+> **Done, and bundled as advised.** Customers, medicines and suppliers moved to the top level and a `/api/reports` router was added, all in one release. The old paths were kept as deprecated aliases for one minor version rather than removed outright — they answer with `Deprecation`/`Sunset`/`Link` headers and log who is still calling, so the removal can be scheduled on evidence rather than on a guess.
 >
 > 1.1.0 through 1.3.0 were never tagged; their work is on `main` and is folded into the 2.0.0 entry in [CHANGELOG.md](../CHANGELOG.md) rather than being back-dated into releases that never shipped.
+>
+> **2.1.0 went the same way, for a different reason.** It was the release named everywhere as the one that removes the aliases, but the work that accumulated after 2.0.0 broke clients — `GET /api/auth/setup-status` was removed and signup reopened — so it shipped as 3.0.0 on 2026-09-04. The aliases are untouched and their advertised `Sunset` date has not moved; only the version number naming their removal has, to 3.1.0.
 
 ## Sequencing rationale
 

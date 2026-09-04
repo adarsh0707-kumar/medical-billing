@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Nothing yet.
+
+---
+
+## [3.0.0] - 2026-09-04
+
+Everything on `main` since 2.0.0.
+
+The major bump is for one section — **Changed — BREAKING**, below — where the system became multi-tenant. `GET /api/auth/setup-status` is gone, and `POST /api/auth/signup` reversed from a sealed one-shot bootstrap into open registration that creates an empty pharmacy rather than a second account inside yours. Either one on its own is a client-visible break, so this is 3.0.0 and not the 2.1.0 the roadmap had pencilled in. Everything else below is additive or a fix.
+
+**The deprecated pre-2.0.0 route aliases are still here.** They were promised removal "in 2.1.0", a release that now never ships; the removal is retargeted to **3.1.0** and the `Sunset` date the aliases advertise (2026-11-30) is unchanged. Nothing a client was told has been brought forward — only the version number naming the step has moved. See [§2a of the API reference](./docs/04-api-reference.md#2a-moved-in-200--deprecated-paths).
+
 ### Changed
 
 #### The Inventory dialogs are as wide as they say they are
@@ -808,4 +820,6 @@ For detailed setup instructions, please refer to:
 
 ---
 
+[3.0.0]: https://github.com/adarsh0707-kumar/medical-billing/releases/tag/v3.0.0
+[2.0.0]: https://github.com/adarsh0707-kumar/medical-billing/releases/tag/v2.0.0
 [1.0.0]: https://github.com/adarsh0707-kumar/medical-billing/releases/tag/v1.0.0

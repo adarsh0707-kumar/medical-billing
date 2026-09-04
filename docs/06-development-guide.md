@@ -373,7 +373,7 @@ Then open `https://localhost`. The seeded admin can sign in and do exactly one t
 It also names the build answering:
 
 ```json
-{ "success": true, "message": "…", "timestamp": "…", "version": "2.0.0", "commit": "3904fcd" }
+{ "success": true, "message": "…", "timestamp": "…", "version": "3.0.0", "commit": "3904fcd" }
 ```
 
 `commit` comes from `RENDER_GIT_COMMIT` (set by the platform) or `GIT_COMMIT` anywhere else, and reads `unknown` in development where the question does not arise.
