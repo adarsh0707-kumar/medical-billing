@@ -33,6 +33,16 @@ The printed GST invoice is untouched: it paints with `text-black` on default pap
 
 ### Fixed
 
+#### Tall dialogs ran off both edges of the screen
+
+Reported against the supplier form, which grew nine fields the same day. `DialogContent` centres itself with `-translate-y-1/2` and had no height bound at all, so a form taller than the viewport overflowed **upward and downward at once** — the title was clipped off the top while Cancel and Save sat below the bottom, with nothing to scroll to reach them.
+
+Fixed in the primitive rather than at the call site. Six form dialogs have that shape, the two supplier forms are the same form in two places, and pasting the same pair of classes into each is how they drift apart. A short dialog is unaffected: a max-height it never reaches and an `auto` overflow that never triggers.
+
+`dvh` rather than `vh`, because on a phone `vh` counts the space behind the browser's own chrome — and a counter is where this app is used. The invoice dialog's own `max-h-[85vh] overflow-y-auto`, previously the only one in the app, is dropped in favour of the shared default.
+
+*This edits a shadcn-generated file, so `shadcn add dialog` would take it back out. The comment above the change says so.*
+
 #### TypeScript 7 also broke the type generator, silently
 
 Pinning the frontend back to 6.0.3 exposed the same major sitting in the backend, where it fails for a different reason and had gone unnoticed. The backend is JavaScript and uses TypeScript for exactly one thing: `scripts/generate-api-types.js`, which reads the Zod schemas through the compiler API to produce the frontend's request types. **TypeScript 7 is the native rewrite and drops `ts.ModuleResolutionKind`, `ts.ModuleKind` and `ts.ScriptTarget` from the JS API**, so the generator dies with `Cannot read properties of undefined (reading 'Bundler')` and takes `npm run types:check` — a CI gate — with it.
