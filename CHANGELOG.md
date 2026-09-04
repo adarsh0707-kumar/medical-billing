@@ -33,6 +33,12 @@ The printed GST invoice is untouched: it paints with `text-black` on default pap
 
 ### Fixed
 
+#### TypeScript 7 also broke the type generator, silently
+
+Pinning the frontend back to 6.0.3 exposed the same major sitting in the backend, where it fails for a different reason and had gone unnoticed. The backend is JavaScript and uses TypeScript for exactly one thing: `scripts/generate-api-types.js`, which reads the Zod schemas through the compiler API to produce the frontend's request types. **TypeScript 7 is the native rewrite and drops `ts.ModuleResolutionKind`, `ts.ModuleKind` and `ts.ScriptTarget` from the JS API**, so the generator dies with `Cannot read properties of undefined (reading 'Bundler')` and takes `npm run types:check` — a CI gate — with it.
+
+It looked green locally only because the dev container carried a stale install from before the bump. A fresh `npm ci` reproduces it immediately. Backend TypeScript is pinned to `~6.0.3` too, so one version now serves the whole repository, and both directories have `ignore` rules for the major with the lifting condition written beside them: for the frontend, a typescript-eslint peer range that admits 7; for the backend, that generator ported to the 7 API.
+
 #### The Vercel build broke on a TypeScript major the linter cannot accept
 
 `npm install` failed with `ERESOLVE`: `typescript-eslint@8.68.0` declares a peer range of `typescript >=4.8.4 <6.1.0`, and the frontend pin had been bumped to `~7.0.2`. **Pinned back to `~6.0.3`.**

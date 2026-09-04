@@ -41,10 +41,25 @@ updates:
     # patch, which Dependabot raises on its own schedule — still comes through
     # untouched. The upgrade is real work that wants a branch and a test run
     # against a real database, not a merge button on a Monday.
+    #
+    # TypeScript majors are held here too, for a different reason than in the
+    # frontend. There is no linter peer range in the way — the backend is
+    # JavaScript and only uses TypeScript for `scripts/generate-api-types.js`,
+    # which reads the Zod schemas through the compiler API to produce the
+    # frontend's request types. TypeScript 7 is the native rewrite and drops
+    # `ts.ModuleResolutionKind`, `ts.ModuleKind` and `ts.ScriptTarget` from the
+    # JS API entirely, so the generator dies with "Cannot read properties of
+    # undefined (reading 'Bundler')" and `npm run types:check` — a CI gate —
+    # fails with it.
+    #
+    # Lift it when that script has been ported to the TypeScript 7 API, not
+    # when TypeScript 7 merely looks stable.
     ignore:
       - dependency-name: "prisma"
         update-types: ["version-update:semver-major"]
       - dependency-name: "@prisma/client"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "typescript"
         update-types: ["version-update:semver-major"]
     commit-message:
       prefix: "chore(backend)"
