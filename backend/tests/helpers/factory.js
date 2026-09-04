@@ -9,7 +9,12 @@ import { generateToken } from "../../src/utils/jwt.utils.js";
 // not fail because an earlier test spent the budget. The limiter tests build
 // their own app with real numbers.
 export const buildApp = (options = {}) =>
-  createApp({ rateLimitMax: 1e6, loginRateLimitMax: 1e6, ...options });
+  createApp({
+    rateLimitMax: 1e6,
+    loginRateLimitMax: 1e6,
+    signupRateLimitMax: 1e6,
+    ...options,
+  });
 
 export const PASSWORD = "test-password-123";
 
@@ -189,6 +194,40 @@ export async function makeSellable({
   });
   return { medicine, batch, category, manufacturer, supplier };
 }
+
+// ─── "Today", the way the server means it ──────────────
+//
+// Every day boundary in this product is the **store's local day**, argued for
+// at each site that draws one: `createInvoice` and the expiry panels key on
+// local midnight because a medicine is sellable through the date printed on it
+// (FR-BATCH-09), `dailySummaryPeriod` brackets a local day, and `trend.js` says
+// so in as many words — "buckets by the store's LOCAL day, not UTC".
+//
+// Three tests derived their own "today" from `new Date().toISOString()`, which
+// is the **UTC** date, and `new Date("2026-09-04")` then parses a date-only
+// string as UTC midnight. The two agree only where the offset is zero.
+//
+// CI runs in UTC, so the suite was green there and green on any developer
+// machine at or behind UTC. East of UTC it failed for exactly the length of the
+// offset each morning: at 00:06 IST the UTC date is still yesterday, so the
+// fixture asked for yesterday's midnight while the server bracketed today's,
+// and three tests reported the product broken when it was correct. Measured,
+// not theorised — it is what this suite did on 2026-09-05.
+//
+// Shared rather than written per file, because that is how the three drifted
+// apart from the server in the first place.
+export const localMidnight = (dayOffset = 0) => {
+  const d = new Date();
+  d.setDate(d.getDate() + dayOffset);
+  d.setHours(0, 0, 0, 0);
+  return d;
+};
+
+/** The same instant as `localMidnight()`, as the `YYYY-MM-DD` a query takes. */
+export const localDateString = (dayOffset = 0) => {
+  const d = localMidnight(dayOffset);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
 
 // One invoice line, shaped the way the POS sends it.
 export const line = (medicine, batch, overrides = {}) => ({

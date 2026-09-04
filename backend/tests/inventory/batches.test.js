@@ -1,7 +1,13 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import request from "supertest";
 import prisma from "../../src/config/db.js";
-import { buildApp, signIn, makeMedicine, makeBatch } from "../helpers/factory.js";
+import {
+  buildApp,
+  signIn,
+  makeMedicine,
+  makeBatch,
+  localMidnight,
+} from "../helpers/factory.js";
 
 let app;
 beforeAll(() => {
@@ -149,9 +155,9 @@ describe("expiry and low-stock alerts", () => {
   it("shows a batch expiring today, which is still sellable", async () => {
     const { token } = await signIn(app);
     const { medicine, supplier } = await makeMedicine();
-    // Stored the way batch.controller.create stores it — midnight, from a
-    // date-only string.
-    const today = new Date(new Date().toISOString().slice(0, 10));
+    // Stored the way batch.controller.create stores it — midnight of the
+    // store's local day, which is the boundary the expiring window draws.
+    const today = localMidnight();
     await makeBatch({ medicineId: medicine.id, supplierId: supplier.id, batchNumber: "TODAY", expiryDate: today });
 
     const res = await get(token, "/api/inventory/batches/expiring?days=30");

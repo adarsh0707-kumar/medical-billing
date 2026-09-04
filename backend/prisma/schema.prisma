@@ -87,9 +87,16 @@ model User {
 
 /// Who changed what, and to what (NFR-17, threat T-12).
 ///
-/// Written by a Prisma middleware rather than by controllers, so a new write
-/// path cannot forget to record itself — that is the whole reason it lives at
-/// the data layer.
+/// Written by a Prisma **client extension** rather than by controllers, so a new
+/// write path cannot forget to record itself — that is the whole reason it lives
+/// at the data layer. (`src/config/audit.js`.)
+///
+/// It was a `$use` middleware until 2026-08-31, and this comment said so until
+/// 2026-09-04. The move is not cosmetic: a middleware wrote its row on the
+/// global client, so an audited write inside a transaction took a *second*
+/// pooled connection and its audit row did not roll back with the write it
+/// described — the log kept shop creations that never happened. As an extension
+/// the row joins the caller's transaction. See docs/03 §3.12 and Phase 13.
 ///
 /// The actor is a snapshot, not a relation: `actorId` deliberately has no
 /// foreign key and `actorEmail` is copied in. An audit trail that loses its

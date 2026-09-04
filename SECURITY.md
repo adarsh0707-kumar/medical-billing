@@ -10,17 +10,22 @@ We take reports seriously and we'd rather hear about a problem early than read a
 
 | Version | Supported | Notes |
 |---|---|---|
-| `main` | ✅ | Where fixes land first. **Currently the recommended branch to deploy** — several correctness and security fixes have shipped since 1.0.0 |
-| 1.0.0 | ⚠️ Limited | The only tagged release (2026-04-28). Predates the fixes below. Security fixes will be backported only for critical issues |
-| < 1.0.0 | ❌ | No releases exist |
+| `main` | ✅ | Where fixes land first |
+| 3.0.0 | ✅ | Current release (2026-09-04). Multi-tenant: a signup creates its own shop. **Recommended for deployment** |
+| 2.0.0 | ⚠️ Limited | 2026-08-24. Single-tenant, and predates the tenancy boundary every later fix assumes. Critical issues only |
+| 1.0.1, 1.0.0 | ❌ | 2026-04-28. Predates every fix listed below — atomic stock, exact money, request validation. Do not deploy |
 
-Fixes on `main` since 1.0.0 that matter for security or data integrity:
+> This table said **"1.0.0 — the only tagged release"** until 2026-09-04, by which point `v1.0.1` and `v2.0.0` had been tagged and 3.0.0 was being cut. It is the table a reporter reads to decide whether their finding affects something supported, so a stale one costs somebody the work of testing against a version nobody runs.
+
+Fixes since 1.0.0 that matter for security or data integrity:
 
 - Stock deduction made atomic — concurrent sales could previously drive stock negative
 - Invoice serials allocated from a per-day counter — concurrent checkouts could previously fail a paid-for sale
 - Money moved to exact decimals — float drift previously left tax totals unreconcilable
 - Every mutating route now validates its request body
 - Rate limiting made per-client, with a dedicated failed-login budget
+- Server-side revocation and refresh-token rotation with reuse detection
+- Tenant isolation: a caller's shop comes from their token, and a foreign id answers 404
 - The SPA and API moved to a single origin
 
 ---
@@ -142,7 +147,9 @@ If you can demonstrate impact **beyond** what's described here — a way to expl
 
 **What open signup does still cost**, and these are accepted rather than solved:
 
-- **Unbounded account and shop creation.** Nothing limits how many shops one person opens. The failed-login limiter covers the endpoint at 10 per 15 minutes per client, which bounds the rate but not the total; a determined caller can still fill the table over time. There is no email verification, so the addresses are not proven either.
+- **Unbounded account and shop creation.** Nothing limits how many shops one person opens over time. A dedicated limiter covers the endpoint at 10 per 15 minutes per client, which bounds the rate but not the total; a determined caller can still fill the table. There is no email verification, so the addresses are not proven either.
+
+  **This sentence was false between 2026-08-29 and 2026-09-04, and it is worth saying why rather than quietly correcting the number.** The endpoint was mounted on the *failed-login* limiter, which is built with `skipSuccessfulRequests` — right for login, where only failures are worth counting, and exactly wrong here, because on signup the **successful** call is the one that creates a shop and spends a cost-12 hash. Every call this control existed to bound was the one it skipped, so the real ceiling was the general 500-per-window limiter. It now has its own limiter that counts successes, and `tests/auth/rate-limit.test.js` asserts the budget is spent by successful signups rather than by failures.
 - **Each call spends a cost-12 bcrypt hash** before anything is written. That is deliberate — a cheaper hash for signup would be a cheaper hash for the password it stores — but it does make the endpoint the most expensive unauthenticated work in the API.
 - **`User.email` is unique system-wide**, so one signup can discover whether an address already has an account, in any shop, from the `409`. Accepted: the alternative is a signup that silently does nothing, and login takes an email with no shop selector, so the address has to be unique regardless ([FR-SHOP-06](./docs/01-product-requirements.md#60-tenancy--fr-shop)).
 

@@ -21,6 +21,42 @@ The major bump is for one section — **Changed — BREAKING**, below — where 
 
 **The deprecated pre-2.0.0 route aliases are still here.** They were promised removal "in 2.1.0", a release that now never ships; the removal is retargeted to **3.1.0** and the `Sunset` date the aliases advertise (2026-11-30) is unchanged. Nothing a client was told has been brought forward — only the version number naming the step has moved. See [§2a of the API reference](./docs/04-api-reference.md#2a-moved-in-200--deprecated-paths).
 
+### Security
+
+#### The signup rate limit counted the wrong half of the traffic
+
+`POST /api/auth/signup` was mounted on `loginLimiter`, which is built with `skipSuccessfulRequests: true`. On login that is right — a successful sign-in is a counter starting a shift, and only failures are worth counting. On signup it is exactly backwards: **the successful call is the one worth bounding.** Each one creates a `Shop` and a `User` and spends a cost-12 bcrypt hash, which makes it the most expensive unauthenticated work in the API. Every request this control existed to bound was the request it skipped.
+
+So the documented ceiling did not exist. `SECURITY.md` accepts unbounded shop creation as a known cost of open signup and named this limiter as what bounds the *rate* — "10 per 15 minutes per client". The real ceiling was the general limiter: roughly 490 further calls per client per window.
+
+**The comment above the mount is why it survived review**, and it is the more interesting half. It described a one-shot bootstrap that "refuses before touching bcrypt after the first account" — true for a single day, until the multi-tenant conversion on 2026-08-29 made signup permanently open. A reviewer reading the mount found a rationale that fit, and the rationale was for a different endpoint.
+
+Signup now has its own `rateLimit` without `skipSuccessfulRequests`, dialled by `SIGNUP_RATE_LIMIT_MAX`. A separate instance rather than a second mount of one limiter, because two routes sharing a store share a bucket — failed signups were also spending the login budget for that client, which behind a single public address is a stranger locking a pharmacy's staff out of their own till. `tests/auth/rate-limit.test.js` asserts the budget is spent by **successful** signups, that clients are isolated by forwarded address, and that exhausting signup leaves login untouched.
+
+This is the same defect `passwordResetLimiter` was written to avoid twenty lines below, and its comment already argued the general case: reusing a `skipSuccessfulRequests` limiter on an endpoint whose successes matter "would have been a control that counted nothing." That reasoning was there, in this file, and signup was not held to it.
+
+### Fixed
+
+#### The dashboard's Total GST read ₹0 under a correct CGST and SGST
+
+Reported from a live till: *GST Collected* showed CGST ₹100, SGST ₹100 and a bold **Total GST of ₹0**.
+
+`GET /api/dashboard/stats` builds its own `summary` object and returned `totalCgst` and `totalSgst` but never `totalGst`. The panel does not derive the total — the daily summary has always returned it, and this endpoint exists to serve the same shape — so the client read `undefined`, and `summary?.totalGst || 0` rendered it as a confident zero.
+
+**A missing field that falls back to a plausible number is worse than one that renders `undefined`.** Nobody queries a total of ₹0 on a quiet afternoon; they assume no tax was collected. On the panel a shopkeeper reads before filing, that is the figure to get wrong last.
+
+Two things let it through. The first is the shape: this summary is hand-built to match `summaryForPeriod` in `billing.controller.js`, and nothing makes the two agree — the identical defect hit the identical panel when `_count` came back as a bare number and it printed *"undefined bills"*. The second is that `Dashboard.tsx` **already declared `totalGst: number`** on its response interface. The type was right and the server disagreed with it silently, which is exactly the hole NFR-22 documents: request types are generated from the Zod schemas and checked in CI, response shapes are hand-declared per page and checked by nothing.
+
+`tests/api/dashboard.test.js` had a test named **"keeps GST as the sum of its two halves"** that asserted both halves and never the sum. It does now, on a day with trade and on an empty one.
+
+#### The backend suite was only green in UTC
+
+Three tests derived "today" from `new Date().toISOString()`, which is the **UTC** date, and `new Date("2026-09-04")` then parses a date-only string as UTC midnight. Every day boundary in this product is deliberately the store's **local** day — `createInvoice` and the expiry panels key on local midnight because a medicine is sellable through the date printed on it (FR-BATCH-09), `dailySummaryPeriod` brackets a local day, and `trend.js` says so outright.
+
+The two agree only where the offset is zero. CI runs in UTC, so the suite was green there and on any machine at or behind UTC. **East of UTC it failed for exactly the length of the offset every morning:** at 00:06 IST the UTC date is still yesterday, so the fixture stored a batch expiring at yesterday's midnight while the server bracketed today's, and the dashboard expiry panel, the batch expiry window and the daily-summary void test all reported the product broken when the product was correct. Found by running the suite at ten past midnight.
+
+`localMidnight()` and `localDateString()` now live in `tests/helpers/factory.js` as the single definition, for the same reason the server keeps one: three hand-written boundaries are how these drifted from it in the first place.
+
 ### Changed
 
 #### The Inventory dialogs are as wide as they say they are

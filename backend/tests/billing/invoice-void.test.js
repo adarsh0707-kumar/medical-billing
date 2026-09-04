@@ -1,7 +1,13 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import request from "supertest";
 import prisma from "../../src/config/db.js";
-import { buildApp, signIn, makeSellable, line } from "../helpers/factory.js";
+import {
+  buildApp,
+  signIn,
+  makeSellable,
+  line,
+  localDateString,
+} from "../helpers/factory.js";
 
 /**
  * Voiding an invoice — FR-BILL-17, G-15. Policy settled as PRD Q3 on 2026-08-20:
@@ -205,7 +211,9 @@ describe("what a void does to the reports", () => {
     const { batch, medicine } = await makeSellable({ quantity: 10 });
     const invoice = await sell(token, batch, medicine, 2);
 
-    const today = new Date().toISOString().split("T")[0];
+    // The store's local day, not the UTC one: `dailySummaryPeriod` brackets a
+    // local day, so a UTC date string asks for the wrong day east of UTC.
+    const today = localDateString();
     const before = await request(app)
       .get(`/api/billing/invoices/daily-summary?date=${today}`)
       .set("Authorization", `Bearer ${token}`);

@@ -219,13 +219,16 @@ Supported by `GET /api/medicines`, `GET /api/customers`, `GET /api/billing/invoi
 
 ### Rate limiting
 
-Two limiters, both keyed on the client IP:
+Four limiters, all keyed on the client IP:
 
 | Scope                    | Budget                               | Notes                                                                                                                |
 | ------------------------ | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
 | `/api/*`               | 500 requests / 15 min                | `429` with `Too many requests, please try again later.`                                                          |
-| `POST /api/auth/signup` | 10 attempts / 15 min | Shares the login budget. Before setup every call costs a cost-12 hash; after it, the endpoint refuses before hashing |
+| `POST /api/auth/signup` | 10 attempts / 15 min,**successes counted** | Its own limiter, not the login one. A *successful* signup is what creates a shop and spends a cost-12 hash, so it is the call worth bounding — see the note below |
 | `POST /api/auth/login` | 10**failed** attempts / 15 min | `429` with `Too many failed login attempts. Please try again in 15 minutes.` Successful sign-ins are not counted |
+| `/forgot-password`, `/reset-password` | 10 requests / 15 min, successes counted | A third limiter for the same reason as signup: `forgot-password` answers `200` to every address by design, so a `skipSuccessfulRequests` budget would never be spent |
+
+> **This table said signup "shares the login budget" and refused "before hashing" after setup, until 2026-09-04.** Both halves were wrong, and together they hid a real gap. Signup stopped being a one-shot bootstrap on 2026-08-29 — it is permanently open, and every call hashes. And sharing the login limiter meant sharing `skipSuccessfulRequests`, so successful signups were never counted at all and the documented ceiling did not apply to the traffic it named. Fixed in 3.0.0; the reasoning is in the changelog and in `app.js`.
 
 `trust proxy` is set to private-range peers, so behind Nginx the real client IP is used rather than the proxy's — but a client reaching port 5000 directly from outside cannot forge `X-Forwarded-For` to pick its own bucket. Override with the `TRUST_PROXY` environment variable ([G-06](./08-gap-analysis.md#g-06)).
 

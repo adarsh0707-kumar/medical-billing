@@ -179,6 +179,12 @@ const getStats = async (req, res, next) => {
     // Days with no sales still appear, or the chart silently shifts left.
     const trend = fillWindow(trendRows, 7, now);
 
+    // Null on a day with no invoices at all, so default to Decimal zero rather
+    // than the number 0 — `totalGst` below adds these, and a plain 0 has no
+    // `.plus`.
+    const totalCgst = todayAggregate._sum.cgst ?? new D(0);
+    const totalSgst = todayAggregate._sum.sgst ?? new D(0);
+
     res.json({
       success: true,
       data: {
@@ -190,8 +196,25 @@ const getStats = async (req, res, next) => {
           // period it was raised in.
           totalInvoices: countOf("SALE"),
           creditNotes: countOf("CREDIT_NOTE"),
-          totalCgst: todayAggregate._sum.cgst ?? 0,
-          totalSgst: todayAggregate._sum.sgst ?? 0,
+          totalCgst,
+          totalSgst,
+          // The panel prints this as its bold "Total GST" line and does not
+          // derive it — the daily summary has always returned it, and this
+          // endpoint was written to serve the same shape.
+          //
+          // It was simply absent here, so the client read `undefined`, and its
+          // `summary?.totalGst || 0` rendered a confident **₹0** underneath a
+          // CGST and an SGST that were both correct and both non-zero. A
+          // missing field that falls back to a plausible number is worse than
+          // one that renders "undefined": nobody reports a total of zero on a
+          // quiet afternoon, and the figure is a tax figure.
+          //
+          // Same defect and same panel as the `_count` shape fixed above, and
+          // the same cause: this summary is hand-built to match
+          // `summaryForPeriod` in billing.controller.js, and nothing makes the
+          // two agree. `.plus`, never `+` — these are Decimals, and `+`
+          // concatenates them into "100100".
+          totalGst: totalCgst.plus(totalSgst),
           byPaymentMode,
         },
         recentInvoices,

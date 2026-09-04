@@ -227,16 +227,25 @@ frontend/src/
 │   └── ui/                      20 shadcn/ui primitives over Radix
 ├── pages/
 │   ├── Login.tsx                POST /api/auth/login → store → /dashboard
-│   ├── Dashboard.tsx            6 parallel calls: daily summary, recent invoices, expiring,
-│   │                            low stock, medicine count, customer count
+│   ├── Signup.tsx               POST /api/auth/signup — a new shop and its first ADMIN
+│   ├── ForcePasswordChange.tsx  Where a 403 PASSWORD_CHANGE_REQUIRED lands the caller
+│   ├── Dashboard.tsx            One call: GET /api/dashboard/stats (see §6.3)
 │   ├── Billing.tsx              POS: debounced search, cart, totals, invoice POST, print
 │   ├── Inventory.tsx            Tabs: Medicines · Batches · Categories/Manufacturers · Suppliers
 │   ├── Customers.tsx            Searchable list + create/edit dialog
 │   ├── Suppliers.tsx            Searchable list + create/edit dialog
-│   ├── Reports.tsx              Tabs: Daily · GST · Stock Alerts · Sales Trend (Recharts)
-│   └── Settings.tsx             Tabs: Profile · Password · Users (ADMIN only)
-└── types/index.ts               Role, User, AuthState only — API payloads are typed per-page
+│   ├── Reports.tsx              Nine tabs: Daily · Monthly · Yearly · GST · Top Sellers ·
+│   │                            Margin · Prescriptions · Sales Trend (Recharts) · Stock Alerts.
+│   │                            GST and Margin are filtered out for anyone but an ADMIN, and
+│   │                            the page does not request a report the server would refuse
+│   └── Settings.tsx             Tabs: Profile · Password · Users (ADMIN only) · Shop
+└── types/
+    ├── api.generated.ts         26 request contracts generated from the backend's Zod
+    │                            schemas; `npm run types:check` fails CI on drift (AD-15)
+    └── index.ts                 Role, User, AuthState — response shapes are typed per page
 ```
+
+> **This tree was three revisions behind until 2026-09-04.** Dashboard was described as "6 parallel calls" — the shape [G-08](./08-gap-analysis.md#g-08) replaced and that §6.3 of this document already records as one request; Reports carried four of its nine tabs, missing every report added between 2026-08-31 and 2026-09-01; and the two auth screens and the generated types file were absent entirely. A component view that omits a page is how a reader concludes the capability does not exist.
 
 **State model.** Three kinds of state, kept apart on purpose.
 
@@ -270,14 +279,17 @@ sequenceDiagram
     API->>DB: SELECT user WHERE email
     DB-->>API: user row
     API->>API: reject if !isActive
-    API->>API: bcrypt.compare(password, hash)
-    API->>API: jwt.sign({id}, JWT_SECRET, 7d)
-    API-->>SPA: 200 { token, user }
+    API->>API: bcrypt.compare(password, hash) — always, even on a miss
+    API->>DB: INSERT RefreshToken (the device)
+    API->>API: jwt.sign({id, tokenVersion, shopId}, JWT_SECRET, 30m)
+    API-->>SPA: 200 { token, user } + Set-Cookie refresh_token (HttpOnly, 7d)
     SPA->>SPA: localStorage.token + zustand persist
     SPA-->>U: redirect /dashboard
 ```
 
-Invalid email and wrong password return the **same** `401 "Invalid credentials."` — no user enumeration.
+Invalid email and wrong password return the **same** `401 "Invalid credentials."` — no user enumeration. The comparison runs against a decoy hash when the account does not exist, so a miss costs the same bcrypt work as a hit; a deactivated account takes the same path, because skipping it there was itself a disclosure that the account exists (07 §10 P2-12).
+
+> **This diagram said `jwt.sign({id}, JWT_SECRET, 7d)` until 2026-09-04**, two weeks after that stopped being true. The access token has been **30 minutes** since 2026-08-22 and carries `{ id, tokenVersion, shopId }`; the week is the rotating `HttpOnly` refresh cookie, which is a row in `RefreshToken` rather than a claim (FR-AUTH-10). The `tokenVersion` claim is the one that matters to a reader — it is what makes revocation work at all, and a diagram omitting it describes a system that cannot sign anybody out.
 
 ### 6.2 Creating an invoice (the critical path)
 
@@ -455,7 +467,7 @@ Everything [Phase 8](./05-roadmap-and-phases.md#phase-8--production-readiness) l
 | AD-04 | FEFO batch auto-selection,**overridable since 2026-08-24**                                                                 | Minimises expiry write-offs without operator effort                                                                             | Was: operator could not pick a different batch. FEFO is now the*default* rather than the only option — search returns every sellable batch and the POS offers a picker, so the two cases FEFO cannot see (customer needs a specific pack; the earliest-expiring pack is at the back of the shelf) no longer require a workaround. Cost: the override is a second click, and a shop that uses it carelessly loses the write-off protection this decision bought. Expired batches are excluded from selection entirely — as earliest-expiring they used to *become* the default ([G-20](./08-gap-analysis.md#g-20)) |
 | AD-05 | Snapshot medicine name and GST% onto invoice lines                                                                               | Historical invoices must never change when masters change                                                                       | Denormalised data; renames don't propagate (correct here)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | AD-06 | Soft delete for medicines only                                                                                                   | Invoice lines and batches reference medicines                                                                                   | Inconsistent with hard-deleted suppliers/categories, which can fail on FK                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| AD-07 | JWT in`localStorage`, no refresh flow                                                                                          | Simplest client; the SPA is not cookie-based                                                                                    | XSS-exfiltratable; no server-side revocation ([07 — Security](./07-security.md))                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| AD-07 | ~~JWT in`localStorage`, no refresh flow~~ **Superseded 2026-08-22; this row said so until 2026-09-04**                    | Was: simplest client; the SPA is not cookie-based                                                                               | **The consequence column below was false for two weeks, and it was the worst row in this table to be wrong in.** An architecture decision record stating the system has no server-side revocation is where a reader auditing the auth model stops. It has both halves: `POST /api/auth/logout` bumps `User.tokenVersion`, which every token carries a copy of, so one call ends every session for that account (FR-AUTH-09); and the 7-day half is a rotating `HttpOnly` refresh cookie with reuse detection (FR-AUTH-10), not a 7-day token in `localStorage`. What remains true is the first clause: a **30-minute** access token still lives in `localStorage` and is still XSS-exfiltratable — the refresh cookie is deliberately out of script's reach so an XSS gains an expiring credential rather than a renewable one (threat T-13). See §7 above, which has been right all along |
 | AD-08 | Per-request user reload in`protect`                                                                                            | Deactivation takes effect immediately                                                                                           | One extra query per request — prime cache candidate                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | AD-09 | Zod at the route boundary                                                                                                        | Validation lives next to the contract, and strips unknown keys                                                                  | Any field absent from a schema is silently dropped — the cause of the`mfgDate` bug ([G-04](./08-gap-analysis.md#g-04))                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | AD-10 | Zustand over Redux/Context,**for client state only** *(revised 2026-08-24)*                                              | Tiny surface for two small global stores                                                                                        | Was: no caching/invalidation layer, each page hand-rolled fetching. Server state moved to TanStack Query ([G-16](./08-gap-analysis.md#g-16)); Zustand keeps auth and the notification store, which owns read/unread that no response carries. The split is now the rule: if it came from the API it belongs to a query key                                                                                                                                                                                                                                                                                              |
@@ -473,11 +485,11 @@ Everything [Phase 8](./05-roadmap-and-phases.md#phase-8--production-readiness) l
 
 **First bottlenecks, in the order they will bite:**
 
-1. **Invoice-number contention** — breaks at 2+ simultaneous checkouts, not at scale. Fix first.
-2. **`protect` DB read on every request** — the highest-frequency query in the system. Caching the user by id with a short TTL is the obvious answer, but it needs a cache store reintroduced (there is none since Phase 8) and it weakens instant deactivation. Measure before doing either.
-3. **`contains` search without an index** — POS search does two `ILIKE %q%` scans; add a `pg_trgm` GIN index on `medicine.name` and `genericName` past ~10k rows.
-4. **Unpaginated list endpoints** — batches, suppliers, users and masters return everything.
-5. **Client-composed trend report** — 7 round trips for one chart; replace with a single server aggregation.
-6. **Dashboard fan-out** — 6 requests per load, collapsible into one `/stats` call.
+1. **`protect` DB read on every request** — the highest-frequency query in the system. Caching the user by id with a short TTL is the obvious answer, but it needs a cache store reintroduced (there is none since Phase 8) and it weakens instant deactivation. Measure before doing either.
+2. **Unpaginated list endpoints** — users, suppliers, categories and manufacturers still return everything. The last three are deliberate: they populate form dropdowns, and truncating them would silently remove options (NFR-02). Users is the one that will actually grow.
+3. **One connection pool shared by every shop** — the tenancy model puts no ceiling on shop *count*, and every table is indexed on `shopId`, so this is where the limit shows up first rather than in any query.
+4. **POS search latency is unmeasured** — a `pg_trgm` GIN index over `name` and `COALESCE(genericName, '')` has served the two `ILIKE %q%` scans since `20260820115654_add_performance_indexes`, but NFR-01's 300 ms target on a 5,000-medicine catalogue has never been measured against it.
 
-**Scaling out** would require: stateless backend replicas behind Nginx `upstream` (already stateless — JWT, no session store), a shared cache store if one is wanted (none is deployed), and a database sequence for invoice numbers. No code change is needed for horizontal scale *except* the numbering fix.
+> **Four items were struck from this list on 2026-09-04, having been fixed and credited elsewhere in this same document.** Invoice-number contention, which stood at number one and said *"fix first"*, was fixed on 2026-08-18 by the `InvoiceCounter` upsert ([G-01](./08-gap-analysis.md#g-01)) — §6.2 above has said so since. The client-composed trend and the six-call dashboard fan-out both went on 2026-08-20 ([G-08](./08-gap-analysis.md#g-08)), and §6.3 records the measurement. Batch pagination landed the same day. A performance section naming solved problems as the next thing to fix is worse than no list, because it sends the reader to work that is already done.
+
+**Scaling out** would require: stateless backend replicas behind Nginx `upstream` (already stateless — JWT, no session store) and a shared cache store if one is wanted (none is deployed). Invoice numbering no longer stands in the way — the per-day counter is a row lock, so concurrent replicas serialise on it correctly rather than colliding.

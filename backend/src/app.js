@@ -33,6 +33,7 @@ const requireKnownOrigin = require("./middlewares/csrf.middleware");
 const createApp = ({
   rateLimitMax = Number(process.env.RATE_LIMIT_MAX) || 500,
   loginRateLimitMax = Number(process.env.LOGIN_RATE_LIMIT_MAX) || 10,
+  signupRateLimitMax = Number(process.env.SIGNUP_RATE_LIMIT_MAX) || 10,
 } = {}) => {
   const app = express();
 
@@ -137,12 +138,40 @@ const createApp = ({
   });
   app.use("/api/auth/login", loginLimiter);
 
-  // Signup shares that budget. It is a one-shot endpoint — after the first
-  // account it refuses before touching bcrypt — but *before* setup every call
-  // costs a cost-12 hash, and an unclaimed installation is exactly when nobody
-  // is watching. The same 10-per-window ceiling keeps that from being a way to
-  // burn a fresh instance's CPU, and one honest operator needs one request.
-  app.use("/api/auth/signup", loginLimiter);
+  // Signup gets its own limiter, and the reason is the same one
+  // `passwordResetLimiter` below spells out: `loginLimiter` is built with
+  // `skipSuccessfulRequests`, so mounting it here counted the wrong half of the
+  // traffic.
+  //
+  // On login only failures are worth counting — a successful sign-in is a
+  // counter starting a shift. On signup the successful call **is** the thing
+  // worth bounding: each one creates a Shop and a User and spends a cost-12
+  // bcrypt hash, which makes it the most expensive unauthenticated work in the
+  // API. Skipping it meant the budget was never spent by the traffic it existed
+  // to bound, and the only real ceiling was the 500-per-window general limiter.
+  //
+  // That mounting looked correct in the route table and in review, because the
+  // comment that used to sit here described the endpoint signup was for one
+  // day: a one-shot bootstrap that sealed itself after the first account and
+  // refused before touching bcrypt. Since the multi-tenant conversion on
+  // 2026-08-29 it is permanently open — every shopkeeper who has never used the
+  // system calls it once, and every call hashes. SECURITY.md accepts unbounded
+  // shop creation as a cost and names this limiter as what bounds the *rate*;
+  // that sentence is true again now.
+  //
+  // A separate instance rather than a second mount of one limiter, because two
+  // routes sharing a store share a bucket: failed signups would spend the login
+  // budget for that client, and behind one public address that is a stranger
+  // locking a pharmacy's staff out of their till.
+  const signupLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: signupRateLimitMax,
+    message: {
+      success: false,
+      message: "Too many signup attempts. Please try again in 15 minutes.",
+    },
+  });
+  app.use("/api/auth/signup", signupLimiter);
 
   // Password reset gets the same budget and a **different limiter**, because
   // reusing `loginLimiter` here would have been a control that counted nothing.

@@ -102,6 +102,7 @@ npm run dev                      # Vite on :5173
 | `LOG_LEVEL` | | `info` | pino level: `trace`, `debug`, `info`, `warn`, `error`, `fatal`. Silent under `NODE_ENV=test` |
 | `RATE_LIMIT_MAX` | | `500` | Requests per 15 minutes per client on `/api` |
 | `LOGIN_RATE_LIMIT_MAX` | | `10` | **Failed** logins per 15 minutes on `/api/auth/login`; successes are not counted |
+| `SIGNUP_RATE_LIMIT_MAX` | | `10` | Signups per 15 minutes on `/api/auth/signup`. **Successes *are* counted**, unlike login — a successful signup creates a shop and spends a cost-12 hash, so it is the call worth bounding. Its own limiter, not a second mount of the login one, so the two do not share a bucket |
 | `CUSTOMER_RETENTION_MONTHS` | | `36` | Inactivity window used by `npm run purge:customers` |
 | `AUDIT_RETENTION_MONTHS` | | `24` | Age at which `npm run purge:audit` deletes an audit row |
 | `SMTP_HOST` `SMTP_PORT` `SMTP_USER` `SMTP_PASS` `SMTP_FROM` | **prod** | — | The mail server password-reset links are sent through (FR-AUTH-11). Needed in production, and their absence is loud at boot — but the API **starts anyway** and `POST /api/auth/forgot-password` answers `503` until they are set, so a missing value disables one feature rather than the product. It refused to start until 2026-09-01; see the CHANGELOG for what that cost. Unset in development: `sendMail` logs and returns false |

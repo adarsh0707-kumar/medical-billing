@@ -9,6 +9,7 @@ import {
   makeBatch,
   makeSellable,
   line,
+  localMidnight,
 } from "../helpers/factory.js";
 
 /**
@@ -44,7 +45,10 @@ const daysFromNow = (n) => {
 };
 
 /** Midnight today, the way batch.controller.create stores an expiry date. */
-const midnightToday = () => new Date(new Date().toISOString().slice(0, 10));
+// Local midnight, matching the boundary getStats draws. Was
+// `new Date(new Date().toISOString().slice(0, 10))` — UTC midnight of the UTC
+// date, which is a different instant anywhere the offset is not zero.
+const midnightToday = () => localMidnight();
 
 /** An invoice written straight to the database, on any date and in any state. */
 async function invoiceAt(
@@ -117,6 +121,7 @@ describe("GET /api/dashboard/stats — access", () => {
       creditNotes: 0,
       totalCgst: 0,
       totalSgst: 0,
+      totalGst: 0,
       byPaymentMode: [],
     });
     expect(body.data.recentInvoices).toEqual([]);
@@ -155,6 +160,13 @@ describe("GET /api/dashboard/stats — today's money", () => {
     // BR-03: the two halves are equal by construction, so a dashboard showing
     // them apart must still add up.
     expect(s.totalCgst).toBe(s.totalSgst);
+
+    // This test was named for exactly this property and asserted everything
+    // except it. `totalGst` was absent from the response altogether, and the
+    // panel's `summary?.totalGst || 0` printed a confident ₹0 under a correct
+    // CGST and SGST of ₹18 each.
+    expect(s.totalGst).toBe(36);
+    expect(s.totalGst).toBe(s.totalCgst + s.totalSgst);
   });
 
   it("folds the grouped query into one row per payment mode", async () => {

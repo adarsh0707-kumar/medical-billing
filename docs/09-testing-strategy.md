@@ -1,6 +1,6 @@
 # Testing Strategy
 
-**Measured 2026-09-03: 781 backend tests across 32 files, 192 frontend unit tests across 23 files, and a 7-flow browser smoke — all three layers on CI, all passing.**
+**Measured 2026-09-05: 784 backend tests across 32 files, 192 frontend unit tests across 23 files, and a 7-flow browser smoke — all three layers on CI, all passing.**
 
 > Counts here are taken by **running the suites**, not by adding up the tables below. Three documents once carried four different numbers because the tables were maintained by hand and two suites were never added to them.
 >
@@ -50,7 +50,9 @@ Two decisions worth knowing:
 
 ### What exists
 
-**Backend — 781 across 32 files, all passing.** The count is what a run reports, not what passes — recording it the other way would be the drift this section exists to prevent, and for a while the two genuinely differed.
+**Backend — 784 across 32 files, all passing.** The count is what a run reports, not what passes — recording it the other way would be the drift this section exists to prevent, and for a while the two genuinely differed.
+
+> **The suite was only green in UTC until 2026-09-05.** Three tests derived "today" from `new Date().toISOString()` — the *UTC* date — while every day boundary in the product is deliberately the store's **local** day (FR-BATCH-09, `dailySummaryPeriod`, `trend.js`). The two agree only where the offset is zero, so CI was green and so was any machine at or behind UTC; east of it the suite failed for exactly the length of the offset each morning, and reported the product broken when it was correct. `localMidnight()` and `localDateString()` in `helpers/factory.js` are now the single definition, for the same reason the server has one.
 
 Two failures worth remembering, both fixed 2026-08-27:
 
@@ -145,7 +147,7 @@ only the CSV download, the one flow built on browser machinery rather than ours.
 
 ### Coverage
 
-Measured 2026-09-02: **91.53% of statements** overall (91.81% of lines, 80.30% of branches). The gate is deliberately not a whole-repo number — it sits on the four files where a regression is a financial or security incident:
+Measured 2026-09-05: **92.66% of statements** overall (93.05% of lines, 81.26% of branches). The gate is deliberately not a whole-repo number — it sits on the four files where a regression is a financial or security incident:
 
 | File                              | Statements | Branches | Gate |
 | --------------------------------- | ---------: | -------: | ---- |
@@ -164,7 +166,7 @@ The thin spots outside the gate, in order: `config/mailer.js` **48.1%**, `contro
 
 - ~~Frontend unit tests — §5.6~~ **done 2026-08-20**: 67 cases across cart maths, the POS stock guards, `ProtectedRoute`, the sidebar role filter, the 401 interceptor and notification severity.
 - ~~Wiring `npm test` into the frontend CI job~~ **done** — it runs before the build, and a broken cart rounding now turns CI red.
-- ~~A Playwright browser smoke test — §5.7~~ **done 2026-08-20**, all six flows, in its own CI job.
+- ~~A Playwright browser smoke test — §5.7~~ **done 2026-08-20** with six flows, **seven since**, in its own CI job.
 - ~~Component coverage beyond the §5.6 screens, and a second browser besides Chromium~~ — **done 2026-08-24**: Settings, Inventory, Customers, Suppliers and Reports now have component tests (97 frontend cases across 13 files), and Firefox runs the CSV download flow as its own Playwright project.
 - The browser suite could not pass on a freshly seeded database between the password-change work and 2026-08-24 — the seeded admin carries `mustChangePassword`, so every flow's `signIn` landed on `/change-password`. `apiLogin` now completes that change idempotently. A CI job that only ever runs against a fresh seed is exactly where this class of breakage hides; worth remembering before adding another bootstrap step.
 - Two icon-only controls have no accessible name (the Customers pager) and `Field` in `Inventory.tsx` renders a `Label` not associated with its input, so those tests reach for placeholders and DOM position. Worth fixing for screen readers, not only for tests.
@@ -173,7 +175,7 @@ The thin spots outside the gate, in order: `config/mailer.js` **48.1%**, `contro
 ## 2. Target shape
 
 ```
-        ╱ E2E — Playwright, ~6 flows ╲            slow, few
+        ╱ E2E — Playwright, 7 flows ╲             slow, few
       ╱ Integration — Supertest + real Postgres ╲  the bulk of the value
     ╱ Unit — pure functions, calculations       ╲  fast, many
 ```
