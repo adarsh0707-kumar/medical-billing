@@ -11,6 +11,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+#### The Inventory dialogs are as wide as they say they are
+
+Add Medicine goes from `lg` to `xl` — but the widths on those dialogs were not applying at all, so the change needed the mechanism fixed first.
+
+`DialogContent` carries `sm:max-w-sm` in its own base classes. A call site writing an unprefixed `max-w-lg` does not conflict with it as far as `tailwind-merge` is concerned — different variants are different groups — so **both survive the merge**, and `.sm\:max-w-sm` is emitted far later in the stylesheet where a media query adds no specificity. Above 640px it won every time. Every Inventory dialog was 24rem no matter what it declared, which is why widening one had no visible effect.
+
+Prefixing the call site (`sm:max-w-xl`) puts it in the same group as the primitive's default, so the merge drops `sm:max-w-sm` and keeps `max-w-[calc(100%-2rem)]` for phones. Add Medicine is now 36rem, Add Stock 42rem and the supplier form 28rem, each verified against the compiled `--container-*` values rather than assumed.
+
+**The same latent issue affects the eight dialogs outside Inventory** — Billing, Customers, Settings, Suppliers and the invoice detail all declare unprefixed widths and all render at 24rem. They are left alone here because correcting them changes how they look, which is a decision rather than a fix: the invoice detail would go from 24rem to 42rem.
+
 #### Every dialog is the same black, and `bg-black-900` is a real class
 
 `bg-black-900` had been written onto the three Inventory dialogs and **no token backed it**, so Tailwind emitted no rule and those dialogs fell through to shadcn's `bg-popover`. That happens to be `#0f0f0f` in this theme — the same value `bg-slate-800` gives — so the class looked almost right while doing nothing at all, which is the worst way for a style to fail.

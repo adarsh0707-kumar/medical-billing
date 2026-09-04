@@ -647,7 +647,7 @@ function MedicinesTab() {
 
       {/* Add/Edit Medicine Dialog */}
       <Dialog open={showForm} onOpenChange={setShowForm}>
-        <DialogContent className="bg-black-900 border-slate-700 text-white max-w-lg">
+        <DialogContent className="bg-black-900 border-slate-700 text-white sm:max-w-xl">
           <DialogHeader>
             <DialogTitle>
               {editing ? "Edit Medicine" : "Add New Medicine"}
@@ -1321,7 +1321,7 @@ function BatchesTab() {
 
       {/* Add Batch Dialog */}
       <Dialog open={showForm} onOpenChange={setShowForm}>
-        <DialogContent className="bg-black-900 border-slate-700 text-white max-w-lg">
+        <DialogContent className="bg-black-900 border-slate-700 text-white sm:max-w-xl">
           <DialogHeader>
             <DialogTitle>Add New Stock Batch</DialogTitle>
           </DialogHeader>
@@ -1876,7 +1876,7 @@ function SuppliersTab() {
 
       {/* Supplier Form Dialog */}
       <Dialog open={showForm} onOpenChange={setShowForm}>
-        <DialogContent className="bg-black-900 border-slate-700 text-white max-w-md">
+        <DialogContent className="bg-black-900 border-slate-700 text-white sm:max-w-md">
           <DialogHeader>
             <DialogTitle>
               {editing ? "Edit Supplier" : "Add Supplier"}
