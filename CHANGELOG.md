@@ -33,6 +33,18 @@ The printed GST invoice is untouched: it paints with `text-black` on default pap
 
 ### Fixed
 
+#### The Vercel build broke on a TypeScript major the linter cannot accept
+
+`npm install` failed with `ERESOLVE`: `typescript-eslint@8.68.0` declares a peer range of `typescript >=4.8.4 <6.1.0`, and the frontend pin had been bumped to `~7.0.2`. **Pinned back to `~6.0.3`.**
+
+There is no forward fix to take. 8.69.0 is the current latest typescript-eslint, no 9.x is published, and it still caps at `<6.1.0` — so the only alternatives were reverting the major or hiding the conflict behind `--legacy-peer-deps`, which is what let this reach a deploy the first time it happened.
+
+Nothing is wrong with the code: on TypeScript 6.0.3 the app type-checks, lints, builds and passes its 192 tests, exactly as it did on 7. The incompatibility is entirely in a peer declaration.
+
+**This is the second time for TypeScript and the third dependency major to break a deploy this week.** `bb1a6ba` pinned TypeScript back for this precise reason on an earlier occasion, and Dependabot re-raised the bump because nothing told it not to. Both pins now have `ignore` rules for `semver-major` — TypeScript in the frontend, Prisma in the backend — with the condition for lifting each written beside it. For TypeScript that condition is one command: `npm view typescript-eslint peerDependencies.typescript`.
+
+**CI would have caught this.** Verified rather than assumed: the frontend job runs `npm ci`, and `npm ci` on the tree that broke the deploy fails exactly as `npm install` does. So no new CI step was added — the check already exists, and what got past it was the merge, not the pipeline.
+
 #### The deploy broke on an unparseable lockfile, for the second time
 
 `npm ci` failed in the Docker build with *"can only install with an existing package-lock.json … lockfileVersion >= 1"*. The file was there, tracked, 218 KB, in the build context — and **not valid JSON**. A dependabot merge resolution had eaten an entry's closing braces, leaving `@prisma/client-runtime-utils` unterminated with no comma before the next key. No conflict markers survived, so nothing looked wrong in review.

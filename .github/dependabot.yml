@@ -60,6 +60,24 @@ updates:
       frontend-minor-and-patch:
         patterns: ["*"]
         update-types: ["minor", "patch"]
+    # TypeScript majors are not raised here, because this one has now broken
+    # the Vercel deploy twice.
+    #
+    # The blocker is not our code — the app type-checks, lints and builds under
+    # TypeScript 7. It is `typescript-eslint`, whose peer range is still
+    # `>=4.8.4 <6.1.0` at 8.69.0, the current latest, with no 9.x published.
+    # So `npm install` cannot resolve the tree at all, and there is no forward
+    # fix to take: the only options are reverting the major or hiding the
+    # conflict with --legacy-peer-deps, which is what let it reach a deploy the
+    # first time.
+    #
+    # Majors only. Patches and minors, security patches included, still arrive.
+    # **Remove this rule when typescript-eslint publishes a peer range that
+    # admits TypeScript 7** — that is the single condition, and it is checkable
+    # in one command: `npm view typescript-eslint peerDependencies.typescript`.
+    ignore:
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
     commit-message:
       prefix: "chore(frontend)"
     labels: ["dependencies", "frontend"]
