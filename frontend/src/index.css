@@ -94,6 +94,18 @@
  */
 @theme {
   /* Grounds and surfaces, darkest first. */
+  /**
+   * The dialog surface. The same pure black as `slate-950`, under the name the
+   * dialogs actually use.
+   *
+   * A synonym rather than an accident: `bg-black-900` was written across the
+   * dialogs before any token backed it, so every one of them silently fell
+   * through to shadcn's `bg-popover` — which happens to be `#0f0f0f` in this
+   * theme, so it looked *nearly* right and hid the fact that nothing was
+   * applying. Defining it makes the class real and makes the dialogs the black
+   * they were asking for.
+   */
+  --color-black-900: #000000;
   --color-slate-950: #000000;
   --color-slate-900: #000000;  /* page background */
   --color-slate-800: #0f0f0f;  /* cards, panels */

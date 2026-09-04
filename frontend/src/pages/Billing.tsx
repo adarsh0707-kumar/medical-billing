@@ -141,7 +141,7 @@ function AddCustomerDialog({ onAdd }: { onAdd: (c: Customer) => void }) {
           <UserPlus className="w-4 h-4 mr-1" /> New Customer
         </Button>
       </DialogTrigger>
-      <DialogContent className="bg-slate-800 border-slate-700 text-white">
+      <DialogContent className="bg-black-900 border-slate-700 text-white">
         <DialogHeader>
           <DialogTitle>Add New Customer</DialogTitle>
         </DialogHeader>
@@ -814,7 +814,7 @@ export default function Billing() {
         open={batchPicker !== null}
         onOpenChange={(open) => !open && setBatchPicker(null)}
       >
-        <DialogContent className="bg-slate-800 border-slate-700 text-white">
+        <DialogContent className="bg-black-900 border-slate-700 text-white">
           <DialogHeader>
             <DialogTitle>Choose a batch — {batchPicker?.name}</DialogTitle>
           </DialogHeader>

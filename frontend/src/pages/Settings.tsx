@@ -855,7 +855,7 @@ function UsersTab() {
         open={resetResult !== null}
         onOpenChange={(open) => !open && setResetResult(null)}
       >
-        <DialogContent className="bg-slate-800 border-slate-700 text-white max-w-md">
+        <DialogContent className="bg-black-900 border-slate-700 text-white max-w-md">
           <DialogHeader>
             <DialogTitle>Temporary password</DialogTitle>
           </DialogHeader>
@@ -908,7 +908,7 @@ function UsersTab() {
 
       {/* Add/Edit User Dialog */}
       <Dialog open={showForm} onOpenChange={setShowForm}>
-        <DialogContent className="bg-slate-800 border-slate-700 text-white max-w-md">
+        <DialogContent className="bg-black-900 border-slate-700 text-white max-w-md">
           <DialogHeader>
             <DialogTitle>
               {editing ? "Edit User" : "Create New User"}

@@ -111,7 +111,7 @@ export default function InvoiceDetailDialog({
 }: Props) {
   return (
     <Dialog open={!!invoice} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="bg-slate-800 border-slate-700 text-white max-w-2xl">
+      <DialogContent className="bg-black-900 border-slate-700 text-white max-w-2xl">
         {/* Keyed on the invoice so opening a different row starts with an empty
             form. A `useEffect` resetting state on a prop change would do the
             same thing later and less obviously. */}

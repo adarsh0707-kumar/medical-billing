@@ -373,7 +373,7 @@ export default function Suppliers() {
 
       {/* Add/Edit Dialog */}
       <Dialog open={showForm} onOpenChange={setShowForm}>
-        <DialogContent className="bg-slate-800 border-slate-700 text-white max-w-md">
+        <DialogContent className="bg-black-900 border-slate-700 text-white max-w-md">
           <DialogHeader>
             <DialogTitle>{editing ? 'Edit Supplier' : 'Add New Supplier'}</DialogTitle>
           </DialogHeader>

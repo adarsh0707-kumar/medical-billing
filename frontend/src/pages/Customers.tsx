@@ -125,7 +125,7 @@ function CustomerDetailDialog({
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="bg-slate-800 border-slate-700 text-white max-w-lg">
+      <DialogContent className="bg-black-900 border-slate-700 text-white max-w-lg">
         <DialogHeader>
           <DialogTitle>Customer Profile</DialogTitle>
         </DialogHeader>
@@ -588,7 +588,7 @@ export default function Customers() {
 
       {/* Add/Edit Dialog */}
       <Dialog open={showForm} onOpenChange={setShowForm}>
-        <DialogContent className="bg-slate-800 border-slate-700 text-white max-w-md">
+        <DialogContent className="bg-black-900 border-slate-700 text-white max-w-md">
           <DialogHeader>
             <DialogTitle>
               {editing ? "Edit Customer" : "Add New Customer"}

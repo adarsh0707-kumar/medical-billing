@@ -11,6 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+#### Every dialog is the same black, and `bg-black-900` is a real class
+
+`bg-black-900` had been written onto the three Inventory dialogs and **no token backed it**, so Tailwind emitted no rule and those dialogs fell through to shadcn's `bg-popover`. That happens to be `#0f0f0f` in this theme — the same value `bg-slate-800` gives — so the class looked almost right while doing nothing at all, which is the worst way for a style to fail.
+
+The token exists now (`--color-black-900: #000000`, the same black as `slate-950`, under the name the dialogs use) and all **eleven** dialogs carry it: add and edit medicine, add stock, both supplier forms, both customer dialogs, the POS customer dialog, the invoice detail, and both Settings dialogs. Solid `#000`, no alpha anywhere on the surface.
+
+**On the two supplier forms looking different:** they are not, and the fields were never the difference. Both carry the same fifteen fields in the same order, the same three two-column rows and two three-column rows, the same separators and the same `max-w-md`. The only thing that differed was the background class, one of which was inert — and both now say `bg-black-900`.
+
 #### Scrollbars in the app's own colours
 
 A black track and a gold bar, everywhere. Left to itself Chromium paints a light grey trough, which on a pure black page is the brightest thing on screen and sits at the edge of every table, dialog and card — the default was louder than the content.
