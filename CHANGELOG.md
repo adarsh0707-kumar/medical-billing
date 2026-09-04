@@ -11,6 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+#### Scrollbars in the app's own colours
+
+A black track and a gold bar, everywhere. Left to itself Chromium paints a light grey trough, which on a pure black page is the brightest thing on screen and sits at the edge of every table, dialog and card — the default was louder than the content.
+
+Written from the theme tokens rather than the hex values, so the palette stays defined in one place: change `--color-teal-500` and the bar follows, which is the point of the remap the theme was built as. Both engines are addressed and neither covers the other — WebKit and Blink take the `::-webkit-scrollbar` pseudo-elements, Firefox takes `scrollbar-color` and `scrollbar-width` and ignores the pseudo-elements entirely.
+
+It sits in `@layer base` deliberately. The `scrollbar-none` utility hides the Reports tab strip's bar, whose arrows already say what can be scrolled, and Tailwind emits utilities in a later cascade layer — so that still wins and the strip is not handed back a scrollbar this rule would otherwise paint in. Verified in the compiled CSS: the layer order is `properties → theme → base → components → utilities`, with both `scrollbar-width` values present and the utility's in the winning layer.
+
 #### A black and gold theme
 
 The application is now pure black with gold accents, in place of the slate-and-teal it shipped with.

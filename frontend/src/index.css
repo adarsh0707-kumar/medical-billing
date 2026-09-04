@@ -243,6 +243,59 @@
   html {
     @apply font-sans;
     }
+
+  /**
+   * Scrollbars in the app's own colours: a black track, a gold bar.
+   *
+   * Left to itself a Chromium scrollbar paints a light grey trough, which on a
+   * pure black page is the brightest thing on screen and sits right at the
+   * edge of every table, dialog and card. The default was louder than the
+   * content.
+   *
+   * Written from the theme tokens rather than `#000` and `#f5c518` literally,
+   * so the palette stays defined in one place — change `--color-teal-500` and
+   * these follow, which is the whole reason the retheme was a token remap.
+   *
+   * **Both engines need saying and neither covers the other.** WebKit and
+   * Blink take the pseudo-elements; Firefox takes `scrollbar-color` and
+   * `scrollbar-width` and ignores the pseudo-elements entirely.
+   *
+   * This sits in `@layer base` on purpose. The `scrollbar-none` utility below
+   * hides the tab strip's bar, and Tailwind puts utilities in a later layer —
+   * so it still wins, and the arrows on that strip are not joined by a
+   * scrollbar this rule would otherwise paint back in.
+   */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-teal-500) var(--color-slate-950);
+  }
+
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: var(--color-slate-950);
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background: var(--color-teal-500);
+    border-radius: 999px;
+    /* A black border insets the bar inside its track, so the gold reads as a
+       rounded handle rather than a solid slab filling the gutter. The border
+       has to match the track or it draws a seam. */
+    border: 2px solid var(--color-slate-950);
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background: var(--color-teal-400);
+  }
+
+  /* Where a horizontal and a vertical bar meet. Left alone it is grey. */
+  *::-webkit-scrollbar-corner {
+    background: var(--color-slate-950);
+  }
 }
 /**
  * Autofilled inputs keep the form's own colours.
