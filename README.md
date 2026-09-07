@@ -178,4 +178,4 @@ Found a security problem? **Don't open an issue** — follow
 
 [MIT](./LICENSE).
 
-If this project was useful to you, consider [buying me a coffee ☕](https://buymeacoffee.com/adarsh12kumar).
+If this project was useful to you, consider [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support-yellow?logo=buy-me-a-coffee\&logoColor=white)](https://buymeacoffee.com/adarsh12kumar)
