@@ -177,3 +177,5 @@ Found a security problem? **Don't open an issue** — follow
 ## Licence
 
 [MIT](./LICENSE).
+
+If this project was useful to you, consider [buying me a coffee ☕](https://buymeacoffee.com/adarsh12kumar).
